@@ -1,20 +1,19 @@
 // Generate buttons for menu UI.
 
-/// <reference path="../../references.ts" />
-
 'use strict';
 
+import { loadJsonFile } from '../utils/loadJson.js';
 
-import fs = require('fs');
-import path = require('path');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-import serverUtils = require('../../server/utils/index');
-import editMetadataFile = require('../../server/utils/editMetadataFile');
-import utils = require('../../utils');
+import * as serverUtils from '../../server/utils/index.js';
+import editMetadataFile from '../../server/utils/editMetadataFile.js';
+import * as utils from '../../utils.js';
 
 var toHex = utils.toHex;
 
-export = generateButtons;
+export default generateButtons;
 
 /**
  * Generate buttons from menu UI.
@@ -29,7 +28,7 @@ function generateButtons(dvdPath: string, callback) {
   var webPath = serverUtils.getWebPath(dvdPath);
 
   var ifoPath = getWebName('metadata');
-  var filesList = require(ifoPath);
+  var filesList = loadJsonFile(ifoPath);
 
   var css = [];
   var pointer = 0;
@@ -41,7 +40,7 @@ function generateButtons(dvdPath: string, callback) {
     ifoFile = path.join(webPath, '../', ifoFile);
     var name = path.basename(ifoFile);
     var basename = path.basename(name, '.json');
-    var ifoJson = require(ifoFile);
+    var ifoJson = loadJsonFile(ifoFile);
 
     var vobPointer = 0;
 
@@ -60,7 +59,7 @@ function generateButtons(dvdPath: string, callback) {
       var vobID = vob.vob_id;
 
       var ifoFile = path.join(webPath, basename + '-' + toHex(start) + '.json');
-      var json = require(ifoFile);
+      var json = loadJsonFile(ifoFile);
 
       var cssContent = [];
 

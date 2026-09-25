@@ -1,20 +1,19 @@
 // Generate a JavaScript file with translated VM programs.
 
-/// <reference path="../../references.ts" />
-
 'use strict';
 
+import { loadJsonFile } from '../utils/loadJson.js';
 
-import fs = require('fs');
-import path = require('path');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-import recompile = require('../../vm/recompile');
-import serverUtils = require('../../server/utils/index');
-import utils = require('../../utils');
+import recompile from '../../vm/recompile.js';
+import * as serverUtils from '../../server/utils/index.js';
+import * as utils from '../../utils.js';
 
 var toHex = utils.toHex;
 
-export = generateJavaScript;
+export default generateJavaScript;
 
 /**
  * Generate generateJavaScript code from IFO files pre/post commands.
@@ -28,7 +27,7 @@ function generateJavaScript(dvdPath: string, callback) {
   var webPath = serverUtils.getWebPath(dvdPath);
 
   var ifoPath = getWebName('metadata');
-  var filesList = require(ifoPath);
+  var filesList = loadJsonFile(ifoPath);
 
   var pointer = 0;
   var currentVideoTitle = 1;
@@ -61,7 +60,7 @@ function generateJavaScript(dvdPath: string, callback) {
     ifoFile = path.join(webPath, '../', ifoFile);
     var name = path.basename(ifoFile);
     var basename = path.basename(name, '.json');
-    var json = require(ifoFile);
+    var json = loadJsonFile(ifoFile);
 
     // First Play PGC
     code = first_play_pgc(json, code);
@@ -228,7 +227,7 @@ function generateJavaScript(dvdPath: string, callback) {
         var start = vob.start_sector;
 
         var ifoFile = path.join(webPath, basename + '-' + toHex(start) + '.json');
-        var pci = require(ifoFile).pci;
+        var pci = loadJsonFile(ifoFile).pci;
 
         code.push('btnCmd[' + pointer + '][' + vobPointer + '] = [];');
         for (var j = 0; j < pci.hli.hl_gi.btn_ns; j++) {

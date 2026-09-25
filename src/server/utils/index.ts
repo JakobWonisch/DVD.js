@@ -1,9 +1,9 @@
 'use strict';
 
 
-import path = require('path');
+import * as path from 'node:path';
 
-var config = require('../../../config/app.json');
+import appConfig from '../../loadAppConfig.js';
 
 /**
  * Given a DVD file name, returns the index following this model:
@@ -61,7 +61,7 @@ function getFilePortion(name: string, index: number): number {
  */
 export function getWebPath(dvdPath: string): string {
   var dvdFolderName = dvdPath.split(path.sep).pop();
-  return path.join(config.webFolder, dvdFolderName);
+  return path.join(appConfig.webFolder, dvdFolderName);
 }
 
 /**
@@ -77,5 +77,5 @@ export function convertVobPath(dvdPath: string): string {
   // Extract DVD folder name: /path/to/DVDNAME/VIDEO_TS/VIDEO_TS.VOB => DVDNAME
   var dvdFolderName = dvdPath.split(path.sep).reverse()[2];
 
-  return path.join(config.webFolder, dvdFolderName, fileName);
+  return path.join(appConfig.webFolder, dvdFolderName, fileName);
 }

@@ -1,23 +1,21 @@
 // Create or append data to a metadata file formatted in JSON.
 
-/// <reference path="../../references.ts" />
-/// <reference path="../../declarations/lodash/lodash.d.ts" />
-
 'use strict';
 
+import { loadJsonFile } from './loadJson.js';
 
-import fs = require('fs');
-import path = require('path');
-import _ = require('lodash');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import _ from 'lodash';
 
-export = editMetadataFile;
+export default editMetadataFile;
 
 function editMetadataFile(file, value, callback) {
   var content: any = [];
   // We check if the file exists.
   fs.exists(file, function(exists) {
     if (exists) {
-      content = require(file);
+      content = loadJsonFile(file);
     }
 
     // Now, we append the data.

@@ -3,12 +3,12 @@
 'use strict';
 
 
-import fs = require('fs');
-import path = require('path');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-import utils = require('../../utils');
+import * as utils from '../../utils.js';
 
-export = getDVDList;
+export default getDVDList;
 
 /**
  * Return the list of directory given a directory.

@@ -3,8 +3,8 @@
 'use strict';
 
 
-var VM = require('../vm');
-import utils = require('../utils');
+import VM from './index.js';
+import * as utils from '../utils.js';
 
 var sprintf = utils.sprintf;
 
@@ -23,7 +23,7 @@ var SET_OP_TABLE = [
   '', '=', '<->', '+=', '-=', '*=', '/=', '%=', 'rnd', '&=', '|=', '^='
 ];
 
-export = compile;
+export default compile;
 
 /**
  * Compile a set of VM commands to JavaScript code.

@@ -1,14 +1,12 @@
-/// <reference path="../references.ts" />
-
 'use strict';
 
 
-var jDataView: jDataViewStatic = require('jdataview');
+import jDataView from 'jdataview';
 
-import navTypes = require('../dvdread/nav_types');
-import BinaryParser = require('../lib/binaryParser/index');
-import config = require('../config');
-import utils = require('../utils');
+import * as navTypes from '../dvdread/nav_types.js';
+import BinaryParser from '../lib/binaryParser/index.js';
+import * as config from '../config.js';
+import * as utils from '../utils.js';
 
 var DEBUG = config.DEBUG;
 var CHECK_VALUE = utils.CHECK_VALUE;

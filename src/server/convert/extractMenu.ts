@@ -1,17 +1,16 @@
 // Extract menu still frames.
 
-/// <reference path="../../references.ts" />
-
 'use strict';
 
+import { loadJsonFile } from '../utils/loadJson.js';
 
-import path = require('path');
+import * as path from 'node:path';
 
-import serverUtils = require('../../server/utils/index');
-import utils = require('../../utils');
-import editMetadataFile = require('../../server/utils/editMetadataFile');
+import * as serverUtils from '../../server/utils/index.js';
+import * as utils from '../../utils.js';
+import editMetadataFile from '../../server/utils/editMetadataFile.js';
 
-export = extractMenu;
+export default extractMenu;
 
 /**
  * Extract menu still frames.
@@ -25,7 +24,7 @@ function extractMenu(dvdPath: string, callback) {
   var webPath = serverUtils.getWebPath(dvdPath);
 
   var ifoPath = getWebName('metadata');
-  var filesList = require(ifoPath);
+  var filesList = loadJsonFile(ifoPath);
 
   var menu = [];
   var pointer = 0;
@@ -35,7 +34,7 @@ function extractMenu(dvdPath: string, callback) {
   // There are better ways to do async...
   function next(ifoFile: string) {
     ifoFile = path.join(webPath, '../', ifoFile);
-    var json = require(ifoFile);
+    var json = loadJsonFile(ifoFile);
 
     menu[pointer] = {};
     menu[pointer].menu = {};

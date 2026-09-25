@@ -3,8 +3,8 @@
 'use strict';
 
 
-import utils = require('../../utils');
-import Stream = require('./stream');
+import * as utils from '../../utils.js';
+import Stream from './stream.js';
 
 var toHex = utils.toHex;
 
@@ -77,4 +77,4 @@ function decodePacket(p: Stream) {
   return packets;
 }
 
-export = decodePacket;
+export default decodePacket;

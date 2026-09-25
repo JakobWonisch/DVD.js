@@ -1,11 +1,11 @@
 'use strict';
 
 
-import ifoTypes = require('../dvdread/ifo_types');
-import dvdTypes = require('../dvdnav/dvd_types');
-import ifoRead = require('../dvdread/ifo_read');
-import navRead = require('../dvdread/nav_read');
-import utils = require('../utils');
+import * as ifoTypes from '../dvdread/ifo_types.js';
+import * as dvdTypes from '../dvdnav/dvd_types.js';
+import * as ifoRead from '../dvdread/ifo_read.js';
+import * as navRead from '../dvdread/nav_read.js';
+import * as utils from '../utils.js';
 
 var ifo_handle_t = ifoTypes.ifo_handle_t;
 var dvd_read_domain_t = dvdTypes.dvd_read_domain_t;
@@ -21,7 +21,6 @@ var sprintf = utils.sprintf;
 
 /** @const */ var TITLES_MAX = 9;
 
-export = dvd_reader;
 
 /**
  * Opaque type that is used as a handle for one instance of an opened DVD.
@@ -297,3 +296,5 @@ dvd_reader.prototype.openFile = function(titlenum, domain) {
 dvd_reader.prototype.closeFile = function(dvd_file) {
   dvd_file = null;
 };
+
+export default dvd_reader;

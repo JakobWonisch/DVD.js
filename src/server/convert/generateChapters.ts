@@ -1,22 +1,20 @@
 // Generate WebVTT files with video chapters.
 
-/// <reference path="../../references.ts" />
-
 'use strict';
 
+import { loadJsonFile } from '../utils/loadJson.js';
 
-import fs = require('fs');
-import path = require('path');
-import glob = require('glob');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-import serverUtils = require('../../server/utils/index');
-import editMetadataFile = require('../../server/utils/editMetadataFile');
-import utils = require('../../utils');
+import * as serverUtils from '../../server/utils/index.js';
+import editMetadataFile from '../../server/utils/editMetadataFile.js';
+import * as utils from '../../utils.js';
 
 var getFileIndex = serverUtils.getFileIndex;
 var sprintf = utils.sprintf;
 
-export = generateChapters;
+export default generateChapters;
 
 /**
  * Generate WebVTT files with video chapters.
@@ -39,7 +37,7 @@ function generateChapters(dvdPath: string, callback) {
   var webPath = serverUtils.getWebPath(dvdPath);
 
   var ifoPath = getWebName('metadata');
-  var filesList = require(ifoPath);
+  var filesList = loadJsonFile(ifoPath);
 
   var vttFilesList = [];
   var pointer = 0;
@@ -55,7 +53,7 @@ function generateChapters(dvdPath: string, callback) {
   function next(ifoFile: string) {
     ifoFile = path.join(webPath, '../', ifoFile);
     var name = path.basename(ifoFile);
-    var json = require(ifoFile);
+    var json = loadJsonFile(ifoFile);
 
     var vttFile = 0;
     var cues = [];

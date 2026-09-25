@@ -1,11 +1,10 @@
 'use strict';
 
 
-import dvdReader = require('../dvdread/index');
-import ifoTypes = require('../dvdread/ifo_types');
-import dvdTypes = require('../dvdnav/dvd_types');
-import BinaryParser = require('../lib/binaryParser/index');
-import utils = require('../utils');
+import * as ifoTypes from '../dvdread/ifo_types.js';
+import * as dvdTypes from '../dvdnav/dvd_types.js';
+import BinaryParser from '../lib/binaryParser/index.js';
+import * as utils from '../utils.js';
 
 var ifo_handle_t = ifoTypes.ifo_handle_t;
 var dvd_read_domain_t = dvdTypes.dvd_read_domain_t;

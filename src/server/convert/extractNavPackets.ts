@@ -3,16 +3,16 @@
 'use strict';
 
 
-import fs = require('fs');
-import path = require('path');
-import glob = require('glob');
-var jDataView: jDataViewStatic = require('jdataview');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import jDataView from 'jdataview';
 
-import Stream = require('../../server/utils/stream');
-import decodePacket = require('../../server/utils/decode_packet');
-import navRead = require('../../dvdread/nav_read');
-import serverUtils = require('../../server/utils/index');
-import utils = require('../../utils');
+import Stream from '../../server/utils/stream.js';
+import decodePacket from '../../server/utils/decode_packet.js';
+import * as navRead from '../../dvdread/nav_read.js';
+import * as serverUtils from '../../server/utils/index.js';
+import * as utils from '../../utils.js';
+import { globFiles } from '../../server/utils/globFiles.js';
 
 /**
  * The length of one Logical Block of a DVD.
@@ -21,7 +21,7 @@ import utils = require('../../utils');
  */
 var DVD_VIDEO_LB_LEN = 2048;
 
-export = extractNav;
+export default extractNav;
 
 /**
  * Extract NAV packets from the VOB files located in a folder.
@@ -35,7 +35,7 @@ function extractNav(dvdPath: string, callback) {
   var webPath = serverUtils.getWebPath(dvdPath);
 
   var vobPath = path.join(dvdPath, 'VIDEO_TS', '*.VOB');
-  glob(vobPath, function(err, vobFiles) {
+  globFiles(vobPath, function(err, vobFiles) {
     if (err) {
       console.error(err);
     }

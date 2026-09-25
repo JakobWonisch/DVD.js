@@ -1,26 +1,24 @@
 // Convert video to webm format.
 
-/// <reference path="../../references.ts" />
-/// <reference path="../../declarations/lodash/lodash.d.ts" />
-
 'use strict';
 
+import { loadJsonFile } from '../utils/loadJson.js';
 
-import fs = require('fs');
-import path = require('path');
-import glob = require('glob');
-import child_process = require('child_process');
-import _ = require('lodash');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as child_process from 'node:child_process';
+import _ from 'lodash';
 
-import serverUtils = require('../../server/utils/index');
-import editMetadataFile = require('../../server/utils/editMetadataFile');
-import utils = require('../../utils');
+import * as serverUtils from '../../server/utils/index.js';
+import editMetadataFile from '../../server/utils/editMetadataFile.js';
+import * as utils from '../../utils.js';
+import { globFiles } from '../../server/utils/globFiles.js';
 
 var spawn = child_process.spawn;
 var getFileIndex = serverUtils.getFileIndex;
 var getFileSuffix = serverUtils.getFileSuffix;
 
-export = encodeVideo;
+export default encodeVideo;
 
 /**
  * Encode VOB files from a folder to webm.
@@ -40,10 +38,10 @@ function encodeVideo(dvdPath: string, callback) {
   var webPath = serverUtils.getWebPath(dvdPath);
 
   var metadataPath = getWebName('metadata');
-  var metadata = require(metadataPath);
+  var metadata = loadJsonFile(metadataPath);
 
   var vobPath = path.join(dvdPath, 'VIDEO_TS', '*.VOB');
-  glob(vobPath, function(err, vobFilesList) {
+  globFiles(vobPath, function(err, vobFilesList) {
     if (err) {
       console.error(err);
     }
@@ -58,8 +56,8 @@ function encodeVideo(dvdPath: string, callback) {
 
     // Sort the files.
     vobFiles = _.forEach(vobFiles, function(vobFile) {
-      return vobFile.sort(function(a, b) {
-        return a - b;
+      return vobFile.sort(function(a: string, b: string) {
+        return a.localeCompare(b);
       });
     });
 

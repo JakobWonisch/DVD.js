@@ -1,114 +1,113 @@
 # DVD.js
 
-> Playing DVD in JavaScript for the sake of interoperability
+Convert decrypted DVDs to a web-friendly package and play their menus in the browser — for interoperability and long-term menu preservation.
 
-## Talk
+Clients never download the full ISO. The converter rips server-side and streams WebM + JSON/CSS/JS (and eventually stills).
 
-For more details on this project, have a look at the [video of the talk I gave
-at JS Conf 2014](https://www.youtube.com/watch?v=lb-8euLqfRg).
+> Historical talk (JS Conf 2014): [video](https://www.youtube.com/watch?v=lb-8euLqfRg) · [slides](https://gmarty.github.io/jsconf-2014-talk-play-dvd-in-js/)
 
-[The slide deck](https://gmarty.github.io/jsconf-2014-talk-play-dvd-in-js/) is
-also available.
+## Status
 
-## Approach
+This checkout continues the **converter** architecture (pre-rip + stream). It is a strong prototype, not a finished commercial-menu player: basic discs can work; still menus, full VM coverage, and SPU compositing are incomplete. See `AGENTS.md` for goals and build order.
 
-This branch, named `converter`, contains an encoder of DVD to web format. For
-the attempt to play DVD on-the-fly, look into the `master` branch.
+Requires a **decrypted** `VIDEO_TS` / ISO (CSS/DRM out of scope).
 
-I ported libdvdread and libdvdnav to JavaScript. Several passes are applied to
-the content of a DVD to make it playable on a browser using native features:
+## Pipeline
 
-1. IFO files are parsed to JSON
-2. Chapters are generated as WebVTT
-3. NAV packets are extracted to JSON
-4. The buttons size/position are saved to CSS
-5. The menu still frames are saved to PNG (to be done)
-6. VM commands are compiled into JavaScript
-7. The video is encoded to Webm
+1. IFO → JSON  
+2. Chapters → WebVTT  
+3. NAV packs → JSON  
+4. Button hitboxes → CSS  
+5. Menu still frames → PNG *(to be done)*  
+6. VM commands → JavaScript  
+7. VOB → WebM (ffmpeg)
 
-## Install
+## Requirements
 
-Clone the repo locally and install the dependencies with:
+- **Node.js ≥ 24**
+- **pnpm 12** (via Corepack, `npx pnpm@12.6.0`, or Nix)
+- **ffmpeg** (for `pnpm convert`)
+- On NixOS: `nix develop` provides Node, pnpm, and ffmpeg
+
+## Quick start
+
 ```bash
-$ npm install
-$ bower install
-$ grunt install
+# Optional on NixOS
+nix develop
+
+pnpm install          # if Corepack's pnpm is broken: npx pnpm@12.6.0 install
+pnpm build
+
+cp config/app.example.json config/app.json
+# Set webFolder to a directory that will hold converted discs, e.g. /home/you/dvd/web
+mkdir -p /home/you/dvd/web
 ```
 
-You'll need to install the latest version of [ffmpeg](http://ffmpeg.org/).
+Place a decrypted disc (folder containing `VIDEO_TS/`) somewhere, then convert:
 
-Then, compile the TS files to JavaScript with:
 ```bash
-$ grunt
+pnpm convert -- /path/to/YourDisc
 ```
 
-If you see a message saying 'Done, without errors' then the compilation to
-JavaScript was successful.
+Reencoding video is slow. When finished:
 
-Create the folder that will hold your DVD, e.g.:
 ```bash
-$ cd /home/user/
-$ mkdir dvd
-$ pwd
-/home/user/dvd
+pnpm start
 ```
 
-Then update the `dvdPath` property of the config file in `config/app.json` to
-match the path to the folder created above.
+Open [http://localhost:3000/](http://localhost:3000/).
 
-Copy an unprotected DVD into a subfolder of `dvd/` (e.g. in
-`/home/user/dvd/Sita Sings the Blues/`)
+### Config
 
-To convert the DVD, do:
-```bash
-$ node bin/convert /home/user/dvd/Sita Sings the Blues/
-```
+| Key | Meaning |
+|-----|---------|
+| `webFolder` | Directory of converted DVD assets (served by the static server) |
+| `staticServerPort` | HTTP port (default `3000`) |
 
-Wait for a while (reencoding video takes a loooooong time).
+`config/app.json` is gitignored; keep `config/app.example.json` as the template.
 
-Start the web server:
-```bash
-node bin/http-server
-```
+## Scripts
 
-Finally, point your browser to:
-```
-http://localhost:3000/
-```
+| Command | Purpose |
+|---------|---------|
+| `pnpm build` | Compile TypeScript (`tsc`) → `dist/` |
+| `pnpm watch` | Rebuild on change |
+| `pnpm start` | Serve `public/` + `webFolder` |
+| `pnpm convert -- <dvd-root>` | Rip a disc into `webFolder` |
+| `pnpm test` | Vitest |
+| `pnpm typecheck` | `tsc --noEmit` |
 
-... and enjoy your DVD from your browser!
+## Tooling
 
-## Support
+| Piece | Choice |
+|-------|--------|
+| Package manager | pnpm 12 (`packageManager` in `package.json`) |
+| Modules | ESM (`"type": "module"`, TypeScript `NodeNext`) |
+| Compile | `tsc` only (no Grunt / Bower / TSD) |
+| Tests | Vitest 5 |
+| Types | TypeScript 7 + `@types/*` |
+| Nix | `flake.nix` → `devShell` with `nodejs_24`, `pnpm`, `ffmpeg` |
+| pnpm policy | `pnpm-workspace.yaml` (`allowBuilds`, etc.) |
 
-All browsers supporting the following features:
+Entry points: `bin/convert.js`, `bin/http-server.js` (load `dist/`).
 
-* `<video>` tag
-* `<track>` tag and WebVTT.
+The browser catalogue UI under `src/app/` is still legacy and not part of the `tsc` build yet.
+
+## Browser support
+
+Needs `<video>`, `<track>`, and WebVTT.
 
 ## FAQ
 
-### Do you need help?
+**Why not only re-encode the feature?**  
+DVDs include menus, audio/subtitle selection, and interactive navigation. Preserving that is the point.
 
-Yes, please, use it, open issues and send pull requests.
+**Why not full ISO-in-browser / OS emulation?**  
+Overkill for this product. Convert once, stream assets, drive navigation with converted VM/menu data (and optionally libdvdnav later).
 
-### Why doing that?
+**Do you need help?**  
+Yes — issues and PRs welcome. Prefer changes aligned with the priority order in `AGENTS.md`.
 
-There are several reasons:
+## License
 
-* I am frustrated with the current VOD offer and I don't want to buy movies
-or TV series to watch on my mobile if I already own the DVD.
-* I noticed I'm listening to my CD more often now that I'm using Google Play
-Music and am looking for a similar solution for my DVD.
-
-### Why don't you just convert the video for the web?
-
-There's more in DVD than the video. You can select audio track, subtitles,
-navigate through the menu, play interactive game or browse a gallery of still
-images.
-
-### Why not using Emscripten?
-
-I wanted to understand the logic in the JavaScript.
-
-Also I don't do C and wasn't even able to compile the programs coming with
-libdvdread and libdvdnav on my PC... ^^;
+GPL-3.0 — see `LICENSE.txt`.

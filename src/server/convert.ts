@@ -1,32 +1,35 @@
 // Convert a DVD to a web suitable format.
 
-/// <reference path="../references.ts" />
-
 'use strict';
 
+import * as path from 'node:path';
+import { parseArgs } from 'node:util';
 
-import path = require('path');
-import optimist = require('optimist');
+import generateCatalogue from '../server/convert/generateCatalogue.js';
+import createDir from '../server/convert/createDir.js';
+import convertIfo from '../server/convert/convertIfo.js';
+import generateChapters from '../server/convert/generateChapters.js';
+import extractNavPackets from '../server/convert/extractNavPackets.js';
+import extractMenu from '../server/convert/extractMenu.js';
+import generateMenuCellTable from '../server/convert/generateMenuCellTable.js';
+import generateButtons from '../server/convert/generateButtons.js';
+import generateJavaScript from '../server/convert/generateJavaScript.js';
+import encodeVideo from '../server/convert/encodeVideo.js';
 
-import generateCatalogue = require('../server/convert/generateCatalogue');
-import createDir = require('../server/convert/createDir');
-import convertIfo = require('../server/convert/convertIfo');
-import generateChapters = require('../server/convert/generateChapters');
-import extractNavPackets = require('../server/convert/extractNavPackets');
-import extractMenu = require('../server/convert/extractMenu');
-import generateMenuCellTable = require('../server/convert/generateMenuCellTable');
-import generateButtons = require('../server/convert/generateButtons');
-import generateJavaScript = require('../server/convert/generateJavaScript');
-import encodeVideo = require('../server/convert/encodeVideo');
+const { values, positionals } = parseArgs({
+  allowPositionals: true,
+  options: {
+    help: {
+      type: 'boolean',
+      short: 'h',
+    },
+  },
+});
 
-var cli: optimist.Optimist = optimist(process.argv.slice(2));
-cli.usage('Convert a DVD for the web.\n' +
-    'Usage: $0 path/to/DVD/root');
-var dvdPath = cli.argv._[0];
+const dvdPath = positionals[0];
 
-// No param? Show help message then.
-if (!dvdPath) {
-  cli.showHelp();
+if (values.help || !dvdPath) {
+  console.log('Convert a DVD for the web.\nUsage: pnpm convert -- path/to/DVD/root');
   process.exit(0);
 }
 

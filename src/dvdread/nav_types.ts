@@ -1,7 +1,7 @@
 'use strict';
 
 
-import ifoTypes = require('../dvdread/ifo_types');
+import * as ifoTypes from '../dvdread/ifo_types.js';
 
 var dvd_time_t = ifoTypes.dvd_time_t;
 var vm_cmd_t = ifoTypes.vm_cmd_t;

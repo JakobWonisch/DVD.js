@@ -12,7 +12,6 @@
 'use strict';
 
 
-export = BinaryParser;
 
 /**
  * @constructor
@@ -156,3 +155,5 @@ BinaryParser.prototype.parse = function(description, param?) {
 
   throw new Error('Unknown description type ' + description);
 };
+
+export default BinaryParser;

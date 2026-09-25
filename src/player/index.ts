@@ -3,9 +3,8 @@
 'use strict';
 
 
-import utils = require('../utils');
+import * as utils from '../utils.js';
 
-export = Player;
 
 class Player {
   private screen: HTMLVideoElement;
@@ -54,3 +53,5 @@ class Player {
   appendVideoChunk() {
   }
 }
+
+export default Player;

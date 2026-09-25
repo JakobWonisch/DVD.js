@@ -3,19 +3,19 @@
 'use strict';
 
 
-import fs = require('fs');
-import path = require('path');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-import getDVDList = require('../utils/getDVDList');
-var config = require('../../../config/app.json');
+import getDVDList from '../utils/getDVDList.js';
+import appConfig from '../../loadAppConfig.js';
 
-export = generateCatalogue;
+export default generateCatalogue;
 
 function generateCatalogue(callback) {
   process.stdout.write('\nRegenerating the list of DVD:\n');
 
-  getDVDList(config.webFolder, function(availableDvds) {
-    var metaPath = path.join(config.webFolder, 'dvds.json');
+  getDVDList(appConfig.webFolder, function(availableDvds) {
+    var metaPath = path.join(appConfig.webFolder, 'dvds.json');
     fs.writeFile(metaPath, JSON.stringify(availableDvds), function(err) {
       if (err) {
         console.error(err);

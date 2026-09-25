@@ -1,5 +1,3 @@
-///<reference path='../../references.ts'/>
-
 'use strict';
 
 
@@ -107,4 +105,4 @@ class Stream {
   }
 }
 
-export = Stream;
+export default Stream;

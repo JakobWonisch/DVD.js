@@ -3,12 +3,12 @@
 'use strict';
 
 
-import fs = require('fs');
-import path = require('path');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-import serverUtils = require('../../server/utils/index');
+import * as serverUtils from '../../server/utils/index.js';
 
-export = createDir;
+export default createDir;
 
 /**
  * Create a subfolder to `webFolder` named like the DVD disc.

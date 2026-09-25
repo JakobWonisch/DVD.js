@@ -1,16 +1,15 @@
 // Generate menu cell table.
 
-/// <reference path="../../references.ts" />
-
 'use strict';
 
+import { loadJsonFile } from '../utils/loadJson.js';
 
-import fs = require('fs');
-import path = require('path');
-import child_process = require('child_process');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as child_process from 'node:child_process';
 
-import serverUtils = require('../../server/utils/index');
-import editMetadataFile = require('../../server/utils/editMetadataFile');
+import * as serverUtils from '../../server/utils/index.js';
+import editMetadataFile from '../../server/utils/editMetadataFile.js';
 
 var spawn = child_process.spawn;
 
@@ -21,7 +20,7 @@ var spawn = child_process.spawn;
  */
 var DVD_VIDEO_LB_LEN = 2048;
 
-export = extractMenu;
+export default extractMenu;
 
 /**
  * Generate menu cell table.
@@ -37,7 +36,7 @@ function extractMenu(dvdPath: string, callback) {
   var webPath = serverUtils.getWebPath(dvdPath);
 
   var ifoPath = getWebName('metadata');
-  var filesList = require(ifoPath);
+  var filesList = loadJsonFile(ifoPath);
 
   var menuCell = [];
   var pointer = 0;
@@ -47,7 +46,7 @@ function extractMenu(dvdPath: string, callback) {
   // There are better ways to do async...
   function next(ifoFile: string) {
     ifoFile = path.join(webPath, '../', ifoFile);
-    var json = require(ifoFile);
+    var json = loadJsonFile(ifoFile);
     var inputFile = path.join(dvdPath, 'VIDEO_TS', path.basename(ifoFile, '.json') + '.VOB')
       .replace(/ /, '\ ');
 

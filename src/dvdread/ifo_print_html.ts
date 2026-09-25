@@ -1,13 +1,13 @@
 'use strict';
 
 
-import ifoTypes = require('../dvdread/ifo_types');
-import ifoRead = require('../dvdread/ifo_read');
-import config = require('../config');
-import utils = require('../utils');
-import vm = require('../vm/index');
+import * as ifoTypes from '../dvdread/ifo_types.js';
+import * as ifoRead from '../dvdread/ifo_read.js';
+import * as config from '../config.js';
+import * as utils from '../utils.js';
+import vm from '../vm/index.js';
 
-export = ifo_print;
+export default ifo_print;
 
 var DEBUG = config.DEBUG;
 var sprintf = utils.sprintf;

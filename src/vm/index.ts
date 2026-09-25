@@ -1,10 +1,10 @@
 'use strict';
 
 
-import dvdTypes = require('../dvdnav/dvd_types');
-import ifoRead = require('../dvdread/ifo_read');
-import config = require('../config');
-import utils = require('../utils');
+import * as dvdTypes from '../dvdnav/dvd_types.js';
+import * as ifoRead from '../dvdread/ifo_read.js';
+import * as config from '../config.js';
+import * as utils from '../utils.js';
 
 var DVDMenuID = dvdTypes.DVDMenuID_t;
 var DVDDomain = dvdTypes.DVDDomain_t;
@@ -18,7 +18,6 @@ var deepEqual = utils.deepEqual;
 var sprintf = utils.sprintf;
 var assert = utils.assert;
 
-export = VM;
 
 // Audio stream number
 /** @const */ var AST_REG = 1;
@@ -2826,7 +2825,7 @@ class VM {
     '', '=', '<->', '+=', '-=', '*=', '/=', '%=', 'rnd', '&=', '|=', '^='
   ];
 
-  private static link_table = [
+  public static link_table = [
     'LinkNoLink',
     'LinkTopC',
     'LinkNextC',
@@ -2846,7 +2845,7 @@ class VM {
     'RSM'
   ];
 
-  private static system_reg_table = [
+  public static system_reg_table = [
     'Menu Description Language Code',
     'Audio Stream Number',
     'Sub-picture Stream Number',
@@ -2873,7 +2872,7 @@ class VM {
     'Reserved 23'
   ];
 
-  private static system_reg_abbr_table = [
+  public static system_reg_abbr_table = [
     '',
     'ASTN',
     'SPSTN',
@@ -3408,3 +3407,5 @@ class VM {
     return msg;
   }
 }
+
+export default VM;

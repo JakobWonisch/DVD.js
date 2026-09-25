@@ -1,16 +1,14 @@
-///<reference path='../references.ts'/>
-
 'use strict';
 
 
-import DvdReader = require('../dvdread/index');
-import VM = require('../vm/index');
-import Player = require('../player/index');
-import dvdTypes = require('../dvdnav/dvd_types');
-import dvdEvents = require('../dvdnav/dvdnav_events');
-import config = require('../config');
-import utils = require('../utils');
-var EventEmitter: any = require('../../../bower_components/eventEmitter/EventEmitter.min.js');
+import DvdReader from '../dvdread/index.js';
+import VM from '../vm/index.js';
+import Player from '../player/index.js';
+import * as dvdTypes from '../dvdnav/dvd_types.js';
+import * as dvdEvents from '../dvdnav/dvdnav_events.js';
+import * as config from '../config.js';
+import * as utils from '../utils.js';
+import EventEmitter from 'eventemitter3';
 
 var LOG_DEBUG = config.DEBUG;
 var DVDDomain_t = dvdTypes.DVDDomain_t;
@@ -27,7 +25,6 @@ enum DSI_ILVU {
   MASK = 0xF000
 }
 
-export = dvdnav;
 
 /**
  * The main DVDNAV type.
@@ -737,3 +734,5 @@ dvdnav.prototype.nextBlock = function() {
   }
   this.get_next_cache_block();
 };
+
+export default dvdnav;

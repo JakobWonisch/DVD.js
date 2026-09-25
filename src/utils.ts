@@ -1,9 +1,7 @@
-/// <reference path="declarations/dataview.d.ts" />
-
 'use strict';
 
 
-import defaultValues = require('./config');
+import * as defaultValues from './config.js';
 
 var DEBUG = defaultValues.DEBUG;
 

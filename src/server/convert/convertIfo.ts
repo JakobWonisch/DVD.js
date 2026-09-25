@@ -5,23 +5,22 @@
 'use strict';
 
 
-import fs = require('fs');
-import path = require('path');
-import glob = require('glob');
-var jDataView: jDataViewStatic = require('jdataview');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import jDataView from 'jdataview';
 
-import ifoRead = require('../../dvdread/ifo_read');
-import dvdRead = require('../../dvdread/index');
-import ifoTypes = require('../../dvdread/ifo_types');
-import dvdTypes = require('../../dvdnav/dvd_types');
-import serverUtils = require('../../server/utils/index');
-import editMetadataFile = require('../../server/utils/editMetadataFile');
+import * as ifoRead from '../../dvdread/ifo_read.js';
+import * as ifoTypes from '../../dvdread/ifo_types.js';
+import * as dvdTypes from '../../dvdnav/dvd_types.js';
+import * as serverUtils from '../../server/utils/index.js';
+import editMetadataFile from '../../server/utils/editMetadataFile.js';
+import { globFiles } from '../../server/utils/globFiles.js';
 
 var ifo_handle_t = ifoTypes.ifo_handle_t;
 var dvd_file_t = dvdTypes.dvd_file_t;
 var getFileIndex = serverUtils.getFileIndex;
 
-export = convertIfo;
+export default convertIfo;
 
 /**
  * Convert IFO files from a folder to JSON files.
@@ -36,7 +35,7 @@ function convertIfo(dvdPath: string, callback) {
   var webPath = serverUtils.getWebPath(dvdPath);
 
   var ifoPath = path.join(dvdPath, 'VIDEO_TS', '*.IFO');
-  glob(ifoPath, function(err, ifoFiles) {
+  globFiles(ifoPath, function(err, ifoFiles) {
     if (err) {
       console.error(err);
     }
