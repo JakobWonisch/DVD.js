@@ -551,9 +551,9 @@ function compile_link_instruction(command, optional: boolean) {
     case 7:
       // LinkCN x (button y)
       // Link to a cell in the same PGC.
-      code += sprintf('console.log(\'LinkCN %s (button %d)\');',
-        getbits(command, 7, 8),
-        getbits(command, 15, 6)
+      code += sprintf('sprm["HL_BTNN"] = %s * 0x0400; /* LinkCN %s in current PGC */ return 1;',
+        getbits(command, 15, 6),
+        getbits(command, 7, 8)
       );
       break;
     default:
