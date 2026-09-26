@@ -489,6 +489,10 @@ function compile_linksub_instruction(command) {
         // Link to post-command section of current PGC.
         code += sprintf('MPGCIUT[domain][lang][pgc].post();');
         break;
+      case 16:
+        // RSM — resume at CallSS saved cell (rsm_cell).
+        code += highlight + '/* RSM: resume at rsm_cell */ return 1;';
+        break;
       default:
         code += sprintf('console.log(\'%s (button %d)\');',
           VM.link_table[op],
