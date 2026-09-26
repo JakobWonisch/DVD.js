@@ -387,7 +387,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     jumpSub: 0,
     fields: jumpCmd(6, [{ start: 23, count: 2, value: 0 }]),
     expect: '{ fp_pgc(); return 1; }',
-    status: 'stub',
+    status: 'ok',
     refs: [REF_MPU, REF_WIKI],
   },
   {

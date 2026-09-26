@@ -557,7 +557,7 @@ function compile_jump_instruction(command) {
       switch (getbits(command, 23, 2)) {
         case 0:
           // JumpSS FP
-          code += 'console.log(\'JumpSS FP\'); return 1;';
+          code += 'fp_pgc(); return 1;';
           break;
         case 1:
           // JumpSS VMGM (menu x)
