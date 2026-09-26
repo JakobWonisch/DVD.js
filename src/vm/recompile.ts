@@ -430,9 +430,17 @@ function compile_special_instruction(command) {
 function compile_linksub_instruction(command) {
   var code = '';
   var op = getbits(command, 7, 8);
+  var button = getbits(command, 15, 6);
+  var highlight = button
+    ? sprintf('sprm["HL_BTNN"] = %s * 0x0400; ', button)
+    : '';
 
   if (op < VM.link_table.length && VM.link_table[op] !== '') {
     switch (op) {
+      case 0:
+        // LinkNoLink — highlight only; no transfer of control.
+        code += highlight.replace(/; $/, ';');
+        break;
       case 1:
         // LinkTopC
         // Link to current cell in the same PGC.
@@ -448,7 +456,7 @@ function compile_linksub_instruction(command) {
       default:
         code += sprintf('console.log(\'%s (button %d)\');',
           VM.link_table[op],
-          getbits(command, 15, 6)
+          button
         );
         break;
     }

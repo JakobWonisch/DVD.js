@@ -139,7 +139,7 @@ function linkSubFixtures(): OpcodeFixture[] {
         linkSub: 0,
         fields: linkSub(0, 2),
         expect: `{ sprm["HL_BTNN"] = 2 * 0x0400; }`,
-        status: 'stub',
+        status: 'ok',
         refs: [REF_MPU, REF_WIKI],
         notes: 'Highlight only when button nonzero; no transfer of control.',
       };
@@ -327,7 +327,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     linkSub: 0,
     fields: linkSub(0, 0),
     expect: '{ }',
-    status: 'stub',
+    status: 'ok',
     refs: [REF_MPU, REF_WIKI],
     notes: 'hl_bn 0 → leave HL_BTNN unchanged (wikibooks Link Subset).',
   },
