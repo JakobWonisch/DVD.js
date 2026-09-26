@@ -524,7 +524,7 @@ function compile_jump_instruction(command) {
     case 1:
       // Exit
       // Terminate the playback of a video DVD.
-      code += 'console.log(\'Exit\'); return 1;';
+      code += 'return 1;';
       break;
     case 2:
       // JumpTT x

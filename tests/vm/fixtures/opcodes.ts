@@ -338,9 +338,9 @@ export const opcodeFixtures: OpcodeFixture[] = [
     group: 1,
     fields: jumpCmd(1),
     expect: '{ return 1; }',
-    status: 'stub',
+    status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
-    notes: 'Exit terminates playback; no console.log in desired emission.',
+    notes: 'Exit terminates playback; no console.log.',
   },
   {
     id: 'JumpTT_1',
