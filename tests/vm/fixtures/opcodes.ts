@@ -855,9 +855,9 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 7, count: 8, value: 1 },
     ],
     expect: 'gprm[0x00] = 0x09; if (gprm[0x00] === 0x09) { return 1; }',
-    status: 'bug',
+    status: 'ok',
     refs: [REF_MPU, REF_DVDNAV, REF_NONGOAL],
-    notes: 'SetCLnk: set then conditional LinkSub. Desired clean JS (no stray comma).',
+    notes: 'SetCLnk: set then conditional LinkSub. Clean JS (no stray comma).',
   },
   {
     id: 'CSetCLnk_group5_LinkTailPGC',

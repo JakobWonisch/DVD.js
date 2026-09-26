@@ -141,7 +141,7 @@ function compileSingleCommand(vm_command) {
       break;
     case 4: // Set, Compare -> LinkSub instructions
       code += compile_set_version_2(command);
-      code += ', ';
+      code += ' ';
       code += compile_if_version_4(command);
       code += '{ ';
       code += compile_linksub_instruction(command);
