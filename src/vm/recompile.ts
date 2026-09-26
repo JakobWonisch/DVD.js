@@ -456,6 +456,10 @@ function compile_linksub_instruction(command) {
         // LinkPrevC
         code += highlight + '/* LinkPrevC */ return 1;';
         break;
+      case 5:
+        // LinkTopPG
+        code += highlight + '/* LinkTopPG */ return 1;';
+        break;
       case 13:
         // LinkTailPGC
         // Link to post-command section of current PGC.
