@@ -2884,7 +2884,7 @@ class VM {
     'HL_BTNN',
     'NVTMR',
     'NV_PGCN',
-    '',
+    'AMXMD',
     'CC_PLT',
     'PLT',
     '',

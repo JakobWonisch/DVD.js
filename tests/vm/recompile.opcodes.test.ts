@@ -75,10 +75,24 @@ describe('vm/recompile opcodes', () => {
   });
 
   describe('cross-check notes', () => {
-    it('records SetAMXMD as missing (mpucoder vmi44 / SPRM11)', () => {
+    it('records SetAMXMD as writing SPRM 11 (mpucoder vmi44)', () => {
       const f = opcodeFixtures.find((x) => x.id === 'SetAMXMD_imm');
       expect(f?.status).toBe('missing');
+      expect(normalizeJs(f!.expect)).toContain('sprm["AMXMD"]');
       expect(f?.refs.some((r) => /mpucoder|vmi44/i.test(r))).toBe(true);
+    });
+
+    it('records CallSS saving rsm_cell before jump', () => {
+      const f = opcodeFixtures.find((x) => x.id === 'CallSS_FP');
+      expect(normalizeJs(f!.expect)).toMatch(/rsm_cell\s*=\s*2/);
+      expect(normalizeJs(f!.expect)).toContain('fp_pgc()');
+    });
+
+    it('records SetGPRMMD register and counter modes', () => {
+      const counter = opcodeFixtures.find((x) => x.id === 'SetGPRMMD_counter');
+      const reg = opcodeFixtures.find((x) => x.id === 'SetGPRMMD_register');
+      expect(normalizeJs(counter!.expect)).toContain('gprm_mode[0x00] |= 1');
+      expect(normalizeJs(reg!.expect)).toContain('gprm_mode[0x01] &= ~1');
     });
 
     it('records SetTmpPML+Goto desired parental + pc', () => {

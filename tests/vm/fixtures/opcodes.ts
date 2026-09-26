@@ -141,7 +141,7 @@ function linkSubFixtures(): OpcodeFixture[] {
         expect: `{ sprm["HL_BTNN"] = 2 * 0x0400; }`,
         status: 'stub',
         refs: [REF_MPU, REF_WIKI],
-        notes: 'Desired: highlight only (button << 10). Today logs LinkNoLink.',
+        notes: 'Highlight only when button nonzero; no transfer of control.',
       };
     }
     return {
@@ -152,7 +152,7 @@ function linkSubFixtures(): OpcodeFixture[] {
       fields: linkSub(sub, 1),
       expect:
         sub === 16
-          ? '{ sprm["HL_BTNN"] = 1 * 0x0400; /* RSM: restore CallSS resume point */ return 1; }'
+          ? '{ sprm["HL_BTNN"] = 1 * 0x0400; /* RSM: resume at rsm_cell */ return 1; }'
           : `{ sprm["HL_BTNN"] = 1 * 0x0400; /* ${name} */ return 1; }`,
       status: 'stub',
       refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
@@ -319,7 +319,18 @@ export const opcodeFixtures: OpcodeFixture[] = [
     status: 'ok',
     refs: [REF_MPU],
   },
-  ...linkSubFixtures(),
+    ...linkSubFixtures(),
+  {
+    id: 'LinkNoLink_button0',
+    group: 1,
+    linkNibble: 1,
+    linkSub: 0,
+    fields: linkSub(0, 0),
+    expect: '{ }',
+    status: 'stub',
+    refs: [REF_MPU, REF_WIKI],
+    notes: 'hl_bn 0 → leave HL_BTNN unchanged (wikibooks Link Subset).',
+  },
 
   // --- Group 1 jumps / calls ---
   {
@@ -430,9 +441,10 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 23, count: 2, value: 0 },
       { start: 31, count: 8, value: 2 },
     ]),
-    expect: '{ /* save resume incl rsm_cell 2 */ fp_pgc(); return 1; }',
+    expect: '{ rsm_cell = 2; fp_pgc(); return 1; }',
     status: 'stub',
     refs: [REF_MPU, REF_WIKI],
+    notes: 'CallSS saves resume cell then jumps (libdvdnav set_RSMinfo).',
   },
   {
     id: 'CallSS_VMGM_MENU',
@@ -444,7 +456,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 31, count: 8, value: 1 },
     ]),
     expect:
-      '{ /* save resume rsm_cell 1 */ var menu = MENU_TYPES[0][lang][2]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1; }',
+      '{ rsm_cell = 1; var menu = MENU_TYPES[0][lang][2]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1; }',
     status: 'stub',
     refs: [REF_MPU, REF_WIKI],
   },
@@ -458,7 +470,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 31, count: 8, value: 1 },
     ]),
     expect:
-      '{ /* save resume */ var menu = MENU_TYPES[domain][lang][3]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1; }',
+      '{ rsm_cell = 1; var menu = MENU_TYPES[domain][lang][3]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1; }',
     status: 'stub',
     refs: [REF_MPU, REF_WIKI],
   },
@@ -472,10 +484,9 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 31, count: 8, value: 2 },
     ]),
     expect:
-      '{ /* save resume rsm_cell 2 */ clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][4].run.bind(MPGCIUT[0][lang][4])); return 1; }',
+      '{ rsm_cell = 2; clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][4].run.bind(MPGCIUT[0][lang][4])); return 1; }',
     status: 'stub',
     refs: [REF_MPU, REF_WIKI],
-    notes: 'Partial today: jumps but only comments rsm_cell.',
   },
 
   // --- Group 2 system set ---
@@ -535,6 +546,20 @@ export const opcodeFixtures: OpcodeFixture[] = [
     refs: [REF_MPU, REF_DVDNAV],
   },
   {
+    id: 'SetSTN_ASTN_reg',
+    group: 2,
+    systemSetOp: 1,
+    setImmediate: false,
+    fields: systemSet(1, false, [
+      { start: 39, count: 1, value: 1 },
+      { start: 35, count: 4, value: 3 },
+    ]),
+    expect: '{ sprm["ASTN"] /*Audio Stream Number (SRPM:1)*/ = gprm[0x03]; }',
+    status: 'ok',
+    refs: [REF_MPU, REF_DVDNAV],
+    notes: 'Non-immediate SetSTN: source is gprm nibble (compile_reg_or_data_2).',
+  },
+  {
     id: 'SetNVTMR',
     group: 2,
     systemSetOp: 2,
@@ -567,6 +592,21 @@ export const opcodeFixtures: OpcodeFixture[] = [
       'SetGPRMMD: set counter/register mode then assign (libdvdnav eval_system_set case 3).',
   },
   {
+    id: 'SetGPRMMD_register',
+    group: 2,
+    systemSetOp: 3,
+    setImmediate: true,
+    fields: systemSet(3, true, [
+      { start: 23, count: 1, value: 0 },
+      { start: 19, count: 4, value: 1 },
+      { start: 47, count: 16, value: 5 },
+    ]),
+    expect: '{ gprm_mode[0x01] &= ~1; gprm[0x01] = 0x05; }',
+    status: 'bug',
+    refs: [REF_MPU, REF_DVDNAV],
+    notes: 'SetGPRMMD register mode clears counter bit then assigns.',
+  },
+  {
     id: 'SetAMXMD_imm',
     group: 2,
     systemSetOp: 4,
@@ -574,11 +614,11 @@ export const opcodeFixtures: OpcodeFixture[] = [
     fields: systemSet(4, true, [
       { start: 47, count: 16, value: 0 },
     ]),
-    expect: '{ /* SetAMXMD: Audio Mixing Mode for Karaoke (SPRM11) */ }',
+    expect:
+      '{ sprm["AMXMD"] /*Audio Mixing Mode for Karaoke (SRPM:11)*/ = 0x00; }',
     status: 'missing',
     refs: [REF_MPU, 'http://www.mpucoder.com/DVD/vmi44.html'],
-    notes:
-      'System-set op 4 (SetAMXMD). Absent in recompile and libdvdnav eval_system_set. Karaoke-only.',
+    notes: 'System-set op 4 (SetAMXMD) writes SPRM 11 (mpucoder vmi44).',
   },
   {
     id: 'SetAMXMD_reg',
@@ -588,7 +628,8 @@ export const opcodeFixtures: OpcodeFixture[] = [
     fields: systemSet(4, false, [
       { start: 19, count: 4, value: 2 },
     ]),
-    expect: '{ /* SetAMXMD from gprm[0x02] → SPRM11 karaoke mix */ }',
+    expect:
+      '{ sprm["AMXMD"] /*Audio Mixing Mode for Karaoke (SRPM:11)*/ = gprm[0x02]; }',
     status: 'missing',
     refs: [REF_MPU, 'http://www.mpucoder.com/DVD/vmi44.html'],
   },
@@ -604,7 +645,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 14, count: 15, value: 1 },
     ],
     expect:
-      '{ /* SetAMXMD */ clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][1].run.bind(MPGCIUT[domain][lang][1])); return 1; }',
+      '{ sprm["AMXMD"] /*Audio Mixing Mode for Karaoke (SRPM:11)*/ = 0x00; clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][1].run.bind(MPGCIUT[domain][lang][1])); return 1; }',
     status: 'missing',
     refs: [REF_MPU, 'http://www.mpucoder.com/DVD/vmi44.html'],
     notes: 'Optional post-set link after SetAMXMD (mpucoder K link field).',

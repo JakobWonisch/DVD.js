@@ -7,7 +7,9 @@ export const RUNTIME_GLOBALS = [
   'domain',
   'pgc',
   'gprm',
+  'gprm_mode',
   'sprm',
+  'rsm_cell',
   'MPGCIUT',
   'PGCIUT',
   'VTT_TABLE',
@@ -15,6 +17,7 @@ export const RUNTIME_GLOBALS = [
   'MENU_TYPES',
   'dvd',
   't',
+  'fp_pgc',
 ] as const;
 
 /** sprm keys initialized in generateJavaScript.ts */
@@ -29,6 +32,7 @@ export const SPRM_KEYS = [
   'HL_BTNN',
   'NVTMR',
   'NV_PGCN',
+  'AMXMD',
   'CC_PLT',
   'PLT',
 ] as const;
