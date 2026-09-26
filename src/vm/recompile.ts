@@ -151,7 +151,7 @@ function compileSingleCommand(vm_command) {
       code += compile_if_version_5(command);
       code += '{ ';
       code += compile_set_version_3(command);
-      code += ', ';
+      code += ' ';
       code += compile_linksub_instruction(command);
       code += ' }';
       break;

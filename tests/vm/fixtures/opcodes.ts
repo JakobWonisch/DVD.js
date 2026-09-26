@@ -881,7 +881,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ],
     expect:
       'if (gprm[0x00] === 0x00) { gprm[0x00] = gprm[0x00]; MPGCIUT[domain][lang][pgc].post(); }',
-    status: 'bug',
+    status: 'ok',
     refs: [REF_MPU, REF_DVDNAV, REF_NONGOAL],
     notes: 'CSetCLnk: if { set; linksub }. set_immediate=0 branch of if_version_5.',
   },
@@ -906,7 +906,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ],
     expect:
       'if (gprm[0x00] === gprm[0x01]) { gprm[0x00] = 0x01; MPGCIUT[domain][lang][pgc].post(); }',
-    status: 'bug',
+    status: 'ok',
     refs: [REF_MPU, REF_DVDNAV, REF_NONGOAL],
     notes: 'set_immediate=1 alternate compare layout in if_version_5 (gprm vs gprm).',
   },
