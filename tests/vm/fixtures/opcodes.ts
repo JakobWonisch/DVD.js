@@ -570,10 +570,10 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ]),
     expect:
       '{ sprm["NVTMR"] /*Navigation Timer (SRPM:9)*/ = 0x64; sprm["NV_PGCN"] /*Title PGC Number for Navigation Timer (SRPM:10)*/ = 5; }',
-    status: 'bug',
+    status: 'ok',
     refs: [REF_MPU, REF_DVDNAV],
     notes:
-      'Desired: semicolon between assignments. NV_PGCN width: recompile getbits(30,15); eval uses getbits(23,8) — fixtures follow recompile/print.',
+      'Semicolon between NVTMR and NV_PGCN assignments. NV_PGCN width: recompile getbits(30,15); eval uses getbits(23,8) — fixtures follow recompile/print.',
   },
   {
     id: 'SetGPRMMD_counter',

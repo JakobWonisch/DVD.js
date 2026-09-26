@@ -694,11 +694,10 @@ function compile_system_set(command) {
       code += compile_system_reg(9);
       code += ' = ';
       code += compile_reg_or_data(command, !!getbits(command, 60, 1), 47);
-      code += ' ';
+      code += '; ';
       code += compile_system_reg(10);
       code += sprintf(' = %s', getbits(command, 30, 15));
       code += ';';
-      // ??
       break;
     case 3: // Mode: Counter / Register + Set
       code += 'SetMode ';
