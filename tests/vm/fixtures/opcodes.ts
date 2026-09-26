@@ -295,7 +295,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 15, count: 6, value: 1 },
     ]),
     expect: '{ sprm["HL_BTNN"] = 1 * 0x0400; /* LinkPGN 2 in current PGC */ return 1; }',
-    status: 'stub',
+    status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
   },
   {

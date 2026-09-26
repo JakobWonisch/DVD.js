@@ -543,9 +543,9 @@ function compile_link_instruction(command, optional: boolean) {
     case 6:
       // LinkPGN x (button y)
       // Link to a program in the same PGC.
-      code += sprintf('console.log(\'LinkPGN %s (button %d)\');',
-        getbits(command, 6, 7),
-        getbits(command, 15, 6)
+      code += sprintf('sprm["HL_BTNN"] = %s * 0x0400; /* LinkPGN %s in current PGC */ return 1;',
+        getbits(command, 15, 6),
+        getbits(command, 6, 7)
       );
       break;
     case 7:
