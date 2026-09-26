@@ -34,6 +34,18 @@ export function getFileSuffix(name: string): number {
 }
 
 /**
+ * True for menu-domain VOB paths: VIDEO_TS.VOB (VMGM) or VTS_XX_0.VOB (VTSM).
+ * Title content lives in VTS_XX_[1-9].VOB.
+ *
+ * @param {string} filePath Absolute or relative path to a .VOB file.
+ * @return {boolean}
+ */
+export function isMenuVob(filePath: string): boolean {
+  var name = path.basename(filePath);
+  return /VIDEO_TS\.VOB$/i.test(name) || /VTS_\d{1,2}_0\.VOB$/i.test(name);
+}
+
+/**
  * Break a filename on `_` and return the index coerced to number.
  *
  * @param {string} name A file name.
