@@ -596,8 +596,8 @@ function compile_jump_instruction(command) {
         case 1:
           // CallSS VMGM (menu x, rsm_cell y)
           // x is the type of menu (Root, Title...)
-          code += sprintf('console.log(\'CallSS VMGM (menu %s, rsm_cell %s)\'); return 1;',
-            getbits(command, 19, 4), getbits(command, 31, 8));
+          code += sprintf('rsm_cell = %s; var menu = MENU_TYPES[0][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
+            getbits(command, 31, 8), getbits(command, 19, 4));
           break;
         case 2:
           // CallSS VTSM (menu x, rsm_cell y)
