@@ -37,6 +37,8 @@ function generateJavaScript(dvdPath: string, callback) {
     'var lang = "en";',
     'var domain = 0;',
     'var pgc = 0;',
+    'var pgN = 1;',
+    'var cellN = 1;',
     'var gprm = Array(16);',
     'var gprm_mode = Array(16);',
     'var rsm_cell = 0;',
@@ -206,6 +208,9 @@ function generateJavaScript(dvdPath: string, callback) {
             }
             code = code.concat([
               '},',
+                'next_pgc: ' + (pgci_srp.pgc.next_pgc_nr || 0) + ',',
+                'prev_pgc: ' + (pgci_srp.pgc.prev_pgc_nr || 0) + ',',
+                'goup_pgc: ' + (pgci_srp.pgc.goup_pgc_nr || 0) + ',',
                 'pre: function() {' + recompile(pgci_srp.pgc.command_tbl.pre_cmds) + '},',
                 'post: function() {' + recompile(pgci_srp.pgc.command_tbl.post_cmds) + '},',
                 'cell: function() {' + recompile(pgci_srp.pgc.command_tbl.cell_cmds) + '}',

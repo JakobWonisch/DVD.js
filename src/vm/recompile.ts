@@ -74,7 +74,8 @@ function compileCommandsWithGoTo(vm_commands) {
 }
 
 /**
- * Determine whether the set of commands has a GoTo command.
+ * Determine whether the set of commands needs a pc switch loop.
+ * GoTo (special op 1) and SetTmpPML (special op 3, which includes Goto) both assign `pc`.
  *
  * @param {Array} vm_commands
  * @returns {boolean}
@@ -85,7 +86,11 @@ function hasGoTo(vm_commands) {
       return sprintf('%08i', (byte).toString(2));
     }).join('');
 
-    return getbits(command, 63, 3) === 0 && getbits(command, 51, 4) === 1;
+    if (getbits(command, 63, 3) !== 0) {
+      return false;
+    }
+    var special = getbits(command, 51, 4);
+    return special === 1 || special === 3;
   });
 }
 
@@ -442,56 +447,57 @@ function compile_linksub_instruction(command) {
         code += highlight.replace(/; $/, ';');
         break;
       case 1:
-        // LinkTopC
-        // Link to current cell in the same PGC.
-        // We should have an infinite loop while we wait for a user interaction.
-        // For now, we just return 1 to avoid the post command to be executed.
-        code += sprintf('return 1;');
+        // LinkTopC — restart current cell (short-circuit further PGC steps).
+        code += highlight + 'return 1;';
         break;
       case 2:
         // LinkNextC
-        code += highlight + '/* LinkNextC */ return 1;';
+        code += highlight + 'cellN += 1; return 1;';
         break;
       case 3:
         // LinkPrevC
-        code += highlight + '/* LinkPrevC */ return 1;';
+        code += highlight + 'cellN -= 1; return 1;';
         break;
       case 5:
-        // LinkTopPG
-        code += highlight + '/* LinkTopPG */ return 1;';
+        // LinkTopPG — restart current program.
+        code += highlight + 'return 1;';
         break;
       case 6:
         // LinkNextPG
-        code += highlight + '/* LinkNextPG */ return 1;';
+        code += highlight + 'pgN += 1; return 1;';
         break;
       case 7:
         // LinkPrevPG
-        code += highlight + '/* LinkPrevPG */ return 1;';
+        code += highlight + 'pgN -= 1; return 1;';
         break;
       case 9:
-        // LinkTopPGC
-        code += highlight + '/* LinkTopPGC */ return 1;';
+        // LinkTopPGC — restart current PGC (re-run including pre).
+        code += highlight +
+          'clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][pgc].run.bind(MPGCIUT[domain][lang][pgc])); return 1;';
         break;
       case 10:
         // LinkNextPGC
-        code += highlight + '/* LinkNextPGC */ return 1;';
+        code += highlight +
+          'var _pgc = MPGCIUT[domain][lang][pgc].next_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1;';
         break;
       case 11:
         // LinkPrevPGC
-        code += highlight + '/* LinkPrevPGC */ return 1;';
+        code += highlight +
+          'var _pgc = MPGCIUT[domain][lang][pgc].prev_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1;';
         break;
       case 12:
         // LinkGoUpPGC
-        code += highlight + '/* LinkGoUpPGC */ return 1;';
+        code += highlight +
+          'var _pgc = MPGCIUT[domain][lang][pgc].goup_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1;';
         break;
       case 13:
         // LinkTailPGC
         // Link to post-command section of current PGC.
-        code += sprintf('MPGCIUT[domain][lang][pgc].post();');
+        code += highlight + sprintf('MPGCIUT[domain][lang][pgc].post();');
         break;
       case 16:
         // RSM — resume at CallSS saved cell (rsm_cell).
-        code += highlight + '/* RSM: resume at rsm_cell */ return 1;';
+        code += highlight + 'cellN = rsm_cell; return 1;';
         break;
       default:
         code += sprintf('console.log(\'%s (button %d)\');',
@@ -543,7 +549,7 @@ function compile_link_instruction(command, optional: boolean) {
     case 6:
       // LinkPGN x (button y)
       // Link to a program in the same PGC.
-      code += sprintf('sprm["HL_BTNN"] = %s * 0x0400; /* LinkPGN %s in current PGC */ return 1;',
+      code += sprintf('sprm["HL_BTNN"] = %s * 0x0400; pgN = %s; return 1;',
         getbits(command, 15, 6),
         getbits(command, 6, 7)
       );
@@ -551,7 +557,7 @@ function compile_link_instruction(command, optional: boolean) {
     case 7:
       // LinkCN x (button y)
       // Link to a cell in the same PGC.
-      code += sprintf('sprm["HL_BTNN"] = %s * 0x0400; /* LinkCN %s in current PGC */ return 1;',
+      code += sprintf('sprm["HL_BTNN"] = %s * 0x0400; cellN = %s; return 1;',
         getbits(command, 15, 6),
         getbits(command, 7, 8)
       );

@@ -94,6 +94,23 @@ describe('vm/recompile GoTo multi-command', () => {
     expect(out).toContain('case 1: if (gprm[0x00] === 0x01) { pc = 2; } break;');
   });
 
+  it('SetTmpPML alone wraps in pc switch because it assigns pc', () => {
+    const setTmpPml = cmd(
+      packCommand([
+        { start: 63, count: 3, value: 0 },
+        { start: 51, count: 4, value: 3 },
+        { start: 11, count: 4, value: 8 },
+        { start: 7, count: 8, value: 2 },
+      ]),
+    );
+    const out = run([setTmpPml, brk()]);
+    expect(out).toContain('var pc = 1;');
+    expect(out).toContain('while(true)');
+    expect(out).toContain('sprm["PLT"]');
+    expect(out).toContain('pc = 2;');
+    expect(out).toContain('case 2:');
+  });
+
   // Desired: NOP is empty inside the switch (libdvdnav no-op), not console.log.
   it.todo(
     'NOP in a GoTo program should compile to an empty case body: case N: { } break;',

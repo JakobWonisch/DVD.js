@@ -116,7 +116,7 @@ function linkSubFixtures(): OpcodeFixture[] {
         expect: '{ return 1; }',
         status: 'ok',
         refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
-        notes: 'Runtime: return 1 short-circuits pre/cell.',
+        notes: 'Restart current cell; return 1 short-circuits pre/cell.',
       };
     }
     if (sub === 13) {
@@ -144,17 +144,26 @@ function linkSubFixtures(): OpcodeFixture[] {
         notes: 'Highlight only when button nonzero; no transfer of control.',
       };
     }
+    const expects: Record<number, string> = {
+      2: '{ sprm["HL_BTNN"] = 1 * 0x0400; cellN += 1; return 1; }',
+      3: '{ sprm["HL_BTNN"] = 1 * 0x0400; cellN -= 1; return 1; }',
+      5: '{ sprm["HL_BTNN"] = 1 * 0x0400; return 1; }',
+      6: '{ sprm["HL_BTNN"] = 1 * 0x0400; pgN += 1; return 1; }',
+      7: '{ sprm["HL_BTNN"] = 1 * 0x0400; pgN -= 1; return 1; }',
+      9: '{ sprm["HL_BTNN"] = 1 * 0x0400; clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][pgc].run.bind(MPGCIUT[domain][lang][pgc])); return 1; }',
+      10: '{ sprm["HL_BTNN"] = 1 * 0x0400; var _pgc = MPGCIUT[domain][lang][pgc].next_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1; }',
+      11: '{ sprm["HL_BTNN"] = 1 * 0x0400; var _pgc = MPGCIUT[domain][lang][pgc].prev_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1; }',
+      12: '{ sprm["HL_BTNN"] = 1 * 0x0400; var _pgc = MPGCIUT[domain][lang][pgc].goup_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1; }',
+      16: '{ sprm["HL_BTNN"] = 1 * 0x0400; cellN = rsm_cell; return 1; }',
+    };
     return {
       id: name,
       group: 1,
       linkNibble: 1,
       linkSub: sub,
       fields: linkSub(sub, 1),
-      expect:
-        sub === 16
-          ? '{ sprm["HL_BTNN"] = 1 * 0x0400; /* RSM: resume at rsm_cell */ return 1; }'
-          : `{ sprm["HL_BTNN"] = 1 * 0x0400; /* ${name} */ return 1; }`,
-      status: new Set([2,3,5,6,7,9,10,11,12,16]).has(sub) ? 'ok' : 'stub',
+      expect: expects[sub]!,
+      status: 'ok',
       refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
     };
   });
@@ -194,11 +203,12 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 11, count: 4, value: 8 },
       { start: 7, count: 8, value: 2 },
     ]),
-    expect: '{ sprm["PLT"] /*Parental Level (SRPM:13)*/ = 8; pc = 2; }',
+    expect:
+      'var pc = 1; while(true) { switch(pc++) { case 1: { sprm["PLT"] /*Parental Level (SRPM:13)*/ = 8; pc = 2; } break; default: return; } }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
     notes:
-      'mpucoder/libdvdnav: SetTmpPML sets SPRM[13] then Goto line.',
+      'SetTmpPML sets SPRM[13] then Goto; hasGoTo must wrap in pc switch (same as GoTo).',
   },
   {
     id: 'Special_invalid_4',
@@ -294,7 +304,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 6, count: 7, value: 2 },
       { start: 15, count: 6, value: 1 },
     ]),
-    expect: '{ sprm["HL_BTNN"] = 1 * 0x0400; /* LinkPGN 2 in current PGC */ return 1; }',
+    expect: '{ sprm["HL_BTNN"] = 1 * 0x0400; pgN = 2; return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
   },
@@ -306,7 +316,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 7, count: 8, value: 3 },
       { start: 15, count: 6, value: 1 },
     ]),
-    expect: '{ sprm["HL_BTNN"] = 1 * 0x0400; /* LinkCN 3 in current PGC */ return 1; }',
+    expect: '{ sprm["HL_BTNN"] = 1 * 0x0400; cellN = 3; return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
   },

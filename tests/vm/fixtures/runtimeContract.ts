@@ -6,6 +6,8 @@ export const RUNTIME_GLOBALS = [
   'lang',
   'domain',
   'pgc',
+  'pgN',
+  'cellN',
   'gprm',
   'gprm_mode',
   'sprm',
@@ -53,4 +55,6 @@ generateJavaScript runtime contract:
 - JumpVTS_*: PTT_TABLE + dvd.playChapter
 - JumpSS VMGM menu / VTSM: MENU_TYPES[…] then MPGCIUT[menu.domain][menu.lang][menu.pgc]
 - HL_BTNN at runtime is button_id * 0x0400
+- cellN / pgN: LinkNextC/PrevC/PGN/CN and RSM mutate these
+- MPGCIUT[…][pgc].next_pgc / prev_pgc / goup_pgc: LinkNextPGC / PrevPGC / GoUpPGC
 `.trim();
