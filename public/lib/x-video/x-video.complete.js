@@ -494,6 +494,71 @@
         }
     }
 
+    var TITLE_UNAVAILABLE_MESSAGE = 'Title video was not included in this archive.';
+
+    /**
+     * Show a message when JumpTT / play targets a title that was not ripped
+     * (menu-only convert). Menus stay usable after dismiss via playMenuByID.
+     *
+     * @param {Object} xVideo
+     * @param {string=} message
+     */
+    function showTitleUnavailable(xVideo, message) {
+        hideAllMenu(xVideo);
+        try {
+            if (typeof xVideo.pause === 'function') {
+                xVideo.pause();
+            }
+        } catch (e) {
+            // ignore
+        }
+
+        var host = xVideo;
+        var style = window.getComputedStyle(host);
+        if (style.position === 'static') {
+            host.style.position = 'relative';
+        }
+
+        var el = xVideo.querySelector('.dvdjs-title-unavailable');
+        if (!el) {
+            el = document.createElement('div');
+            el.className = 'dvdjs-title-unavailable';
+            el.setAttribute('role', 'status');
+            el.style.cssText =
+                'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
+                'background:rgba(0,0,0,0.85);color:#fff;font:16px/1.4 sans-serif;text-align:center;' +
+                'padding:1.5rem;z-index:20;box-sizing:border-box;';
+            xVideo.appendChild(el);
+        }
+        el.textContent = message || TITLE_UNAVAILABLE_MESSAGE;
+        el.hidden = false;
+    }
+
+    /**
+     * @param {Object} xVideo
+     */
+    function hideTitleUnavailable(xVideo) {
+        var el = xVideo.querySelector('.dvdjs-title-unavailable');
+        if (el) {
+            el.hidden = true;
+        }
+    }
+
+    /**
+     * True when a playlist entry has no playable title media.
+     *
+     * @param {Object} videoSrcElement
+     * @returns {boolean}
+     */
+    function isTitleMediaMissing(videoSrcElement) {
+        if (!videoSrcElement) {
+            return true;
+        }
+        var src = videoSrcElement.src ||
+            (videoSrcElement.video && (videoSrcElement.video.currentSrc || videoSrcElement.video.src));
+        return !src;
+    }
+
     xtag.register('x-video', {
         prototype: Object.create(HTMLVideoElement.prototype),
         lifecycle: {
@@ -1243,11 +1308,22 @@
                     return false;
                 });
 
+                // Title play targets look like video-<domain>; missing = menu-only archive.
                 if (targetElementIndex === null) {
+                    if (/^video-/.test(elementID)) {
+                        showTitleUnavailable(this);
+                        return;
+                    }
                     console.error('Unknown element ID');
                     return;
                 }
 
+                if (isTitleMediaMissing(this.playlist[targetElementIndex])) {
+                    showTitleUnavailable(this);
+                    return;
+                }
+
+                hideTitleUnavailable(this);
                 updateEventListeners(this.playlist[this.videoIndex].video, this.playlist[targetElementIndex].video, this.xtag.evt);
                 this.videoIndex = targetElementIndex;
                 hideAllMenu(this);
@@ -1263,12 +1339,19 @@
                     console.error('Invalid chapter number');
                     return;
                 }
-                if (chapterIndex < 0 || chapterIndex >= this.playlist[this.videoIndex].chapterCues.length) {
-                    console.error('Chapter requested out of bound');
+
+                var current = this.playlist[this.videoIndex];
+                if (isTitleMediaMissing(current) ||
+                    !current.chapterCues ||
+                    chapterIndex < 0 ||
+                    chapterIndex >= current.chapterCues.length) {
+                    // Menu-only rips omit title WebMs and chapter WebVTTs.
+                    showTitleUnavailable(this);
                     return;
                 }
 
-                this.currentTime = this.playlist[this.videoIndex].chapterCues[chapterIndex].startTime;
+                hideTitleUnavailable(this);
+                this.currentTime = current.chapterCues[chapterIndex].startTime;
                 this.play();
             },
             /**
@@ -1292,6 +1375,7 @@
                     return;
                 }
 
+                hideTitleUnavailable(this);
                 this.pause();
                 hideAllMenu(this);
                 menu.show();

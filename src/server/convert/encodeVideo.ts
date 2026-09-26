@@ -14,9 +14,14 @@ import editMetadataFile from '../../server/utils/editMetadataFile.js';
 import * as utils from '../../utils.js';
 import { globFiles } from '../../server/utils/globFiles.js';
 
+type EncodeVideoOptions = {
+  full?: boolean;
+};
+
 var spawn = child_process.spawn;
 var getFileIndex = serverUtils.getFileIndex;
 var getFileSuffix = serverUtils.getFileSuffix;
+var isMenuVob = serverUtils.isMenuVob;
 
 export default encodeVideo;
 
@@ -29,10 +34,26 @@ export default encodeVideo;
  * @todo Check for multiaudio/multiangle video and convert video and sound separately.
  *
  * @param {string} dvdPath
- * @param {function} callback
+ * @param {ConvertOptions|function} optionsOrCallback  Convert options, or callback (legacy).
+ * @param {function} [callback]
  */
-function encodeVideo(dvdPath: string, callback) {
-  process.stdout.write('\nEncoding VOB files:\n');
+function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
+  var options: EncodeVideoOptions = { full: false };
+  if (typeof optionsOrCallback === 'function') {
+    callback = optionsOrCallback;
+  } else if (optionsOrCallback) {
+    options = optionsOrCallback;
+  }
+  if (typeof callback !== 'function') {
+    throw new Error('encodeVideo: callback required');
+  }
+
+  var extractMode = options.full ? 'full' : 'menus';
+  process.stdout.write(
+    extractMode === 'full'
+      ? '\nEncoding VOB files (full):\n'
+      : '\nEncoding VOB files (menus only):\n'
+  );
 
   var dvdName = dvdPath.split(path.sep).pop();
   var webPath = serverUtils.getWebPath(dvdPath);
@@ -44,6 +65,18 @@ function encodeVideo(dvdPath: string, callback) {
   globFiles(vobPath, function(err, vobFilesList) {
     if (err) {
       console.error(err);
+    }
+
+    if (!options.full) {
+      vobFilesList = (vobFilesList || []).filter(isMenuVob);
+    }
+
+    if (!vobFilesList || !vobFilesList.length) {
+      console.log('No VOB files to encode.');
+      stampAndSave([], function() {
+        callback();
+      });
+      return;
     }
 
     // Group by video (e.g. All VTS_01_xx.VOB together).
@@ -80,6 +113,7 @@ function encodeVideo(dvdPath: string, callback) {
         filesList[index] = {};
         filesList[index].index = [];
         filesList[index].video = [];
+        filesList[index].extractMode = extractMode;
       }
       if (getFileSuffix(vobFile[0]) === 0) {
         filesList[index].index.push('/' + dvdName + '/' + path.basename(output));
@@ -198,16 +232,29 @@ function encodeVideo(dvdPath: string, callback) {
               next(vobFiles[pointer]);
             }, 0);
           } else {
-            // At the end of all iterations.
-            // Save a metadata file containing the list of all IFO files.
-            editMetadataFile(getWebName('metadata'), filesList, function() {
-              callback();
-            });
+            stampAndSave(filesList, callback);
           }
         });
       });
     }
   });
+
+  function stampAndSave(filesList, done) {
+    filesList.forEach(function(entry) {
+      if (entry) {
+        entry.extractMode = extractMode;
+      }
+    });
+    // Ensure at least one entry carries extractMode for menu-only discs with no VOBs.
+    if (!filesList.length) {
+      filesList[0] = { index: [], video: [], extractMode: extractMode };
+    } else if (!filesList[0]) {
+      filesList[0] = { index: [], video: [], extractMode: extractMode };
+    }
+    editMetadataFile(getWebName('metadata'), filesList, function() {
+      done();
+    });
+  }
 
   /**
    * Return the file path for the web given a file.

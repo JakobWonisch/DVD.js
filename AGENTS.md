@@ -15,7 +15,9 @@ Architecture: **converter** (this checkout). Do not revive an on-the-fly/full-IS
 ## Product constraints
 
 - No client full-ISO load
-- Featurettes not required; all video files + menu interaction are
+- Featurettes not required; menu interaction is
+- Default convert is **menus only** (`VIDEO_TS.VOB` / `VTS_*_0.VOB`); `--full` encodes title VOBs too
+- Title JumpTT / play on a menu-only rip must show a clear “not included” message (not a broken player)
 - Gallery of menus comes later (same viewer + thumbnails)
 - CSS/DRM ignored when a decrypted ISO/`VIDEO_TS` is available
 
@@ -71,10 +73,13 @@ pnpm install                # or: npx pnpm@12.6.0 install
 pnpm build                  # tsc → dist/
 pnpm test
 pnpm start                  # http://localhost:3000/
-pnpm convert -- path/to/DVD/root
+pnpm convert -- path/to/DVD/root          # menus only (default)
+pnpm convert -- --full path/to/DVD/root   # menus + titles
 ```
 
 Copy `config/app.example.json` → `config/app.json` and set `webFolder` before convert/start.
+
+Convert writes `extractMode: "menus" | "full"` into per-title metadata entries. Menu-only archives keep Jump* in `vm.js`; the player (`src/player`, `public/lib/x-video`) surfaces a message when title media is absent.
 
 ## Agent habits
 

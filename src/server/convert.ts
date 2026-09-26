@@ -16,6 +16,12 @@ import generateButtons from '../server/convert/generateButtons.js';
 import generateJavaScript from '../server/convert/generateJavaScript.js';
 import encodeVideo from '../server/convert/encodeVideo.js';
 
+/** Options for a convert run. */
+export type ConvertOptions = {
+  /** When true, encode title VOBs (feature/extras) as well as menus. Default: menus only. */
+  full: boolean;
+};
+
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
@@ -23,32 +29,55 @@ const { values, positionals } = parseArgs({
       type: 'boolean',
       short: 'h',
     },
+    full: {
+      type: 'boolean',
+      default: false,
+    },
+    titles: {
+      type: 'boolean',
+      default: false,
+    },
   },
 });
 
 const dvdPath = positionals[0];
+const options: ConvertOptions = {
+  full: Boolean(values.full || values.titles),
+};
 
 if (values.help || !dvdPath) {
-  console.log('Convert a DVD for the web.\nUsage: pnpm convert -- path/to/DVD/root');
+  console.log(`Convert a DVD for the web.
+
+Usage:
+  pnpm convert -- path/to/DVD/root
+  pnpm convert -- --full path/to/DVD/root
+
+By default only menu VOBs are encoded (VIDEO_TS.VOB, VTS_*_0.VOB).
+Pass --full (or --titles) to also encode title content (feature, extras).`);
   process.exit(0);
 }
 
-function convertDVD(dvdPath) {
-  dvdPath = dvdPath.split(path.sep);
+function convertDVD(dvdPathArg: string, options: ConvertOptions) {
+  var dvdPathParts = dvdPathArg.split(path.sep);
 
   // We remove the trailing /.
-  var part = dvdPath.pop();
+  var part = dvdPathParts.pop();
   if (part !== '') {
-    dvdPath.push(part);
+    dvdPathParts.push(part);
   }
-  dvdPath = dvdPath.join(path.sep);
+  var dvdPath = dvdPathParts.join(path.sep);
+
+  process.stdout.write(
+    options.full
+      ? '\nConvert mode: full (menus + titles)\n'
+      : '\nConvert mode: menus only (pass --full for title video)\n'
+  );
 
   // Create an empty directory if not already there.
   createDir(dvdPath, function() {
     // Convert IFO files.
     convertIfo(dvdPath, function() {
-      // Generate WebVTT files with video chapters.
-      generateChapters(dvdPath, function() {
+      afterChapters(function() {
         // Extract NAV packets.
         extractNavPackets(dvdPath, function() {
           // Generate JavaScript from VM instructions.
@@ -59,8 +88,8 @@ function convertDVD(dvdPath) {
               generateMenuCellTable(dvdPath, function() {
                 // Generate buttons for menu UI.
                 generateButtons(dvdPath, function() {
-                  // Convert video.
-                  encodeVideo(dvdPath, function() {
+                  // Convert video (menus only unless --full).
+                  encodeVideo(dvdPath, options, function() {
                     // Regenerate the list of DVD.
                     generateCatalogue(function() {
                       console.log('That\'s all folks!');
@@ -74,6 +103,15 @@ function convertDVD(dvdPath) {
       });
     });
   });
+
+  function afterChapters(next) {
+    if (!options.full) {
+      // Title WebVTTs are useless without title video in menu-only mode.
+      next();
+      return;
+    }
+    generateChapters(dvdPath, next);
+  }
 }
 
-convertDVD(dvdPath);
+convertDVD(dvdPath, options);

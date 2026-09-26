@@ -14,13 +14,15 @@ Requires a **decrypted** `VIDEO_TS` / ISO (CSS/DRM out of scope).
 
 ## Pipeline
 
+Default convert is **menus only** (IFO/NAV/VM/buttons + menu WebMs). Pass `--full` to also encode title VOBs.
+
 1. IFO → JSON  
-2. Chapters → WebVTT  
+2. Chapters → WebVTT *(full mode only)*  
 3. NAV packs → JSON  
 4. Button hitboxes → CSS  
 5. Menu still frames → PNG *(to be done)*  
 6. VM commands → JavaScript  
-7. VOB → WebM (ffmpeg)
+7. VOB → WebM (ffmpeg): menu VOBs by default; all VOBs with `--full`
 
 ## Requirements
 
@@ -46,10 +48,14 @@ mkdir -p /home/you/dvd/web
 Place a decrypted disc (folder containing `VIDEO_TS/`) somewhere, then convert:
 
 ```bash
+# Menus only (default) — VIDEO_TS.VOB + VTS_*_0.VOB
 pnpm convert -- /path/to/YourDisc
+
+# Full rip including feature/extras title video
+pnpm convert -- --full /path/to/YourDisc
 ```
 
-Reencoding video is slow. When finished:
+Reencoding video is slow (especially `--full`). When finished:
 
 ```bash
 pnpm start
@@ -73,7 +79,8 @@ Open [http://localhost:3000/](http://localhost:3000/).
 | `pnpm build` | Compile TypeScript (`tsc`) → `dist/` |
 | `pnpm watch` | Rebuild on change |
 | `pnpm start` | Serve `public/` + `webFolder` |
-| `pnpm convert -- <dvd-root>` | Rip a disc into `webFolder` |
+| `pnpm convert -- <dvd-root>` | Rip menus into `webFolder` (default) |
+| `pnpm convert -- --full <dvd-root>` | Rip menus + title video |
 | `pnpm test` | Vitest |
 | `pnpm typecheck` | `tsc --noEmit` |
 
@@ -100,7 +107,7 @@ Needs `<video>`, `<track>`, and WebVTT.
 ## FAQ
 
 **Why not only re-encode the feature?**  
-DVDs include menus, audio/subtitle selection, and interactive navigation. Preserving that is the point.
+DVDs include menus, audio/subtitle selection, and interactive navigation. Preserving that is the point. The default convert therefore rips **menus only**; use `--full` when you also want title playback. Play/JumpTT on a menu-only archive shows a short “title not included” message instead of breaking.
 
 **Why not full ISO-in-browser / OS emulation?**  
 Overkill for this product. Convert once, stream assets, drive navigation with converted VM/menu data (and optionally libdvdnav later).
