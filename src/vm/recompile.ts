@@ -589,7 +589,7 @@ function compile_jump_instruction(command) {
       switch (getbits(command, 23, 2)) {
         case 0:
           // CallSS FP (rsm_cell x)
-          code += sprintf('console.log(\'CallSS FP (rsm_cell %s)\'); return 1;',
+          code += sprintf('rsm_cell = %s; fp_pgc(); return 1;',
             getbits(command, 31, 8)
           );
           break;

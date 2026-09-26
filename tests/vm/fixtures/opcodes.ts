@@ -442,7 +442,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 31, count: 8, value: 2 },
     ]),
     expect: '{ rsm_cell = 2; fp_pgc(); return 1; }',
-    status: 'stub',
+    status: 'ok',
     refs: [REF_MPU, REF_WIKI],
     notes: 'CallSS saves resume cell then jumps (libdvdnav set_RSMinfo).',
   },
