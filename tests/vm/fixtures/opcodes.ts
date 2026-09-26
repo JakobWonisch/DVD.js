@@ -803,9 +803,9 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 59, count: 4, value: 0 },
     ],
     expect: '{ }',
-    status: 'stub',
+    status: 'ok',
     refs: [REF_MPU, REF_DVDNAV],
-    notes: 'Set-op 0 is NOP; desired empty (not console.log).',
+    notes: 'Set-op 0 is NOP; empty body (not console.log).',
   },
   {
     id: 'Set_mov_plus_LinkPGCN',

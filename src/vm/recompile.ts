@@ -697,7 +697,8 @@ function compile_set_version_1(command) {
       op
     );
   } else {
-    code += 'console.log(\'NOP\');';
+    // Set-op 0 is NOP.
+    code += '';
   }
 
   return code;
@@ -714,7 +715,8 @@ function compile_set_version_2(command) {
       op
     );
   } else {
-    code += 'console.log(\'NOP\');';
+    // Set-op 0 is NOP.
+    code += '';
   }
 
   return code;
@@ -731,7 +733,8 @@ function compile_set_version_3(command) {
       op
     );
   } else {
-    code += 'console.log(\'NOP\');';
+    // Set-op 0 is NOP.
+    code += '';
   }
 
   return code;
