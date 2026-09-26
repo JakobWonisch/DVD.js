@@ -448,6 +448,10 @@ function compile_linksub_instruction(command) {
         // For now, we just return 1 to avoid the post command to be executed.
         code += sprintf('return 1;');
         break;
+      case 2:
+        // LinkNextC
+        code += highlight + '/* LinkNextC */ return 1;';
+        break;
       case 13:
         // LinkTailPGC
         // Link to post-command section of current PGC.
