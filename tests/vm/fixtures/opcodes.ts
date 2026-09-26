@@ -616,7 +616,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ]),
     expect:
       '{ sprm["AMXMD"] /*Audio Mixing Mode for Karaoke (SRPM:11)*/ = 0x00; }',
-    status: 'missing',
+    status: 'ok',
     refs: [REF_MPU, 'http://www.mpucoder.com/DVD/vmi44.html'],
     notes: 'System-set op 4 (SetAMXMD) writes SPRM 11 (mpucoder vmi44).',
   },
@@ -630,7 +630,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ]),
     expect:
       '{ sprm["AMXMD"] /*Audio Mixing Mode for Karaoke (SRPM:11)*/ = gprm[0x02]; }',
-    status: 'missing',
+    status: 'ok',
     refs: [REF_MPU, 'http://www.mpucoder.com/DVD/vmi44.html'],
   },
   {
@@ -646,7 +646,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ],
     expect:
       '{ sprm["AMXMD"] /*Audio Mixing Mode for Karaoke (SRPM:11)*/ = 0x00; clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][1].run.bind(MPGCIUT[domain][lang][1])); return 1; }',
-    status: 'missing',
+    status: 'ok',
     refs: [REF_MPU, 'http://www.mpucoder.com/DVD/vmi44.html'],
     notes: 'Optional post-set link after SetAMXMD (mpucoder K link field).',
   },

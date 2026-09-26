@@ -77,7 +77,7 @@ describe('vm/recompile opcodes', () => {
   describe('cross-check notes', () => {
     it('records SetAMXMD as writing SPRM 11 (mpucoder vmi44)', () => {
       const f = opcodeFixtures.find((x) => x.id === 'SetAMXMD_imm');
-      expect(f?.status).toBe('missing');
+      expect(f?.status).toBe('ok');
       expect(normalizeJs(f!.expect)).toContain('sprm["AMXMD"]');
       expect(f?.refs.some((r) => /mpucoder|vmi44/i.test(r))).toBe(true);
     });

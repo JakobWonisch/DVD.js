@@ -711,6 +711,16 @@ function compile_system_set(command) {
         0x01
       );
       break;
+    case 4: // SetAMXMD — Audio Mixing Mode for Karaoke (SPRM 11)
+      code += compile_system_reg(11);
+      if (getbits(command, 60, 1)) {
+        code += ' = ';
+        code += compile_reg_or_data(command, true, 47);
+      } else {
+        code += sprintf(' = gprm[%s]', utils.toHex(getbits(command, 19, 4)));
+      }
+      code += ';';
+      break;
     case 6: // Set system reg 8 (Highlighted button)
       code += compile_system_reg(8);
       if (getbits(command, 60, 1)) { // immediate
