@@ -485,7 +485,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ]),
     expect:
       '{ rsm_cell = 2; clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][4].run.bind(MPGCIUT[0][lang][4])); return 1; }',
-    status: 'stub',
+    status: 'ok',
     refs: [REF_MPU, REF_WIKI],
   },
 

@@ -608,11 +608,10 @@ function compile_jump_instruction(command) {
           break;
         case 3:
           // CallSS VMGM (pgc x, rsm_cell y)
-          // @todo What to do with the value of rsm_cell?
-          code += sprintf('clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][%s].run.bind(MPGCIUT[0][lang][%s])) /* rsm_cell %s*/; return 1;',
+          code += sprintf('rsm_cell = %s; clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][%s].run.bind(MPGCIUT[0][lang][%s])); return 1;',
+            getbits(command, 31, 8),
             getbits(command, 46, 15),
-            getbits(command, 46, 15),
-            getbits(command, 31, 8)
+            getbits(command, 46, 15)
           );
           break;
       }
