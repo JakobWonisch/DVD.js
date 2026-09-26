@@ -398,7 +398,7 @@ function compile_special_instruction(command) {
     case 0:
       // Nop
       // No operation.
-      code += 'console.log(\'NOP\');';
+      code += '';
       break;
     case 1:
       // GoTo

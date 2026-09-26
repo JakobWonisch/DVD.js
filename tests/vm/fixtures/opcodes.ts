@@ -167,9 +167,9 @@ export const opcodeFixtures: OpcodeFixture[] = [
     group: 0,
     fields: g0(0),
     expect: '{ }',
-    status: 'stub',
+    status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
-    notes: 'libdvdnav NOP is a no-op; desired empty body (not console.log).',
+    notes: 'libdvdnav NOP is a no-op; empty body (not console.log).',
   },
   {
     id: 'GoTo_line5',
