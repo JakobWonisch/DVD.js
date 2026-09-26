@@ -760,7 +760,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     setImmediate: true,
     fields: setGprm(8, 0, true, 10),
     expect: '{ gprm[0x00] = 1 + Math.round((0x0A - 1) * Math.random()); }',
-    status: 'bug',
+    status: 'ok',
     refs: [REF_MPU, REF_DVDNAV],
     notes: 'libdvdnav/vm: rnd returns 1..data inclusive.',
   },

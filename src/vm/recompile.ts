@@ -253,7 +253,7 @@ function compile_set_op(var1, var2, op) {
       code += var1 + ' = parseInt(' + var1 + ' / ' + var2 + ', 10);';
       break;
     case 8: // rnd
-      code += var1 + ' = Math.round(Math.random(0xFFFF));'; // Untested!!
+      code += var1 + ' = 1 + Math.round((' + var2 + ' - 1) * Math.random());';
       break;
     default:
       code += sprintf('%s %s %s;', var1, SET_OP_TABLE[op], var2);
