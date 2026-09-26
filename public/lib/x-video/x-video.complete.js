@@ -532,6 +532,20 @@
         }
         el.textContent = message || TITLE_UNAVAILABLE_MESSAGE;
         el.hidden = false;
+
+        // Menu-only / missing-title rips: open title/root menu when the VM wired onmenu.
+        if (typeof xVideo.onmenu === 'function' && !xVideo._dvdjsMenuFallback) {
+            xVideo._dvdjsMenuFallback = true;
+            setTimeout(function () {
+                try {
+                    xVideo.onmenu({});
+                } catch (e) {
+                    console.warn('DVD.js menu fallback failed', e);
+                } finally {
+                    xVideo._dvdjsMenuFallback = false;
+                }
+            }, 0);
+        }
     }
 
     /**
@@ -1327,6 +1341,19 @@
                 updateEventListeners(this.playlist[this.videoIndex].video, this.playlist[targetElementIndex].video, this.xtag.evt);
                 this.videoIndex = targetElementIndex;
                 hideAllMenu(this);
+
+                var video = this.playlist[this.videoIndex].video;
+                var self = this;
+                var onMediaError = function () {
+                    video.removeEventListener('error', onMediaError);
+                    showTitleUnavailable(self);
+                };
+                video.addEventListener('error', onMediaError);
+                if (video.error) {
+                    onMediaError();
+                    return;
+                }
+
                 this.play();
             },
             /**
