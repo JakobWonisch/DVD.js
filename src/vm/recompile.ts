@@ -568,9 +568,8 @@ function compile_jump_instruction(command) {
           break;
         case 2:
           // JumpSS VTSM (vts x, title y, menu z)
-          code += sprintf('var menu = MENU_TYPES[%s][lang/* Should be %s */][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
+          code += sprintf('var menu = MENU_TYPES[%s][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
             getbits(command, 30, 7),
-            getbits(command, 38, 7),
             getbits(command, 19, 4)
           );
           break;

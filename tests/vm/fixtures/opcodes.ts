@@ -415,10 +415,10 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ]),
     expect:
       '{ var menu = MENU_TYPES[1][lang][3]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1; }',
-    status: 'bug',
+    status: 'ok',
     refs: [REF_MPU, REF_DVDNAV],
     notes:
-      'Bit layout matches recompile/print (30/7, 38/7), not eval (31/8, 39/8). Desired: clean lang lookup without “Should be” comment.',
+      'Bit layout matches recompile/print (30/7, 38/7), not eval (31/8, 39/8). Uses current lang for menu lookup.',
   },
   {
     id: 'JumpSS_VMGM_PGC',
