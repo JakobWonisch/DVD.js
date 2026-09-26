@@ -700,19 +700,16 @@ function compile_system_set(command) {
       code += ';';
       break;
     case 3: // Mode: Counter / Register + Set
-      code += 'SetMode ';
       if (getbits(command, 23, 1)) {
-        code += 'Counter ';
+        code += sprintf('gprm_mode[%s] |= 1; ', utils.toHex(getbits(command, 19, 4)));
       } else {
-        code += 'Register ';
+        code += sprintf('gprm_mode[%s] &= ~1; ', utils.toHex(getbits(command, 19, 4)));
       }
-      // '='
       code += compile_set_op(
         compile_g_reg(getbits(command, 19, 4)),
         compile_reg_or_data(command, !!getbits(command, 60, 1), 47),
         0x01
       );
-      code += ';';
       break;
     case 6: // Set system reg 8 (Highlighted button)
       code += compile_system_reg(8);

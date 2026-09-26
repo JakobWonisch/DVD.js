@@ -586,7 +586,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 47, count: 16, value: 1 },
     ]),
     expect: '{ gprm_mode[0x00] |= 1; gprm[0x00] = 0x01; }',
-    status: 'bug',
+    status: 'ok',
     refs: [REF_MPU, REF_DVDNAV],
     notes:
       'SetGPRMMD: set counter/register mode then assign (libdvdnav eval_system_set case 3).',
@@ -602,7 +602,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 47, count: 16, value: 5 },
     ]),
     expect: '{ gprm_mode[0x01] &= ~1; gprm[0x01] = 0x05; }',
-    status: 'bug',
+    status: 'ok',
     refs: [REF_MPU, REF_DVDNAV],
     notes: 'SetGPRMMD register mode clears counter bit then assigns.',
   },
