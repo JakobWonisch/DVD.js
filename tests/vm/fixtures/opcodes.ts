@@ -282,7 +282,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ]),
     expect:
       '{ sprm["HL_BTNN"] = 1 * 0x0400; var ptt = PTT_TABLE[domain][sprm["VTS_TTN"]][6]; PGCIUT[ptt.domain][ptt.pgc].run(); dvd.playChapter(ptt.chapter - 1); return 1; }',
-    status: 'stub',
+    status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
     notes: 'LinkPTTN: highlight button then link to PTT in current VTS (pttn=7 → index 6).',
   },

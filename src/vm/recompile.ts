@@ -535,9 +535,9 @@ function compile_link_instruction(command, optional: boolean) {
     case 5:
       // LinkPTT x (button y)
       // Link to a PTT in the current VTS.
-      code += sprintf('console.log(\'LinkPTT %s (button %d)\');',
-        getbits(command, 9, 10),
-        getbits(command, 15, 6)
+      code += sprintf('sprm["HL_BTNN"] = %s * 0x0400; var ptt = PTT_TABLE[domain][sprm["VTS_TTN"]][%s]; PGCIUT[ptt.domain][ptt.pgc].run(); dvd.playChapter(ptt.chapter - 1); return 1;',
+        getbits(command, 15, 6),
+        getbits(command, 9, 10) - 1
       );
       break;
     case 6:
