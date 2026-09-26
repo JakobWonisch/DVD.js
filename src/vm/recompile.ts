@@ -513,7 +513,7 @@ function compile_link_instruction(command, optional: boolean) {
   var op = getbits(command, 51, 4);
 
   if (optional && op)
-    code += '; ';
+    code += ' ';
 
   switch (op) {
     case 0:

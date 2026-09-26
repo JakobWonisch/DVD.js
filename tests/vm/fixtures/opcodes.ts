@@ -819,9 +819,9 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ],
     expect:
       '{ gprm[0x00] = 0x01; clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][2].run.bind(MPGCIUT[domain][lang][2])); return 1; }',
-    status: 'bug',
+    status: 'ok',
     refs: [REF_MPU, REF_DVDNAV],
-    notes: 'Optional link after Set; desired single semicolon between statements.',
+    notes: 'Optional link after Set; single semicolon between statements.',
   },
   {
     id: 'Set_mov_reg_source',
