@@ -154,7 +154,7 @@ function linkSubFixtures(): OpcodeFixture[] {
         sub === 16
           ? '{ sprm["HL_BTNN"] = 1 * 0x0400; /* RSM: resume at rsm_cell */ return 1; }'
           : `{ sprm["HL_BTNN"] = 1 * 0x0400; /* ${name} */ return 1; }`,
-      status: new Set([2,3,5,6]).has(sub) ? 'ok' : 'stub',
+      status: new Set([2,3,5,6,7]).has(sub) ? 'ok' : 'stub',
       refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
     };
   });
