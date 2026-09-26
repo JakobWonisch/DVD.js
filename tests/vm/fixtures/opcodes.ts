@@ -471,7 +471,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ]),
     expect:
       '{ rsm_cell = 1; var menu = MENU_TYPES[domain][lang][3]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1; }',
-    status: 'stub',
+    status: 'ok',
     refs: [REF_MPU, REF_WIKI],
   },
   {
