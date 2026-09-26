@@ -699,9 +699,9 @@ export const opcodeFixtures: OpcodeFixture[] = [
     setImmediate: false,
     fields: setGprm(2, 0, false, 1),
     expect: '{ var temp = gprm[0x00]; gprm[0x00] = gprm[0x01]; gprm[0x01] = temp; }',
-    status: 'bug',
+    status: 'ok',
     refs: [REF_MPU, REF_DVDNAV],
-    notes: 'Current restores into gprm[0] twice instead of gprm[1].',
+    notes: 'Swap exchanges both GPRMs (libdvdnav eval_set_op case 2).',
   },
   {
     id: 'Set_add_imm',

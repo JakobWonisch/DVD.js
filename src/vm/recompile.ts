@@ -247,7 +247,7 @@ function compile_set_op(var1, var2, op) {
     case 2: // <->
       code += 'var temp = ' + var1 + ';' +
         ' ' + var1 + ' = ' + var2 + ';' +
-        ' ' + var1 + ' = temp;';
+        ' ' + var2 + ' = temp;';
       break;
     case 6: // /=
       code += var1 + ' = parseInt(' + var1 + ' / ' + var2 + ', 10);';
