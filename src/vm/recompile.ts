@@ -412,8 +412,9 @@ function compile_special_instruction(command) {
       break;
     case 3:
       // SetTmpPML
-      // Set Temporary Parental Management Level.
-      code += sprintf('console.log(\'SetTmpPML %1s = %2s\');',
+      // Set Temporary Parental Management Level, then Goto.
+      code += sprintf('%s = %s; pc = %s;',
+        compile_system_reg(13),
         getbits(command, 11, 4),
         getbits(command, 7, 8)
       );

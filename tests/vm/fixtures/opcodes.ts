@@ -195,10 +195,10 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 7, count: 8, value: 2 },
     ]),
     expect: '{ sprm["PLT"] /*Parental Level (SRPM:13)*/ = 8; pc = 2; }',
-    status: 'stub',
+    status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
     notes:
-      'mpucoder/libdvdnav: SetTmpPML sets SPRM[13] then Goto line. recompile currently only console.logs.',
+      'mpucoder/libdvdnav: SetTmpPML sets SPRM[13] then Goto line.',
   },
   {
     id: 'Special_invalid_4',
