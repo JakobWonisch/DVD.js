@@ -9,3 +9,6 @@ config/app.json
 .direnv/
 result
 result-*
+NUL
+*.ffmpeg2pass*
+ffmpeg2pass*

@@ -10,13 +10,14 @@ import * as child_process from 'node:child_process';
 import _ from 'lodash';
 
 import * as serverUtils from '../../server/utils/index.js';
-import editMetadataFile from '../../server/utils/editMetadataFile.js';
-import * as utils from '../../utils.js';
 import { globFiles } from '../../server/utils/globFiles.js';
 
 type EncodeVideoOptions = {
   full?: boolean;
 };
+
+/** VOBs smaller than this are placeholders / empty cells — skip encode. */
+var MIN_VOB_BYTES = 64 * 1024;
 
 var spawn = child_process.spawn;
 var getFileIndex = serverUtils.getFileIndex;
@@ -26,12 +27,10 @@ var isMenuVob = serverUtils.isMenuVob;
 export default encodeVideo;
 
 /**
- * Encode VOB files from a folder to webm.
- * @see https://trac.ffmpeg.org/wiki/vpxEncodingGuide
- * @see https://sites.google.com/a/webmproject.org/wiki/ffmpeg
+ * Encode VOB files from a folder to webm (single-pass libvpx).
  *
- * @todo At the end, delete the ffmpeg2pass-0.log file.
- * @todo Check for multiaudio/multiangle video and convert video and sound separately.
+ * DVD MPEG-PS often reports nonsense durations; we encode until EOF and do not
+ * rely on two-pass stats (pass 1 frequently sees 0 frames on short/misprobed VOBs).
  *
  * @param {string} dvdPath
  * @param {ConvertOptions|function} optionsOrCallback  Convert options, or callback (legacy).
@@ -99,22 +98,33 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
 
     next(vobFiles[pointer]);
 
-    // There are better ways to do async...
     function next(vobFile) {
       var output = serverUtils.convertVobPath(vobFile[0]);
-      var passLogFile = path.join(vobFile[0].replace(/\/VIDEO_TS\/.+/i, '/'), 'ffmpeg2pass');
       var input = '';
       var index = getFileIndex(vobFile[0]);
       var forceKeyFramesTimestamps = [0];
 
-      // Menu and video are optional. We use arrays here as we can then simply
-      // iterate in the template without the need of a heavier logic.
       if (filesList[index] === undefined) {
         filesList[index] = {};
         filesList[index].index = [];
         filesList[index].video = [];
         filesList[index].extractMode = extractMode;
       }
+
+      var totalBytes = vobFile.reduce(function(sum, file) {
+        try {
+          return sum + fs.statSync(file).size;
+        } catch (e) {
+          return sum;
+        }
+      }, 0);
+
+      if (totalBytes < MIN_VOB_BYTES) {
+        console.log('Skipping tiny/empty VOB group (' + totalBytes + ' bytes):', vobFile[0]);
+        finishOne();
+        return;
+      }
+
       if (getFileSuffix(vobFile[0]) === 0) {
         filesList[index].index.push('/' + dvdName + '/' + path.basename(output));
       } else {
@@ -133,147 +143,151 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         forceKeyFramesTimestamps = metadata[index].forceKeyFrames;
       }
 
-      input = input.replace(' ', '\ ');
-      passLogFile = passLogFile.replace(' ', '\ ');
-      output = output.replace(' ', '\ ');
-
-      var pass1Cmd = [
+      // Single-pass: DVD VOBs misreport duration so two-pass pass-1 often encodes 0 frames.
+      var cmd = [
+        '-hide_banner',
+        '-analyzeduration', '200M',
+        '-probesize', '100M',
+        '-fflags', '+genpts+discardcorrupt',
+        '-err_detect', 'ignore_err',
         '-i', input,
-        '-pass', '1',
-        '-passlogfile', passLogFile,
-        // Video
+        '-map', '0:v:0',
+        '-map', '0:a:0?',
         '-c:v', 'libvpx',
         '-b:v', '1000k',
-        // Audio
+        '-maxrate', '1500k',
+        '-bufsize', '2000k',
+        '-cpu-used', '4',
+        '-deadline', 'good',
+        '-auto-alt-ref', '0',
         '-c:a', 'libvorbis',
         '-b:a', '128k',
-        // libvpx options
-        '-cpu-used', '0',
-        '-lag-in-frames', '16',
-        '-quality', 'best',
-        '-qmin', '0',
-        '-qmax', '51',
-        // ffmpeg options
+        '-ac', '2',
         '-force_key_frames', forceKeyFramesTimestamps.join(','),
-        '-bufsize', '500k',
-        '-threads', '16',
-        '-vf', 'yadif=1:1:1', // Deinterlace
-        '-an', // Disable audio for pass 1.
-        '-f', 'rawvideo',
-        '-y', // Overwrite by default.
-        'NUL' // /dev/null
+        '-threads', '0',
+        '-vf', 'yadif=0:-1:0,format=yuv420p',
+        '-fps_mode', 'cfr',
+        '-avoid_negative_ts', 'make_zero',
+        '-y',
+        output,
       ];
 
-      var pass2Cmd = [
-        '-i', input,
-        '-pass', '2',
-        '-passlogfile', passLogFile,
-        // Video
-        '-c:v', 'libvpx',
-        '-b:v', '1000k',
-        // Audio
-        '-c:a', 'libvorbis',
-        '-b:a', '128k',
-        // libvpx options
-        '-cpu-used', '0',
-        '-lag-in-frames', '16',
-        '-quality', 'best',
-        '-qmin', '0',
-        '-qmax', '51',
-        // libvpx options for pass 2
-        '-auto-alt-ref', '1',
-        '-maxrate', '1000k',  // pass 2
-        // ffmpeg options
-        '-force_key_frames', forceKeyFramesTimestamps.join(','),
-        '-bufsize', '500k',
-        '-threads', '16',
-        '-vf', 'yadif=1:1:1', // Deinterlace
-        '-y', // Overwrite by default.
-        output
-      ];
+      console.log('ffmpeg', cmd.join(' '));
 
-      console.log(pass1Cmd.join(' '));
-      console.log(pass2Cmd.join(' '));
-
-      var pass1 = spawn('ffmpeg', pass1Cmd);
-
-      pass1.stdout.on('data', function(data) {
-        process.stdout.write(data);
-      });
-
-      pass1.stderr.on('data', function(data) {
-        process.stderr.write(data);
-      });
-
-      pass1.on('error', function(err) {
-        console.error(err);
-      });
-
-      pass1.on('close', function() {
-        var pass2 = spawn('ffmpeg', pass2Cmd);
-
-        pass2.stdout.on('data', function(data) {
-          process.stdout.write(data);
-        });
-
-        pass2.stderr.on('data', function(data) {
-          process.stderr.write(data);
-        });
-
-        pass2.on('error', function(err) {
-          console.error(err);
-        });
-
-        pass2.on('close', function() {
-          // Next iteration.
-          pointer++;
-          if (pointer < vobFiles.length) {
-            setTimeout(function() {
-              next(vobFiles[pointer]);
-            }, 0);
-          } else {
-            stampAndSave(filesList, callback);
+      runFfmpeg(cmd, function(code) {
+        if (code !== 0) {
+          console.error('ffmpeg failed (' + code + ') for', input);
+        } else {
+          try {
+            var outSize = fs.statSync(output).size;
+            if (outSize < 1024) {
+              console.error('ffmpeg produced tiny output (' + outSize + ' bytes):', output);
+            } else {
+              process.stdout.write('Wrote ' + output + ' (' + outSize + ' bytes)\n');
+            }
+          } catch (e) {
+            console.error('ffmpeg reported success but output missing:', output);
           }
-        });
+        }
+        finishOne();
       });
+
+      function finishOne() {
+        pointer++;
+        if (pointer < vobFiles.length) {
+          setTimeout(function() {
+            next(vobFiles[pointer]);
+          }, 0);
+        } else {
+          stampAndSave(filesList, callback);
+        }
+      }
     }
   });
+
+  function runFfmpeg(args, done) {
+    var child = spawn('ffmpeg', args);
+
+    child.stdout.on('data', function(data) {
+      process.stdout.write(data);
+    });
+
+    child.stderr.on('data', function(data) {
+      process.stderr.write(data);
+    });
+
+    child.on('error', function(err) {
+      console.error(err);
+      done(1);
+    });
+
+    child.on('close', function(code) {
+      done(code === null ? 1 : code);
+    });
+  }
 
   function stampAndSave(filesList, done) {
     filesList.forEach(function(entry) {
       if (entry) {
         entry.extractMode = extractMode;
+        if (!Array.isArray(entry.index)) {
+          entry.index = [];
+        }
+        if (!Array.isArray(entry.video)) {
+          entry.video = [];
+        }
+        // Menu-only: never keep stale title paths from a previous --full merge.
+        if (!options.full) {
+          entry.video = [];
+        }
       }
     });
-    // Ensure at least one entry carries extractMode for menu-only discs with no VOBs.
     if (!filesList.length) {
       filesList[0] = { index: [], video: [], extractMode: extractMode };
     } else if (!filesList[0]) {
       filesList[0] = { index: [], video: [], extractMode: extractMode };
     }
-    editMetadataFile(getWebName('metadata'), filesList, function() {
+
+    // _.merge() concatenates/keeps prior array slots; replace index/video explicitly.
+    var metaPath = getWebName('metadata');
+    var content: any[] = [];
+    try {
+      if (fs.existsSync(metaPath)) {
+        content = loadJsonFile(metaPath);
+      }
+    } catch (e) {
+      content = [];
+    }
+    if (!Array.isArray(content)) {
+      content = [];
+    }
+
+    filesList.forEach(function(entry, i) {
+      if (!entry) {
+        return;
+      }
+      if (!content[i]) {
+        content[i] = {};
+      }
+      content[i].index = entry.index.slice();
+      content[i].video = entry.video.slice();
+      content[i].extractMode = entry.extractMode;
+    });
+
+    fs.writeFile(metaPath, JSON.stringify(content), function(err) {
+      if (err) {
+        console.error(err);
+      }
+      process.stdout.write('.');
       done();
     });
   }
 
-  /**
-   * Return the file path for the web given a file.
-   * Used for naming both the IFO files and the metadata file.
-   *
-   * @param name A file name.
-   * @return {string}
-   */
   function getWebName(name: string): string {
     return path.join(webPath, getJsonFileName(name));
   }
 }
 
-/**
- * Transform the file name of a JSON file.
- *
- * @param {string} name A file name.
- * @return {string}
- */
 function getJsonFileName(name: string): string {
   return name.replace(/\.IFO$/i, '') + '.json';
 }
