@@ -42,9 +42,14 @@ function extractSpu(dvdPath: string, callback) {
   var patch = [];
   var pointer = 0;
 
-  next(filesList[pointer].ifo);
+  next(filesList[pointer] && filesList[pointer].ifo);
 
   function next(ifoFile: string) {
+    if (!ifoFile) {
+      callNext();
+      return;
+    }
+
     ifoFile = path.join(webPath, '../', ifoFile);
     var name = path.basename(ifoFile);
     var basename = path.basename(name, '.json');
@@ -190,7 +195,7 @@ function extractSpu(dvdPath: string, callback) {
       pointer++;
       if (pointer < filesList.length) {
         setTimeout(function () {
-          next(filesList[pointer].ifo);
+          next(filesList[pointer] && filesList[pointer].ifo);
         }, 0);
       } else {
         editMetadataFile(getWebName('metadata'), patch, function () {
