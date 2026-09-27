@@ -33,7 +33,7 @@ Given a disc (decrypted folder today; encrypted optical drive once the rip front
 4. ~~**D-pad / auto-activate**~~ — `btnit` adjacency + Arrow/Enter + CSS selected state (done)
 5. ~~**SPU + highlight compositing**~~ — bake SPU PNG overlays + select/activate remap (done on `mvp-spu`)
 6. **Hardening** — disc corpus QA; exotic menu games
-7. **Standalone convert front-end** — Linux-first: setup script downloads main binary + ffmpeg + dvdbackup (ask keep-system vs ours); opt-in libdvdcss; `--rip-only` / `--keep-rip` / `--upload` stub; Windows/macOS later
+7. **Standalone convert front-end** — Linux-first: setup script downloads main binary + ffmpeg + dvdbackup (ask keep-system vs ours); opt-in libdvdcss; `--rip` / `--rip-only` / `--keep-rip` / `--upload` stub; Windows/macOS later
 8. **Optional `--full`** — title/chapter WebM fidelity (demoted; not MVP)
 
 MVP cut (menus-first): packaging → stills + clicks + D-pad → VM/resume → SPU overlays → (defer exotic games / title export). Streamline rip + standalone CLI is next product work after hardening.
@@ -55,9 +55,12 @@ Default path: insert disc or point at a folder → convert straight to our forma
 Suggested CLI shape (implement incrementally):
 
 ```bash
-# Default: convert to web package (rip to temp if source needs decrypt, then discard)
-pnpm convert -- /dev/sr0
-pnpm convert -- /path/to/VIDEO_TS_parent
+# Default: convert in place (no copy) from a VIDEO_TS folder / mount
+pnpm convert -- /path/to/DVD
+
+# Explicit rip then convert (temp work dir unless --work-dir)
+pnpm convert -- --rip /dev/sr0
+pnpm convert -- --rip --work-dir ~/dvd/work /dev/sr0
 
 # Rip ISO/disc to a work dir and stop (or keep after convert)
 pnpm convert -- --rip-only --work-dir ~/dvd/work /dev/sr0
@@ -80,7 +83,7 @@ pnpm convert -- --upload /path/to/already-converted-or-source
 ```
 
 - Already-decrypted folder: skip rip; convert reads files directly.
-- Encrypted disc/ISO: wrap **dvdbackup** (via **libdvdread** + **libdvdcss**) into the work dir (temp unless `--work-dir` / `--keep-rip`).
+- Encrypted disc/ISO: pass **`--rip`** (or `--rip-only` / `--keep-rip`) so **dvdbackup** (libdvdread + libdvdcss) copies into a work dir. Without `--rip`, convert reads the given path in place (no copy).
 - Upload: HTTP(S) of the **converted** menu tree — no disc access, no libdvdcss.
 - Do not reimplement CSS; shell out (or later spawn a bundled helper) to `dvdbackup`.
 
@@ -162,7 +165,7 @@ dvdjs-convert /dev/sr0       # convert using tools.json paths
 - CLI: `node:util.parseArgs` (convert entry)
 - Config: `src/loadAppConfig.ts` loads `config/app.json` (from `config/app.example.json`)
 - **pnpm settings** live in `pnpm-workspace.yaml` (`allowBuilds`, `minimumReleaseAgeExclude`) — not `package.json#pnpm`
-- **Nix**: `flake.nix` `devShell` stays reproducible (`nodejs_24`, `pnpm`, `ffmpeg`, plus `libdvdcss` / `libdvdread` / `dvdbackup` for the rip front-end)
+- **Nix**: `flake.nix` `devShell` stays reproducible (`nodejs_24`, `pnpm`, **`ffmpeg-full`** with libdvdread/libdvdnav, `libdvdcss`, `libdvdread`, `libdvdnav`, `dvdbackup`). Plain `ffmpeg` disables DVD CSS demux — do not switch back.
 - **TDD for the VM** — fixture-driven tests under `tests/` before/with VM op implementations
 - libdvdnav remains **optional** (see above); prefer rip-time oracle over browser WASM if pulled in
 - Avoid full VLC/OS-in-WASM as the starting approach

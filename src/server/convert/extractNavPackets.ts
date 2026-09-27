@@ -60,6 +60,17 @@ function extractNav(dvdPath: string, callback) {
       fs.readFile(vobFile, function(err, data) {
         if (err) {
           console.error(err);
+          if (err.code === 'EIO' || err.code === 'EACCES' || err.code === 'EPERM') {
+            console.error(
+              'Aborting NAV extract: cannot read ' +
+                name +
+                ' (' +
+                err.code +
+                '). CSS-protected discs need --rip (dvdbackup), e.g.:\n' +
+                '  pnpm convert -- --rip --work-dir ~/dvd/work <source>'
+            );
+            process.exit(1);
+          }
           advanceFile();
           return;
         }

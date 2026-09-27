@@ -16,29 +16,39 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+        # Default ffmpeg disables libdvdread/libdvdnav, so it cannot decrypt
+        # CSS discs. ffmpeg-full enables both (via libdvdcss).
+        ffmpegForDvd = pkgs.ffmpeg-full;
       in
       {
-        # libdvdcss/libdvdread/dvdbackup: optional convert front-end for
-        # CSS-encrypted optical discs (rip to a writable tree, then convert).
-        # See AGENTS.md — not used by the Node pipeline until the rip step lands.
+        # Rip CSS-encrypted discs with dvdbackup (libdvdread→libdvdcss).
+        # Convert stills/WebM use ffmpeg-full so dvd:// / CSS-aware demux works.
+        # See AGENTS.md.
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             nodejs_24
             pnpm
-            ffmpeg
+            ffmpegForDvd
             libdvdcss
             libdvdread
+            libdvdnav
             dvdbackup
             typescript-language-server
             nixfmt-rfc-style
           ];
 
           shellHook = ''
+            export DVDCSS_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/dvdcss"
+            mkdir -p "$DVDCSS_CACHE"
+
             echo "DVD.js devShell — node $(node --version), pnpm $(pnpm --version)"
             echo "Setup: pnpm install && pnpm build"
             echo "Run:   cp config/app.example.json config/app.json  # then edit webFolder"
+            echo "Rip:   pnpm convert -- --rip /dev/sr0"
+            echo "       dvdbackup -i /dev/sr0 -o ~/dvd/work -M"
+            echo "       # or: pnpm convert -- --rip-only --work-dir ~/dvd/work /dev/sr0"
             echo "       pnpm convert -- /path/to/DVD && pnpm start"
-            echo "Rip tools: dvdbackup (libdvdcss) for encrypted discs — see AGENTS.md"
+            echo "CSS:   libdvdcss via dvdbackup when --rip; cache at $DVDCSS_CACHE"
           '';
         };
       }

@@ -116,7 +116,7 @@ DVDs include menus, audio/subtitle selection, and interactive navigation. Preser
 Overkill for this product. Convert once, stream assets, drive navigation with converted VM/menu data. libdvdnav stays an optional rip-time oracle if nav bugs need a known-good engine — see `AGENTS.md`.
 
 **What about CSS-encrypted discs?**  
-CSS decryption belongs only in the **rip** stage (`ripDisc` → dvdbackup/libdvdcss), never in ffmpeg or upload. Default convert uses a decrypted folder today; `--rip-only` / `--keep-rip` are stubs for the Linux-first standalone CLI. Upload pushes the converted web package only.
+CSS decryption belongs only in the **rip** stage (`ripDisc` → dvdbackup/libdvdcss), and only when you pass **`--rip`** (or `--rip-only` / `--keep-rip`). Default convert reads the given path in place with no copy. Upload pushes the converted web package only.
 
 **Do you need help?**  
 Yes — issues and PRs welcome. Prefer changes aligned with the priority order in `AGENTS.md`.
