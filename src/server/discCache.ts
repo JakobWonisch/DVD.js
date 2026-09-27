@@ -2,8 +2,9 @@
  * Compressed-at-rest disc packages with a short-lived decompressed cache.
  *
  * At rest: webFolder/<discId>.tar.gz (+ optional <discId>.cover.jpg).
- * On first access: extract to webFolder/<discId>/, keep warm for CACHE_TTL_MS,
- * then remove the directory while leaving the archive.
+ * On first access: extract to webFolder/<discId>/.
+ * Optional production eviction (config.evictDiscCache): remove the folder after
+ * CACHE_TTL_MS idle, leaving only the archive.
  */
 
 'use strict';

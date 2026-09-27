@@ -50,12 +50,17 @@ function discEnsureMiddleware(
 
 /**
  * Refresh cache TTL when static assets under /:discId/ are served.
+ * Only useful when eviction is enabled.
  */
 function discAccessTouchMiddleware(
   req: IncomingMessage,
   res: ServerResponse,
   next: () => void,
 ): void {
+  if (!appConfig.evictDiscCache) {
+    next();
+    return;
+  }
   var url = req.url || '';
   var match = /^\/([^/]+)\//.exec(url.split('?')[0]);
   if (match) {
@@ -78,7 +83,9 @@ function discAccessTouchMiddleware(
  * Start the server.
  */
 function startServer() {
-  startDiscCacheEviction(appConfig.webFolder);
+  if (appConfig.evictDiscCache) {
+    startDiscCacheEviction(appConfig.webFolder);
+  }
 
   // Solid viewer build (dist/viewer) first; legacy public/ keeps test/parse-ifo tools.
   var app = connect()
