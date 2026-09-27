@@ -200,6 +200,8 @@ Solid custom elements: set `data-*` with `attr:data-*={...}` (property binding d
 
 Menu button CSS and SPU frame height use `resolveMenuFrameHeight` (`menuFrameHeight.ts`): IFO **menu** `video_format` (VMGM/VTSM → PAL 576 / NTSC 480), never title `vts_video_attr` (can disagree). Falls back to PCI button `y_end` when menu attrs are missing.
 
+Menu stills (`generateMenuCellTable`): seek to the highlight VOBU (`btn_ns` / `hli_s_ptm` from NAV) and grab a short window there — do **not** scan the first 1–3s for the largest PNG (that latches onto wipe/transition frames and misaligns hitboxes). No-HLI cells fall back to mid-cell.
+
 Menu convert pitfalls (LOTR-class discs):
 - Iterate `menu_c_adt.cell_adr_table.length`, not `nr_of_vobs` — `nr_of_vobs` counts unique VOB IDs; multi-cell VOBs make the table longer and trailing cells (buttons/SPU/stills) get skipped otherwise.
 - Emit `MPGCIUT` entries even when `command_tbl` is null — interactive menus often have only PCI button cmds; skipping them makes `linkPGC` after a transition clip a dead end.

@@ -13,20 +13,18 @@ import * as serverUtils from '../../server/utils/index.js';
 import { mergeMenuCellMaps } from './mergeMenuCellMaps.js';
 import { menuCellAdrCount } from './menuCellAdrCount.js';
 import { buildMenuCellTimingMap } from './buildMenuCellTimingMap.js';
+import {
+  DVD_VIDEO_LB_LEN,
+  listNavSectorsForBasename,
+  pickHighlightNav,
+  resolveMenuStillSeek,
+  type NavPtsLike,
+} from './menuStillSeek.js';
 
 var spawn = child_process.spawn;
 
-/**
- * The length of one Logical Block of a DVD.
- * @const
- */
-var DVD_VIDEO_LB_LEN = 2048;
-
 /** Skip cells that are only a few packs (no usable video). */
 var MIN_CELL_BYTES = 64 * 1024;
-
-/** Decode this many frames and keep the largest PNG (skips lead-in gray). */
-var STILL_FRAME_CANDIDATES = 48;
 
 /** PNGs smaller than this are treated as failed/gray stills. */
 var MIN_STILL_BYTES = 8 * 1024;
@@ -69,6 +67,22 @@ function extractMenu(dvdPath: string, callback) {
 
     var timingByKey = buildCellTimingMap(json);
     var vobPointer = 0;
+    var basename = path.basename(ifoFile, '.json');
+    var navIndex = listNavSectorsForBasename(
+      fs.existsSync(webPath) ? fs.readdirSync(webPath) : [],
+      basename,
+    );
+    var navBySector = new Map<number, NavPtsLike>();
+    navIndex.forEach(function (fileName, sector) {
+      try {
+        navBySector.set(
+          sector,
+          loadJsonFile(path.join(webPath, fileName)) as NavPtsLike,
+        );
+      } catch (e) {
+        // ignore unreadable NAV sidecars
+      }
+    });
 
     extractStillImage();
 
@@ -123,7 +137,19 @@ function extractMenu(dvdPath: string, callback) {
         return;
       }
 
-      extractBestStillPng(inputFile, start, timing, imgFile, function (ok) {
+      var highlight = pickHighlightNav(
+        vob.start_sector,
+        vob.last_sector,
+        navBySector,
+      );
+      var seek = resolveMenuStillSeek({
+        cellStartSector: vob.start_sector,
+        cellLastSector: vob.last_sector,
+        highlight: highlight,
+        timing: timing,
+      });
+
+      extractBestStillPng(inputFile, seek, imgFile, function (ok) {
         if (ok) {
           entry.still =
             '/' +
@@ -184,19 +210,12 @@ function extractMenu(dvdPath: string, callback) {
   }
 
   /**
-   * Decode a short window from the cell and keep the largest PNG.
-   * DVD cells often start with NAV/blank/corrupt frames before a real picture.
+   * Decode a short window at the resolved seek (HLI / mid-cell) and keep the
+   * largest usable PNG. Avoids long early scans that latch onto wipe frames.
    */
-  function extractBestStillPng(vobFile, startBytes, timing, imgFile, done) {
+  function extractBestStillPng(vobFile, seek, imgFile, done) {
     var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-still-'));
     var pattern = path.join(tmpDir, 'f_%03d.png');
-    var duration =
-      timing &&
-      timing.endSec != null &&
-      timing.startSec != null &&
-      timing.endSec > timing.startSec
-        ? Math.min(3, Math.max(1, timing.endSec - timing.startSec))
-        : 2;
 
     var cmd = [
       '-hide_banner',
@@ -211,15 +230,17 @@ function extractMenu(dvdPath: string, callback) {
       '-err_detect',
       'ignore_err',
       '-skip_initial_bytes',
-      String(startBytes),
+      String(seek.skipBytes),
       '-i',
       vobFile,
+      '-ss',
+      String(seek.ssSec || 0),
       '-map',
       '0:v:0',
       '-t',
-      String(duration),
+      String(seek.durationSec),
       '-frames:v',
-      String(STILL_FRAME_CANDIDATES),
+      String(seek.frameCount),
       '-vf',
       'yadif=0:-1:0,format=rgb24',
       '-y',
