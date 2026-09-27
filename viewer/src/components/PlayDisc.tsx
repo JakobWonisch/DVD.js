@@ -233,7 +233,7 @@ export const PlayDisc: Component = () => {
             <button
               type="button"
               class="player-toolbar__skip"
-              title="Skip to end of current clip (Space)"
+              title="Skip to end of current clip (N)"
               onClick={() => hostEl()?.skipToEnd?.()}
             >
               Skip to end

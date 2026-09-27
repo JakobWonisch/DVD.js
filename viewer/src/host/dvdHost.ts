@@ -49,7 +49,7 @@ export type XVideoElement = HTMLElement & {
   playChapter: (chapterIndex: number) => void;
   playMenuByID: (elementID: string) => void;
   playMenuCell: (opts: MenuCellPlayOpts) => void;
-  /** Jump to the end of the active menu/title clip (Space / toolbar). */
+  /** Jump to the end of the active menu/title clip (N / toolbar). */
   skipToEnd: () => boolean;
   setMenuHighlight: (menu: Element | null, buttonIndex: number) => void;
   flashMenuActivate: (menu: Element | null, buttonIndex: number) => void;
@@ -710,7 +710,7 @@ class XVideo extends HTMLElement implements XVideoElement {
 
   /**
    * Jump to the end of the active menu motion segment, timed still, or title
-   * clip. Used by Space and the toolbar button.
+   * clip. Used by N and the toolbar button.
    */
   skipToEnd(): boolean {
     return skipPlaybackToEnd(this);

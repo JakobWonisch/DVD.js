@@ -156,7 +156,7 @@ export function handleMenuKeyDown(
   }
 
   const key = event.key;
-  if (key === ' ' || event.code === 'Space') {
+  if (key === 'n' || key === 'N' || event.code === 'KeyN') {
     if (typeof host.skipToEnd === 'function' && host.skipToEnd()) {
       event.preventDefault();
       return true;
@@ -223,38 +223,67 @@ export function handleMenuKeyDown(
   return true;
 }
 
+function buttonIndexFromTarget(
+  host: MenuKeyHost,
+  target: EventTarget | null,
+): { menu: HTMLElement; idx: number } | null {
+  if (!(target instanceof HTMLInputElement) || !target.classList.contains('btn')) {
+    return null;
+  }
+  if (target.disabled) {
+    return null;
+  }
+  const menu = activeMenu(host);
+  if (!menu || !menu.contains(target)) {
+    return null;
+  }
+  const idx = parseInt(target.dataset.id || '', 10);
+  if (!Number.isFinite(idx) || idx < 0) {
+    return null;
+  }
+  return { menu, idx };
+}
+
+function selectButton(host: MenuKeyHost, menu: HTMLElement, idx: number) {
+  const sprm = (window as any).sprm || ((window as any).sprm = {});
+  const current = Math.floor((sprm.HL_BTNN || 0x0400) / 0x0400) - 1;
+  if (current === idx) {
+    return;
+  }
+  sprm.HL_BTNN = (idx + 1) * 0x0400;
+  host.setMenuHighlight?.(menu, idx);
+}
+
 export function bindMenuKeys(host: MenuKeyHost): () => void {
   const onKey = (event: KeyboardEvent) => {
     if (handleMenuKeyDown(host, event)) {
       event.stopImmediatePropagation();
     }
   };
+  /** Hover moves the highlight; click / Enter activates. */
+  const onPointerOver = (event: PointerEvent) => {
+    const hit = buttonIndexFromTarget(host, event.target);
+    if (!hit) {
+      return;
+    }
+    selectButton(host, hit.menu, hit.idx);
+  };
   const onClick = (event: MouseEvent) => {
-    const t = event.target;
-    if (!(t instanceof HTMLInputElement) || !t.classList.contains('btn')) {
-      return;
-    }
-    if (t.disabled) {
-      return;
-    }
-    const menu = activeMenu(host);
-    if (!menu || !menu.contains(t)) {
-      return;
-    }
-    const idx = parseInt(t.dataset.id || '', 10);
-    if (!Number.isFinite(idx) || idx < 0) {
+    const hit = buttonIndexFromTarget(host, event.target);
+    if (!hit) {
       return;
     }
     event.preventDefault();
-    const sprm = (window as any).sprm || ((window as any).sprm = {});
-    sprm.HL_BTNN = (idx + 1) * 0x0400;
-    activateButton(host, menu, idx);
+    selectButton(host, hit.menu, hit.idx);
+    activateButton(host, hit.menu, hit.idx);
   };
   // Capture so we win over generated vm.js keydown (and avoid double-steps).
   document.addEventListener('keydown', onKey, true);
+  host.addEventListener('pointerover', onPointerOver);
   host.addEventListener('click', onClick);
   return () => {
     document.removeEventListener('keydown', onKey, true);
+    host.removeEventListener('pointerover', onPointerOver);
     host.removeEventListener('click', onClick);
   };
 }
