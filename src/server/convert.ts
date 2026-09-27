@@ -14,6 +14,7 @@ import extractMenu from '../server/convert/extractMenu.js';
 import generateMenuCellTable from '../server/convert/generateMenuCellTable.js';
 import generateButtons from '../server/convert/generateButtons.js';
 import generateCover from '../server/convert/generateCover.js';
+import extractSpu from '../server/convert/extractSpu.js';
 import generateJavaScript from '../server/convert/generateJavaScript.js';
 import encodeVideo from '../server/convert/encodeVideo.js';
 
@@ -86,10 +87,12 @@ function convertDVD(dvdPathArg: string, options: ConvertOptions) {
             generateMenuCellTable(dvdPath, function() {
               generateCover(dvdPath, function() {
                 generateButtons(dvdPath, function() {
-                  generateJavaScript(dvdPath, function() {
-                    encodeVideo(dvdPath, options, function() {
-                      generateCatalogue(function() {
-                        console.log('That\'s all folks!');
+                  extractSpu(dvdPath, function() {
+                    generateJavaScript(dvdPath, function() {
+                      encodeVideo(dvdPath, options, function() {
+                        generateCatalogue(function() {
+                          console.log('That\'s all folks!');
+                        });
                       });
                     });
                   });

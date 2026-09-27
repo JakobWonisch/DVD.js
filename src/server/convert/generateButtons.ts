@@ -79,11 +79,19 @@ function generateButtons(dvdPath: string, callback) {
         hli_s_ptm = json.pci.hli.hl_gi.hli_s_ptm;
         hli_e_ptm = json.pci.hli.hl_gi.hli_e_ptm;
 
+        var frameHeight = 480;
+        for (var fi = 0; fi < json.pci.hli.hl_gi.btn_ns; fi++) {
+          if (json.pci.hli.btnit[fi].y_end >= 480) {
+            frameHeight = 576;
+            break;
+          }
+        }
+
         for (var i = 0; i < json.pci.hli.hl_gi.btn_ns; i++) {
           var btn = json.pci.hli.btnit[i];
           cssContent.push(
             `[data-domain="${pointer}"][data-cell="${cellID}"][data-vob="${vobID}"] .btn[data-id="${i}"]{` +
-              buttonToCss(btn, i) +
+              buttonToCss(btn, i, frameHeight) +
               '}'
           );
 
@@ -108,7 +116,9 @@ function generateButtons(dvdPath: string, callback) {
           if (!css[pointer].css[cellID - 1][vobID - 1]) {
             css[pointer].css[cellID - 1][vobID - 1] = [];
           }
-          css[pointer].css[cellID - 1][vobID - 1].push(buttonToCss(btn, i));
+          css[pointer].css[cellID - 1][vobID - 1].push(
+            buttonToCss(btn, i, frameHeight)
+          );
         }
 
         saveCSSFile(cssContent, json.pci.hli.hl_gi.btn_ns, buttons);
@@ -124,19 +134,20 @@ function generateButtons(dvdPath: string, callback) {
         }
       }
 
-      function buttonToCss(btn, i) {
+      function buttonToCss(btn, i, frameHeight) {
+        var fh = frameHeight || 480;
         return (
           'left:' +
           round((btn.x_start / 720) * 100) +
           '%;' +
           'top:' +
-          round((btn.y_start / 480) * 100) +
+          round((btn.y_start / fh) * 100) +
           '%;' +
           'width:' +
           round(((btn.x_end - btn.x_start) / 720) * 100) +
           '%;' +
           'height:' +
-          round(((btn.y_end - btn.y_start) / 480) * 100) +
+          round(((btn.y_end - btn.y_start) / fh) * 100) +
           '%;'
         );
 
