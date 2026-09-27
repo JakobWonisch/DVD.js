@@ -1765,11 +1765,16 @@ function updateMenuCellVisuals(menu, opts) {
         for (var i = 0; i < existing.length; i++) {
             existing[i].parentNode.removeChild(existing[i]);
         }
+        // Keep hitboxes invisible when SPU select overlays are present
+        // (same as buildTag's btn-spu class on initial HTML).
+        var hasSpuHighlight =
+            (opts.spuSelect && opts.spuSelect.length > 0) ||
+            !!menu.querySelector('img.menu-spu-sel');
         for (var b = 0; b < opts.buttons.length; b++) {
             var nav = opts.buttons[b] || {};
             var input = document.createElement('input');
             input.type = 'button';
-            input.className = 'btn';
+            input.className = hasSpuHighlight ? 'btn btn-spu' : 'btn';
             input.dataset.id = String(b);
             if (nav.up != null) input.dataset.up = String(nav.up);
             if (nav.down != null) input.dataset.down = String(nav.down);
