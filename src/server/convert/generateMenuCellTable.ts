@@ -11,6 +11,7 @@ import * as os from 'node:os';
 
 import * as serverUtils from '../../server/utils/index.js';
 import { dvdTimeToSeconds } from '../../server/utils/dvdTime.js';
+import { mergeMenuCellMaps } from './mergeMenuCellMaps.js';
 
 var spawn = child_process.spawn;
 
@@ -302,7 +303,12 @@ function extractMenu(dvdPath: string, callback) {
       if (!content[i]) {
         content[i] = {};
       }
-      content[i].menuCell = entry.menuCell;
+      // Preserve css / buttons / SPU from generateButtons + extractSpu when
+      // stills are re-run alone (full replace was wiping interactive menus).
+      content[i].menuCell = mergeMenuCellMaps(
+        content[i].menuCell,
+        entry.menuCell,
+      );
     });
 
     fs.writeFile(metaPath, JSON.stringify(content), function (err) {

@@ -4,6 +4,7 @@ import type {
   DiscMetadata,
   DomainMetadata,
   MenuButtonNav,
+  MenuCellMeta,
   MenuPgcEntry,
 } from '../types/metadata.js';
 
@@ -19,6 +20,7 @@ function menuCellFor(domain: DomainMetadata, menu: MenuPgcEntry) {
 const MenuButtons: Component<{
   count: number;
   buttons: MenuButtonNav[];
+  hasSpuHighlight: boolean;
 }> = (props) => (
   <For each={[...Array(props.count).keys()]}>
     {(i) => {
@@ -26,7 +28,7 @@ const MenuButtons: Component<{
       return (
         <input
           type="button"
-          class="btn"
+          class={props.hasSpuHighlight ? 'btn btn-spu' : 'btn'}
           data-id={i}
           data-up={nav().up}
           data-down={nav().down}
@@ -38,6 +40,47 @@ const MenuButtons: Component<{
     }}
   </For>
 );
+
+const MenuOverlays: Component<{ cell: MenuCellMeta }> = (props) => {
+  const sel = () => props.cell.spuSelect || [];
+  const act = () => props.cell.spuActivate || [];
+  return (
+    <>
+      <Show when={props.cell.spu}>
+        <img
+          class="menu-spu"
+          src={props.cell.spu!}
+          alt=""
+          aria-hidden="true"
+        />
+      </Show>
+      <For each={sel()}>
+        {(src, i) => (
+          <img
+            class="menu-spu-sel"
+            data-id={i()}
+            hidden
+            src={src}
+            alt=""
+            aria-hidden="true"
+          />
+        )}
+      </For>
+      <For each={act()}>
+        {(src, i) => (
+          <img
+            class="menu-spu-act"
+            data-id={i()}
+            hidden
+            src={src}
+            alt=""
+            aria-hidden="true"
+          />
+        )}
+      </For>
+    </>
+  );
+};
 
 const DomainMenus: Component<{ domain: DomainMetadata; id: number }> = (
   props,
@@ -53,14 +96,24 @@ const DomainMenus: Component<{ domain: DomainMetadata; id: number }> = (
               menu.cells && menu.cells.length
                 ? encodeURIComponent(JSON.stringify(menu.cells))
                 : undefined;
+            const hasSpu = () => (cell()?.spuSelect || []).length > 0;
             return (
               <x-menu
                 id={`menu-${lang}-${props.id}-${menu.pgc}`}
-                data-domain={props.id}
-                data-cell={menu.cellID}
-                data-vob={menu.vobID}
-                data-still-time={menu.still_time || 0}
-                data-cells={cellsAttr()}
+                attr:data-domain={String(props.id)}
+                attr:data-cell={
+                  menu.cellID != null ? String(menu.cellID) : undefined
+                }
+                attr:data-vob={
+                  menu.vobID != null ? String(menu.vobID) : undefined
+                }
+                attr:data-still-time={String(menu.still_time || 0)}
+                attr:data-cells={cellsAttr()}
+                attr:data-spu-height={
+                  cell()?.spuFrameHeight != null
+                    ? String(cell()!.spuFrameHeight)
+                    : undefined
+                }
                 lang={lang}
               >
                 <Show when={cell()?.still}>
@@ -68,9 +121,11 @@ const DomainMenus: Component<{ domain: DomainMetadata; id: number }> = (
                     <link rel="stylesheet" href={cell()!.css!} />
                   </Show>
                   <img class="menu-still" src={cell()!.still!} alt="" />
+                  <MenuOverlays cell={cell()!} />
                   <MenuButtons
                     count={cell()!.btn_nb || 0}
                     buttons={cell()!.buttons || []}
+                    hasSpuHighlight={hasSpu()}
                   />
                 </Show>
               </x-menu>
@@ -106,18 +161,24 @@ const DomainVideos: Component<{ domain: DomainMetadata; id: number }> = (
           hidden
         />
       </Show>
-      <video id={`video-${props.id}`} src={titleSrc() || undefined}>
-        <For each={tracks()}>
-          {(track, index) => (
-            <track
-              kind="chapters"
-              src={track}
-              srclang="en"
-              default={index() === 0 || undefined}
-            />
-          )}
-        </For>
-      </video>
+      <Show when={titleSrc()}>
+        <video id={`video-${props.id}`} src={titleSrc()}>
+          <For each={tracks()}>
+            {(track, index) => (
+              <track
+                kind="chapters"
+                src={track}
+                srclang="en"
+                default={index() === 0 || undefined}
+              />
+            )}
+          </For>
+        </video>
+      </Show>
+      <Show when={!titleSrc()}>
+        {/* Keep id slot for JumpTT / playByID lookups on menus-only rips. */}
+        <video id={`video-${props.id}`} hidden />
+      </Show>
     </>
   );
 };

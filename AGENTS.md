@@ -66,6 +66,9 @@ MVP cut (menus-first): packaging → stills + clicks + D-pad → VM/resume → S
 | Tests | `tests/**/*.test.ts` |
 | Docs | `README.md`, this file |
 
+Solid custom elements: set `data-*` with `attr:data-*={...}` (property binding does not create attributes, so generated button CSS selectors like `[data-domain="0"] …` would miss).
+
+`generateMenuCellTable` merges into existing `menuCell` entries (preserves `css` / `buttons` / SPU from later convert steps when stills are re-run alone).
 ## Common commands
 
 ```bash

@@ -18,6 +18,8 @@ export interface PlayMenuCellOpts {
     right?: number;
     auto_action_mode?: number;
   }>;
+  spuSelect?: string[];
+  spuActivate?: string[];
   onPost?: () => void;
 }
 
@@ -91,6 +93,7 @@ export function showTitleUnavailable(
   }
   el.textContent = message || TITLE_UNAVAILABLE_MESSAGE;
   el.hidden = false;
+  el.style.display = 'flex';
 
   if (typeof host.onmenu === 'function' && !host._dvdjsMenuFallback) {
     host._dvdjsMenuFallback = true;
@@ -112,6 +115,7 @@ export function hideTitleUnavailable(host: HTMLElement): void {
   ) as HTMLElement | null;
   if (el) {
     el.hidden = true;
+    el.style.display = 'none';
   }
 }
 
@@ -142,6 +146,48 @@ export function highlightMenuButton(
       buttons[i].classList.remove('selected');
     }
   }
+
+  const sels = menu.querySelectorAll('img.menu-spu-sel');
+  const acts = menu.querySelectorAll('img.menu-spu-act');
+  for (let s = 0; s < sels.length; s++) {
+    if (s === buttonIndex) {
+      sels[s].removeAttribute('hidden');
+    } else {
+      sels[s].setAttribute('hidden', '');
+    }
+  }
+  for (let a = 0; a < acts.length; a++) {
+    acts[a].setAttribute('hidden', '');
+  }
+}
+
+export function flashMenuButtonActivate(
+  menu: HTMLElement | null | undefined,
+  buttonIndex: number,
+  durationMs = 120,
+): void {
+  if (!menu) {
+    return;
+  }
+  const act = menu.querySelector(
+    `img.menu-spu-act[data-id="${buttonIndex}"]`,
+  ) as HTMLImageElement | null;
+  const sel = menu.querySelector(
+    `img.menu-spu-sel[data-id="${buttonIndex}"]`,
+  ) as HTMLImageElement | null;
+  if (!act) {
+    return;
+  }
+  if (sel) {
+    sel.setAttribute('hidden', '');
+  }
+  act.removeAttribute('hidden');
+  setTimeout(() => {
+    act.setAttribute('hidden', '');
+    if (sel) {
+      sel.removeAttribute('hidden');
+    }
+  }, durationMs);
 }
 
 export function setMenuButtonsEnabled(
@@ -225,6 +271,71 @@ export function updateMenuCellVisuals(
   if (stillSrc && still) {
     still.setAttribute('src', stillSrc);
   }
+
+  let baseDir: string | null = null;
+  if (stillSrc) {
+    const bm = stillSrc.match(/^(.*\/)menu-\d+-\d+-\d+\.png$/);
+    if (bm) {
+      baseDir = bm[1];
+    }
+  }
+  if (baseDir) {
+    let spu = menu.querySelector('img.menu-spu') as HTMLImageElement | null;
+    const spuSrc = `${baseDir}menu-${domain}-${opts.cellID}-${opts.vobID}-spu.png`;
+    if (spu) {
+      spu.setAttribute('src', spuSrc);
+    } else {
+      spu = document.createElement('img');
+      spu.className = 'menu-spu';
+      spu.alt = '';
+      spu.setAttribute('aria-hidden', 'true');
+      spu.src = spuSrc;
+      if (still?.nextSibling) {
+        menu.insertBefore(spu, still.nextSibling);
+      } else {
+        menu.appendChild(spu);
+      }
+    }
+
+    const oldSel = menu.querySelectorAll('img.menu-spu-sel, img.menu-spu-act');
+    for (let os = 0; os < oldSel.length; os++) {
+      oldSel[os].parentNode?.removeChild(oldSel[os]);
+    }
+
+    let selList = opts.spuSelect ? [...opts.spuSelect] : [];
+    let actList = opts.spuActivate ? [...opts.spuActivate] : [];
+    if (!selList.length && opts.buttons && opts.buttons.length) {
+      for (let si = 0; si < opts.buttons.length; si++) {
+        selList.push(
+          `${baseDir}menu-${domain}-${opts.cellID}-${opts.vobID}-spu-sel-${si}.png`,
+        );
+        actList.push(
+          `${baseDir}menu-${domain}-${opts.cellID}-${opts.vobID}-spu-act-${si}.png`,
+        );
+      }
+    }
+    for (let sj = 0; sj < selList.length; sj++) {
+      const simg = document.createElement('img');
+      simg.className = 'menu-spu-sel';
+      simg.dataset.id = String(sj);
+      simg.hidden = true;
+      simg.alt = '';
+      simg.setAttribute('aria-hidden', 'true');
+      simg.src = selList[sj];
+      menu.appendChild(simg);
+    }
+    for (let aj = 0; aj < actList.length; aj++) {
+      const aimg = document.createElement('img');
+      aimg.className = 'menu-spu-act';
+      aimg.dataset.id = String(aj);
+      aimg.hidden = true;
+      aimg.alt = '';
+      aimg.setAttribute('aria-hidden', 'true');
+      aimg.src = actList[aj];
+      menu.appendChild(aimg);
+    }
+  }
+
   if (cssHref) {
     let link = menu.querySelector(
       'link[rel="stylesheet"]',
@@ -244,11 +355,14 @@ export function updateMenuCellVisuals(
     for (let i = 0; i < existing.length; i++) {
       existing[i].parentNode?.removeChild(existing[i]);
     }
+    const hasSpuHighlight =
+      (opts.spuSelect && opts.spuSelect.length > 0) ||
+      !!menu.querySelector('img.menu-spu-sel');
     for (let b = 0; b < opts.buttons.length; b++) {
       const nav = opts.buttons[b] || {};
       const input = document.createElement('input');
       input.type = 'button';
-      input.className = 'btn';
+      input.className = hasSpuHighlight ? 'btn btn-spu' : 'btn';
       input.dataset.id = String(b);
       if (nav.up != null) input.dataset.up = String(nav.up);
       if (nav.down != null) input.dataset.down = String(nav.down);

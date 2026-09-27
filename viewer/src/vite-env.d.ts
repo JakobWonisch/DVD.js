@@ -15,6 +15,7 @@ declare module 'solid-js' {
         'data-vob'?: string | number;
         'data-still-time'?: string | number;
         'data-cells'?: string;
+        'data-spu-height'?: string | number;
       };
     }
   }

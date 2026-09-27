@@ -133,27 +133,56 @@ footer {
 }
 
 x-video {
+  position: relative;
   width: 100%;
   max-width: 720px;
-  max-height: 480px;
+  aspect-ratio: 720 / 480;
   margin: auto;
   display: block;
   background: #000;
+  overflow: hidden;
 }
 
 x-menu {
+  position: relative;
   width: 100%;
   max-width: 720px;
   max-height: 480px;
+  overflow: hidden;
+}
+
+x-menu img.menu-still,
+x-menu img.menu-spu,
+x-menu img.menu-spu-sel,
+x-menu img.menu-spu-act {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  max-width: 720px;
+  max-height: 480px;
+  height: auto;
+  pointer-events: none;
 }
 
 x-menu img.menu-still {
-  width: 100%;
-  max-width: 720px;
-  max-height: 480px;
-  display: block;
   position: relative;
+  display: block;
   z-index: 1;
+}
+
+x-menu img.menu-spu {
+  z-index: 2;
+}
+
+x-menu img.menu-spu-sel,
+x-menu img.menu-spu-act {
+  z-index: 3;
+}
+
+x-menu img.menu-spu-sel[hidden],
+x-menu img.menu-spu-act[hidden] {
+  display: none !important;
 }
 
 input[type='button'].btn {
@@ -165,7 +194,7 @@ input[type='button'].btn {
   border: 3px solid black;
   color: rgba(127, 127, 127, 0.5);
   background: transparent;
-  z-index: 2;
+  z-index: 4;
   cursor: pointer;
 }
 
@@ -173,7 +202,41 @@ input[type='button'].btn.selected {
   opacity: 1;
   border-color: #fc0;
   box-shadow: 0 0 0 2px rgba(255, 204, 0, 0.45);
-  z-index: 3;
+  z-index: 5;
+}
+
+/* When SPU highlight overlays are present, hitboxes stay invisible. */
+input[type='button'].btn.btn-spu {
+  opacity: 0;
+  border-color: transparent;
+  box-shadow: none;
+  background: transparent;
+  color: transparent;
+}
+
+input[type='button'].btn.btn-spu.selected {
+  opacity: 0;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.dvdjs-title-unavailable {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  font: 16px/1.4 sans-serif;
+  text-align: center;
+  padding: 1.5rem;
+  z-index: 20;
+  box-sizing: border-box;
+}
+
+.dvdjs-title-unavailable[hidden] {
+  display: none !important;
 }
 
 .dvdjs-menu-video {
@@ -183,4 +246,12 @@ input[type='button'].btn.selected {
 x-video > video {
   width: 100%;
   display: block;
+}
+
+/* Author `display:block` would otherwise override the hidden attribute. */
+x-video > video[hidden],
+.dvdjs-menu-video[hidden],
+x-video > video:not([src]),
+x-video > video[src=''] {
+  display: none !important;
 }

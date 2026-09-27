@@ -16,6 +16,8 @@ export type MenuCellPlayOpts = {
     right?: number;
     auto_action_mode?: number;
   }>;
+  spuSelect?: string[];
+  spuActivate?: string[];
   onPost?: () => void;
 };
 
@@ -76,6 +78,7 @@ function showTitleUnavailable(host: XVideoElement, message?: string) {
   }
   el.textContent = message || TITLE_UNAVAILABLE_MESSAGE;
   el.hidden = false;
+  el.style.display = 'flex';
 
   if (typeof host.onmenu === 'function' && !(host as any)._dvdjsMenuFallback) {
     (host as any)._dvdjsMenuFallback = true;
@@ -95,6 +98,7 @@ function hideTitleUnavailable(host: HTMLElement) {
   const el = host.querySelector('.dvdjs-title-unavailable') as HTMLElement | null;
   if (el) {
     el.hidden = true;
+    el.style.display = 'none';
   }
 }
 
@@ -171,6 +175,48 @@ export function highlightMenuButton(
       btn.classList.remove('selected');
     }
   });
+
+  const sels = menu.querySelectorAll('img.menu-spu-sel');
+  const acts = menu.querySelectorAll('img.menu-spu-act');
+  sels.forEach((sel, s) => {
+    if (s === buttonIndex) {
+      sel.removeAttribute('hidden');
+    } else {
+      sel.setAttribute('hidden', '');
+    }
+  });
+  acts.forEach((act) => {
+    act.setAttribute('hidden', '');
+  });
+}
+
+export function flashMenuButtonActivate(
+  menu: Element | null,
+  buttonIndex: number,
+  durationMs = 120,
+) {
+  if (!menu) {
+    return;
+  }
+  const act = menu.querySelector(
+    `img.menu-spu-act[data-id="${buttonIndex}"]`,
+  ) as HTMLImageElement | null;
+  const sel = menu.querySelector(
+    `img.menu-spu-sel[data-id="${buttonIndex}"]`,
+  ) as HTMLImageElement | null;
+  if (!act) {
+    return;
+  }
+  if (sel) {
+    sel.setAttribute('hidden', '');
+  }
+  act.removeAttribute('hidden');
+  setTimeout(() => {
+    act.setAttribute('hidden', '');
+    if (sel) {
+      sel.removeAttribute('hidden');
+    }
+  }, durationMs);
 }
 
 function updateMenuCellVisuals(menu: HTMLElement, opts: MenuCellPlayOpts) {
@@ -207,6 +253,70 @@ function updateMenuCellVisuals(menu: HTMLElement, opts: MenuCellPlayOpts) {
   if (stillSrc && still) {
     still.setAttribute('src', stillSrc);
   }
+
+  let baseDir: string | null = null;
+  if (stillSrc) {
+    const bm = stillSrc.match(/^(.*\/)menu-\d+-\d+-\d+\.png$/);
+    if (bm) {
+      baseDir = bm[1];
+    }
+  }
+  if (baseDir) {
+    let spu = menu.querySelector('img.menu-spu') as HTMLImageElement | null;
+    const spuSrc = `${baseDir}menu-${domain}-${opts.cellID}-${opts.vobID}-spu.png`;
+    if (spu) {
+      spu.setAttribute('src', spuSrc);
+    } else {
+      spu = document.createElement('img');
+      spu.className = 'menu-spu';
+      spu.alt = '';
+      spu.setAttribute('aria-hidden', 'true');
+      spu.src = spuSrc;
+      if (still?.nextSibling) {
+        menu.insertBefore(spu, still.nextSibling);
+      } else {
+        menu.appendChild(spu);
+      }
+    }
+
+    menu
+      .querySelectorAll('img.menu-spu-sel, img.menu-spu-act')
+      .forEach((el) => el.remove());
+
+    let selList = opts.spuSelect ? [...opts.spuSelect] : [];
+    let actList = opts.spuActivate ? [...opts.spuActivate] : [];
+    if (!selList.length && opts.buttons && opts.buttons.length) {
+      for (let si = 0; si < opts.buttons.length; si++) {
+        selList.push(
+          `${baseDir}menu-${domain}-${opts.cellID}-${opts.vobID}-spu-sel-${si}.png`,
+        );
+        actList.push(
+          `${baseDir}menu-${domain}-${opts.cellID}-${opts.vobID}-spu-act-${si}.png`,
+        );
+      }
+    }
+    for (let sj = 0; sj < selList.length; sj++) {
+      const simg = document.createElement('img');
+      simg.className = 'menu-spu-sel';
+      simg.dataset.id = String(sj);
+      simg.hidden = true;
+      simg.alt = '';
+      simg.setAttribute('aria-hidden', 'true');
+      simg.src = selList[sj];
+      menu.appendChild(simg);
+    }
+    for (let aj = 0; aj < actList.length; aj++) {
+      const aimg = document.createElement('img');
+      aimg.className = 'menu-spu-act';
+      aimg.dataset.id = String(aj);
+      aimg.hidden = true;
+      aimg.alt = '';
+      aimg.setAttribute('aria-hidden', 'true');
+      aimg.src = actList[aj];
+      menu.appendChild(aimg);
+    }
+  }
+
   if (cssHref) {
     let link = menu.querySelector(
       'link[rel="stylesheet"]',
@@ -223,11 +333,14 @@ function updateMenuCellVisuals(menu: HTMLElement, opts: MenuCellPlayOpts) {
 
   if (opts.buttons && opts.buttons.length) {
     menu.querySelectorAll('input.btn').forEach((el) => el.remove());
+    const hasSpuHighlight =
+      (opts.spuSelect && opts.spuSelect.length > 0) ||
+      !!menu.querySelector('img.menu-spu-sel');
     for (let b = 0; b < opts.buttons.length; b++) {
       const nav = opts.buttons[b] || {};
       const input = document.createElement('input');
       input.type = 'button';
-      input.className = 'btn';
+      input.className = hasSpuHighlight ? 'btn btn-spu' : 'btn';
       input.dataset.id = String(b);
       if (nav.up != null) input.dataset.up = String(nav.up);
       if (nav.down != null) input.dataset.down = String(nav.down);
@@ -351,9 +464,10 @@ class XVideo extends HTMLElement implements XVideoElement {
     this.style.display = 'block';
     this.style.width = '100%';
     this.style.maxWidth = '720px';
-    this.style.maxHeight = '480px';
+    this.style.aspectRatio = '720 / 480';
     this.style.margin = '0 auto';
     this.style.background = '#000';
+    this.style.overflow = 'hidden';
 
     // Defer until Solid finishes painting children.
     queueMicrotask(() => this.#refreshPlaylist());
@@ -539,6 +653,9 @@ class XVideo extends HTMLElement implements XVideoElement {
     }
     if (opts.vobID != null) {
       menu.dataset.vob = String(opts.vobID);
+    }
+    if (opts.domain != null) {
+      menu.dataset.domain = String(opts.domain);
     }
 
     updateMenuCellVisuals(menu, opts);
