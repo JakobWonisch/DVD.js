@@ -7,6 +7,7 @@
 export type MenuKeyHost = HTMLElement & {
   _dvdjsActiveMenu?: HTMLElement | null;
   _dvdjsFromButton?: boolean;
+  skipToEnd?: () => boolean;
   setMenuHighlight?: (menu: Element | null, buttonIndex: number) => void;
   flashMenuActivate?: (menu: Element | null, buttonIndex: number) => void;
 };
@@ -136,7 +137,30 @@ export function handleMenuKeyDown(
   host: MenuKeyHost,
   event: KeyboardEvent,
 ): boolean {
+  // Don't steal keys from real form fields / contenteditable.
+  const t = event.target;
+  if (
+    t instanceof HTMLElement &&
+    (t.tagName === 'INPUT' ||
+      t.tagName === 'TEXTAREA' ||
+      t.tagName === 'SELECT' ||
+      t.isContentEditable)
+  ) {
+    // Menu hitboxes are input.btn — still handle those below.
+    if (!(t instanceof HTMLInputElement) || !t.classList.contains('btn')) {
+      return false;
+    }
+  }
+
   const key = event.key;
+  if (key === ' ' || event.code === 'Space') {
+    if (typeof host.skipToEnd === 'function' && host.skipToEnd()) {
+      event.preventDefault();
+      return true;
+    }
+    return false;
+  }
+
   let dir: 'up' | 'down' | 'left' | 'right' | null = null;
   if (key === 'ArrowUp' || event.code === 'ArrowUp') dir = 'up';
   else if (key === 'ArrowDown' || event.code === 'ArrowDown') dir = 'down';

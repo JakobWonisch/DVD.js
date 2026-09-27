@@ -8,6 +8,7 @@ import {
   applyDebugHitboxLabels,
   bindMenuKeys,
 } from './menuKeys.js';
+import { skipPlaybackToEnd } from './skipToEnd.js';
 
 export type MenuCellPlayOpts = {
   menuId?: string;
@@ -48,6 +49,8 @@ export type XVideoElement = HTMLElement & {
   playChapter: (chapterIndex: number) => void;
   playMenuByID: (elementID: string) => void;
   playMenuCell: (opts: MenuCellPlayOpts) => void;
+  /** Jump to the end of the active menu/title clip (Space / toolbar). */
+  skipToEnd: () => boolean;
   setMenuHighlight: (menu: Element | null, buttonIndex: number) => void;
   flashMenuActivate: (menu: Element | null, buttonIndex: number) => void;
   setDebugHitboxes: (enabled: boolean) => void;
@@ -171,6 +174,8 @@ function resetMenuMotion(
       menuVideo.removeEventListener('timeupdate', host._dvdjsMenuTimeUpdate);
       host._dvdjsMenuTimeUpdate = null;
     }
+    host._dvdjsMenuSegmentEnd = null;
+    host._dvdjsFinishMenuSegment = null;
     try {
       menuVideo.pause();
     } catch {
@@ -471,34 +476,59 @@ function playMenuMotionSegment(
 ) {
   const start = opts.startSec || 0;
   const end = opts.endSec!;
+  host._dvdjsMenuSegmentEnd = end;
 
-  const onTimeUpdate = () => {
-    if (menuVideo.currentTime >= end - 0.05) {
-      menuVideo.pause();
-      menuVideo.removeEventListener('timeupdate', onTimeUpdate);
-      if (host._dvdjsMenuTimeUpdate === onTimeUpdate) {
-        host._dvdjsMenuTimeUpdate = null;
-      }
-      // Menu cells with buttons: hold the last frame until the user picks
-      // (still_time 0 would otherwise race through and leave a dead end).
-      if (opts.buttons && opts.buttons.length > 0) {
-        return;
-      }
-      if (typeof host._dvdjsMenuPost === 'function') {
-        const post = host._dvdjsMenuPost;
-        host._dvdjsMenuPost = null;
-        try {
-          post();
-        } catch (e) {
-          console.warn('DVD.js menu post failed', e);
-        }
+  const finishSegment = () => {
+    if (host._dvdjsFinishMenuSegment !== finishSegment) {
+      return;
+    }
+    menuVideo.pause();
+    menuVideo.removeEventListener('timeupdate', onTimeUpdate);
+    menuVideo.removeEventListener('ended', onEnded);
+    if (host._dvdjsMenuTimeUpdate === onTimeUpdate) {
+      host._dvdjsMenuTimeUpdate = null;
+    }
+    if (host._dvdjsMenuEnded === onEnded) {
+      host._dvdjsMenuEnded = null;
+    }
+    host._dvdjsMenuSegmentEnd = null;
+    host._dvdjsFinishMenuSegment = null;
+    // Menu cells with buttons: hold the last frame until the user picks
+    // (still_time 0 would otherwise race through and leave a dead end).
+    if (opts.buttons && opts.buttons.length > 0) {
+      return;
+    }
+    if (typeof host._dvdjsMenuPost === 'function') {
+      const post = host._dvdjsMenuPost;
+      host._dvdjsMenuPost = null;
+      try {
+        post();
+      } catch (e) {
+        console.warn('DVD.js menu post failed', e);
       }
     }
   };
 
+  const onTimeUpdate = () => {
+    if (menuVideo.currentTime >= end - 0.05) {
+      finishSegment();
+    }
+  };
+
+  // Artifacted / short WebMs may never reach endSec via timeupdate.
+  const onEnded = () => {
+    finishSegment();
+  };
+
+  host._dvdjsFinishMenuSegment = finishSegment;
+
   if (host._dvdjsMenuTimeUpdate) {
     menuVideo.removeEventListener('timeupdate', host._dvdjsMenuTimeUpdate);
     host._dvdjsMenuTimeUpdate = null;
+  }
+  if (host._dvdjsMenuEnded) {
+    menuVideo.removeEventListener('ended', host._dvdjsMenuEnded);
+    host._dvdjsMenuEnded = null;
   }
 
   // Match still/SPU: fill the DVD stage (letterboxing is on the stage, not here).
@@ -511,7 +541,9 @@ function playMenuMotionSegment(
 
   const beginPlayback = () => {
     host._dvdjsMenuTimeUpdate = onTimeUpdate;
+    host._dvdjsMenuEnded = onEnded;
     menuVideo.addEventListener('timeupdate', onTimeUpdate);
+    menuVideo.addEventListener('ended', onEnded);
     void playWithAutoplayFallback(menuVideo, host as AutoplayHost).then(
       (ok) => {
         if (ok) {
@@ -523,9 +555,15 @@ function playMenuMotionSegment(
         }
         // Autoplay blocked: keep still visible, wait for Start gesture.
         menuVideo.removeEventListener('timeupdate', onTimeUpdate);
+        menuVideo.removeEventListener('ended', onEnded);
         if (host._dvdjsMenuTimeUpdate === onTimeUpdate) {
           host._dvdjsMenuTimeUpdate = null;
         }
+        if (host._dvdjsMenuEnded === onEnded) {
+          host._dvdjsMenuEnded = null;
+        }
+        host._dvdjsMenuSegmentEnd = null;
+        host._dvdjsFinishMenuSegment = null;
         try {
           menuVideo.pause();
         } catch {
@@ -665,6 +703,14 @@ class XVideo extends HTMLElement implements XVideoElement {
         // ignore
       }
     });
+  }
+
+  /**
+   * Jump to the end of the active menu motion segment, timed still, or title
+   * clip. Used by Space and the toolbar button.
+   */
+  skipToEnd(): boolean {
+    return skipPlaybackToEnd(this);
   }
 
   playByIndex(videoIndex: number) {

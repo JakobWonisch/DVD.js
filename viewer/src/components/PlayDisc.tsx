@@ -14,6 +14,7 @@ import type { DiscMetadata } from '../types/metadata.js';
 
 type PlayerHost = HTMLElement & {
   setDebugHitboxes?: (enabled: boolean) => void;
+  skipToEnd?: () => boolean;
 };
 
 type EnsureStatus = 'ready' | 'decompressing' | 'missing';
@@ -228,13 +229,23 @@ export const PlayDisc: Component = () => {
             />
             Debug button hitboxes
           </label>
-          <button
-            type="button"
-            class="player-toolbar__fs"
-            onClick={() => void toggleFullscreen()}
-          >
-            {isFullscreen() ? 'Exit fullscreen' : 'Fullscreen'}
-          </button>
+          <div class="player-toolbar__actions">
+            <button
+              type="button"
+              class="player-toolbar__skip"
+              title="Skip to end of current clip (Space)"
+              onClick={() => hostEl()?.skipToEnd?.()}
+            >
+              Skip to end
+            </button>
+            <button
+              type="button"
+              class="player-toolbar__fs"
+              onClick={() => void toggleFullscreen()}
+            >
+              {isFullscreen() ? 'Exit fullscreen' : 'Fullscreen'}
+            </button>
+          </div>
         </div>
       </Show>
     </div>

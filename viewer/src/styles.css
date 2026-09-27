@@ -263,7 +263,15 @@ footer {
   user-select: none;
 }
 
-.player-toolbar__fs {
+.player-toolbar__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.player-toolbar__fs,
+.player-toolbar__skip {
   appearance: none;
   border: 1px solid #ccc;
   background: #f7f7f7;
@@ -274,8 +282,21 @@ footer {
   cursor: pointer;
 }
 
-.player-toolbar__fs:hover {
+.player-toolbar__fs:hover,
+.player-toolbar__skip:hover {
   background: #eee;
+}
+
+.player-stage:fullscreen .player-toolbar__fs,
+.player-stage:fullscreen .player-toolbar__skip {
+  border-color: #666;
+  background: #2a2a2a;
+  color: #eee;
+}
+
+.player-stage:fullscreen .player-toolbar__fs:hover,
+.player-stage:fullscreen .player-toolbar__skip:hover {
+  background: #3a3a3a;
 }
 
 /* Debug: force visible hitboxes even when btn-spu hides them. */
