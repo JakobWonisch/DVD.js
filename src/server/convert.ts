@@ -19,6 +19,8 @@ import generateCover from '../server/convert/generateCover.js';
 import extractSpu from '../server/convert/extractSpu.js';
 import generateJavaScript from '../server/convert/generateJavaScript.js';
 import encodeVideo from '../server/convert/encodeVideo.js';
+import ripDisc from '../server/convert/ripDisc.js';
+import uploadConvertedPackage from '../server/convert/upload.js';
 import * as serverUtils from '../server/utils/index.js';
 
 /** Options for a convert run. */
@@ -35,6 +37,14 @@ export type ConvertOptions = {
    * instead of a source VIDEO_TS tree.
    */
   web: boolean;
+  /** Rip/decrypt only; leave VIDEO_TS under workDir (stub). */
+  ripOnly: boolean;
+  /** After convert, keep the decrypted rip under workDir (stub). */
+  keepRip: boolean;
+  /** Writable dir for decrypted VIDEO_TS when ripping (stub). */
+  workDir: string | null;
+  /** After convert, upload package to media server (stub). */
+  upload: boolean;
 };
 
 // pnpm often invokes as `node bin/convert.js -- --vm-only …`; drop leading `--` separators.
@@ -67,6 +77,21 @@ const { values, positionals } = parseArgs({
       type: 'boolean',
       default: false,
     },
+    'rip-only': {
+      type: 'boolean',
+      default: false,
+    },
+    'keep-rip': {
+      type: 'boolean',
+      default: false,
+    },
+    'work-dir': {
+      type: 'string',
+    },
+    upload: {
+      type: 'boolean',
+      default: false,
+    },
   },
 });
 
@@ -75,10 +100,14 @@ const options: ConvertOptions = {
   full: Boolean(values.full || values.titles),
   vmOnly: Boolean(values['vm-only']),
   web: Boolean(values.web),
+  ripOnly: Boolean(values['rip-only']),
+  keepRip: Boolean(values['keep-rip']),
+  workDir: values['work-dir'] ? String(values['work-dir']) : null,
+  upload: Boolean(values.upload),
 };
 
 if (values.help || !inputPath) {
-  console.log(`Convert a DVD for the web.
+  console.log(`Convert a DVD for the web (Linux-first standalone CLI).
 
 Usage:
   pnpm convert -- path/to/DVD/root
@@ -87,13 +116,18 @@ Usage:
   pnpm convert -- --vm-only --web lotr1_part1
   pnpm convert -- --vm-only --web /path/to/webFolder/lotr1_part1
 
-By default only menu VOBs are encoded (VIDEO_TS.VOB, VTS_*_0.VOB).
+Default: convert a readable VIDEO_TS tree to the web package (menus only).
 Pass --full (or --titles) to also encode title content (feature, extras).
 
 --vm-only regenerates vm.js only from existing converted JSON under webFolder
 (IFO JSON, NAV JSON, metadata.json). No ffmpeg / stills / SPU re-extract.
 With --web, the positional is a disc folder name (or path) under webFolder —
-the original VIDEO_TS tree is not required.`);
+the original VIDEO_TS tree is not required.
+
+Planned (stubs today — see AGENTS.md):
+  --rip-only --work-dir DIR   Decrypt/copy disc or ISO to DIR and stop
+  --keep-rip --work-dir DIR   Convert, but leave the decrypted rip in DIR
+  --upload                    Upload converted menu package to media server`);
   process.exit(0);
 }
 
@@ -148,9 +182,47 @@ function assertVmInputs(dvdPath: string) {
   }
 }
 
+async function runStubFlags(dvdPathArg: string, opts: ConvertOptions) {
+  if (opts.upload && opts.ripOnly) {
+    console.error('--upload does not apply with --rip-only (nothing converted yet).');
+    process.exit(1);
+  }
+
+  if (opts.ripOnly || opts.keepRip) {
+    var workDir = opts.workDir || path.join(appConfig.webFolder, '.rip-work');
+    var rip = await ripDisc({
+      source: dvdPathArg,
+      workDir: workDir,
+      menusOnly: !opts.full,
+    });
+    console.error(rip.message);
+    if (opts.ripOnly) {
+      process.exit(rip.ok ? 0 : 1);
+    }
+    // keepRip: fall through to convert once ripDisc is implemented.
+    if (!rip.ok) {
+      process.exit(1);
+    }
+  }
+}
+
 function convertDVD(dvdPathArg: string, options: ConvertOptions) {
   var dvdPath = resolveDvdPath(dvdPathArg, options);
 
+  if (options.ripOnly || options.keepRip || options.upload) {
+    runStubFlags(dvdPathArg, options).then(function () {
+      if (options.ripOnly) {
+        return;
+      }
+      continueConvert(dvdPath, options);
+    });
+    return;
+  }
+
+  continueConvert(dvdPath, options);
+}
+
+function continueConvert(dvdPath: string, options: ConvertOptions) {
   if (options.vmOnly) {
     assertVmInputs(dvdPath);
     process.stdout.write(
@@ -158,7 +230,7 @@ function convertDVD(dvdPathArg: string, options: ConvertOptions) {
     );
     process.stdout.write('  web path: ' + serverUtils.getWebPath(dvdPath) + '\n');
     generateJavaScript(dvdPath, function () {
-      console.log("That's all folks!");
+      afterConvertHooks(dvdPath, options);
     });
     return;
   }
@@ -185,7 +257,7 @@ function convertDVD(dvdPathArg: string, options: ConvertOptions) {
                     generateJavaScript(dvdPath, function () {
                       encodeVideo(dvdPath, options, function () {
                         generateCatalogue(function () {
-                          console.log("That's all folks!");
+                          afterConvertHooks(dvdPath, options);
                         });
                       });
                     });
@@ -207,6 +279,21 @@ function convertDVD(dvdPathArg: string, options: ConvertOptions) {
     }
     generateChapters(dvdPath, next);
   }
+}
+
+function afterConvertHooks(dvdPath: string, opts: ConvertOptions) {
+  if (!opts.upload) {
+    console.log("That's all folks!");
+    return;
+  }
+  var packagePath = serverUtils.getWebPath(dvdPath);
+  uploadConvertedPackage({ packagePath: packagePath }).then(function (result) {
+    console.error(result.message);
+    console.log("That's all folks!");
+    if (!result.ok) {
+      process.exitCode = 1;
+    }
+  });
 }
 
 convertDVD(inputPath, options);

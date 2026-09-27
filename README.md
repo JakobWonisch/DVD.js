@@ -10,7 +10,7 @@ Clients never download the full ISO. The converter rips server-side and streams 
 
 This checkout continues the **converter** architecture (pre-rip + stream). The product focus is **menus**: default convert is menus-only; navigate still/motion menus with mouse and D-pad. JumpTT on a menu-only rip shows “title not included”. The browser UI is a **SolidJS** app under `viewer/` (Vite). Menu SPU select/activate overlays are baked at convert time. See `AGENTS.md` for goals and build order.
 
-Requires a **decrypted** `VIDEO_TS` / ISO (CSS/DRM out of scope).
+Today convert expects a readable `VIDEO_TS` tree. Planned Linux-first standalone CLI: a **setup script** downloads the main binary, ffmpeg, and dvdbackup separately (prompts if system copies exist); **libdvdcss** is opt-in. Windows/macOS later. Catalogue tiles use one `cover.jpg` per disc.
 
 ## Pipeline
 
@@ -113,7 +113,10 @@ Needs `<video>`, `<track>`, and WebVTT.
 DVDs include menus, audio/subtitle selection, and interactive navigation. Preserving **menus** is the point. The default convert therefore rips **menus only**; `--full` is optional when you also want title playback. Play/JumpTT on a menu-only archive shows a short “title not included” message instead of breaking.
 
 **Why not full ISO-in-browser / OS emulation?**  
-Overkill for this product. Convert once, stream assets, drive navigation with converted VM/menu data (and optionally libdvdnav later).
+Overkill for this product. Convert once, stream assets, drive navigation with converted VM/menu data. libdvdnav stays an optional rip-time oracle if nav bugs need a known-good engine — see `AGENTS.md`.
+
+**What about CSS-encrypted discs?**  
+CSS decryption belongs only in the **rip** stage (`ripDisc` → dvdbackup/libdvdcss), never in ffmpeg or upload. Default convert uses a decrypted folder today; `--rip-only` / `--keep-rip` are stubs for the Linux-first standalone CLI. Upload pushes the converted web package only.
 
 **Do you need help?**  
 Yes — issues and PRs welcome. Prefer changes aligned with the priority order in `AGENTS.md`.

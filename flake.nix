@@ -18,11 +18,17 @@
         pkgs = import nixpkgs { inherit system; };
       in
       {
+        # libdvdcss/libdvdread/dvdbackup: optional convert front-end for
+        # CSS-encrypted optical discs (rip to a writable tree, then convert).
+        # See AGENTS.md — not used by the Node pipeline until the rip step lands.
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             nodejs_24
             pnpm
             ffmpeg
+            libdvdcss
+            libdvdread
+            dvdbackup
             typescript-language-server
             nixfmt-rfc-style
           ];
@@ -32,6 +38,7 @@
             echo "Setup: pnpm install && pnpm build"
             echo "Run:   cp config/app.example.json config/app.json  # then edit webFolder"
             echo "       pnpm convert -- /path/to/DVD && pnpm start"
+            echo "Rip tools: dvdbackup (libdvdcss) for encrypted discs — see AGENTS.md"
           '';
         };
       }
