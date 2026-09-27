@@ -431,10 +431,18 @@ function generateJavaScript(dvdPath: string, callback) {
           basename + '-' + toHex(start) + '.json'
         );
         var pci = loadJsonFile(navFile).pci;
+        var btnNs =
+          pci && pci.hli && pci.hli.hl_gi ? pci.hli.hl_gi.btn_ns || 0 : 0;
+
+        // Do not wipe a richer btnNav/btnCmd from an earlier cell that shares
+        // this vob_id (common on VMGM: empty lead-in then real menu cell).
+        if (!btnNs) {
+          continue;
+        }
 
         code.push('btnCmd[' + pointer + '][' + vobPointer + '] = [];');
         code.push('btnNav[' + pointer + '][' + vobPointer + '] = [];');
-        for (var j = 0; j < pci.hli.hl_gi.btn_ns; j++) {
+        for (var j = 0; j < btnNs; j++) {
           var cmd = pci.hli.btnit[j].cmd;
           var btn = pci.hli.btnit[j];
           code.push(

@@ -116,14 +116,23 @@ const DomainMenus: Component<{ domain: DomainMetadata; id: number }> = (
                 }
                 lang={lang}
               >
+                {/* Still optional: motion menus swap assets in playMenuCell. */}
+                <Show when={cell()?.css}>
+                  <link rel="stylesheet" href={cell()!.css!} />
+                </Show>
                 <Show when={cell()?.still}>
-                  <Show when={cell()?.css}>
-                    <link rel="stylesheet" href={cell()!.css!} />
-                  </Show>
                   <img class="menu-still" src={cell()!.still!} alt="" />
+                </Show>
+                <Show
+                  when={
+                    cell()?.spu ||
+                    (cell()?.spuSelect || []).length > 0 ||
+                    (cell()?.buttons || []).length > 0
+                  }
+                >
                   <MenuOverlays cell={cell()!} />
                   <MenuButtons
-                    count={cell()!.btn_nb || 0}
+                    count={cell()!.btn_nb || (cell()!.buttons || []).length || 0}
                     buttons={cell()!.buttons || []}
                     hasSpuHighlight={hasSpu()}
                   />

@@ -19,6 +19,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/dvds.json': 'http://127.0.0.1:3000',
+      '/api': 'http://127.0.0.1:3000',
+      // Cover sidecars next to archives (Foo.cover.jpg).
+      '^/[^/]+\\.cover\\.jpg$': 'http://127.0.0.1:3000',
       // Converted disc assets live under webFolder, served by pnpm start.
       '^/[^/]+/(metadata\\.json|vm\\.js|.*\\.(webm|png|css|vtt|jpg))$':
         'http://127.0.0.1:3000',

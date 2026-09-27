@@ -2,6 +2,8 @@
 export type DvdListItem = {
   name: string;
   dir: string;
+  /** Thumbnail path relative to webFolder root (e.g. `Foo.cover.jpg`). */
+  cover?: string;
 };
 
 /** Button adjacency from PCI btnit (1-based neighbor ids). */

@@ -10,6 +10,7 @@ import * as path from 'node:path';
 import * as serverUtils from '../../server/utils/index.js';
 import editMetadataFile from '../../server/utils/editMetadataFile.js';
 import * as utils from '../../utils.js';
+import { resolveMenuFrameHeight } from './menuFrameHeight.js';
 
 var toHex = utils.toHex;
 
@@ -79,13 +80,13 @@ function generateButtons(dvdPath: string, callback) {
         hli_s_ptm = json.pci.hli.hl_gi.hli_s_ptm;
         hli_e_ptm = json.pci.hli.hl_gi.hli_e_ptm;
 
-        var frameHeight = 480;
-        for (var fi = 0; fi < json.pci.hli.hl_gi.btn_ns; fi++) {
-          if (json.pci.hli.btnit[fi].y_end >= 480) {
-            frameHeight = 576;
-            break;
-          }
-        }
+        // Scale PCI y coords by this disc's menu frame (IFO VTSM/VMGM
+        // video_format: PAL 576 / NTSC 480). Title vts_video_attr is ignored.
+        var frameHeight = resolveMenuFrameHeight(
+          ifoJson,
+          json.pci.hli.btnit,
+          json.pci.hli.hl_gi.btn_ns
+        );
 
         for (var i = 0; i < json.pci.hli.hl_gi.btn_ns; i++) {
           var btn = json.pci.hli.btnit[i];

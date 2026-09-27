@@ -2,8 +2,8 @@
  * Upload a converted menu package to a remote media server.
  *
  * Stub only — empty header for a future uploader. The media server is out of
- * tree; this hook will POST/PUT the webFolder disc tree (WebM + JSON/CSS/JS +
- * stills), never raw VOBs or CSS-encrypted sources.
+ * tree; this hook will POST/PUT the webFolder disc archive (`<disc>.tar.gz`)
+ * (or unpacked tree for legacy packages), never raw VOBs or CSS-encrypted sources.
  *
  * @see AGENTS.md — Standalone converter app → Upload mode
  */

@@ -18,7 +18,8 @@ Architecture: **converter** (this checkout). Do not revive an on-the-fly/full-IS
 - Featurettes not required; menu interaction is
 - Default convert is **menus only** (`VIDEO_TS.VOB` / `VTS_*_0.VOB`); `--full` encodes title VOBs too
 - Title JumpTT / play on a menu-only rip must show a clear “not included” message (not a broken player)
-- Catalogue thumbnail is one `cover.jpg` from the best VMGM menu still — **no menu gallery**
+- Catalogue thumbnail is one `cover.jpg` from the best VMGM menu still — **no menu gallery** (stored as `<discId>.cover.jpg` sidecar beside the archive)
+- Converted discs are stored **compressed at rest** (`webFolder/<discId>.tar.gz`); the HTTP server decompresses on first play, keeps the folder warm for **1 hour**, then deletes the cache and leaves only the archive
 - Ideal UX: insert an optical disc (CSS-encrypted OK) → convert → playable web package; ship as Linux-first standalone CLI (Windows/macOS later)
 
 ## MVP success criteria
@@ -178,6 +179,7 @@ dvdjs-convert /dev/sr0       # convert using tools.json paths
 | Area | Path |
 |------|------|
 | Rip pipeline | `src/server/convert/*` |
+| Disc archive / cache | `src/server/discCache.ts` (pack `.tar.gz`, ensure/extract, 1h TTL eviction) |
 | Rip / decrypt stub | `src/server/convert/ripDisc.ts` |
 | Upload stub | `src/server/convert/upload.ts` |
 | App config | `src/loadAppConfig.ts`, `config/app.example.json` |
@@ -191,6 +193,8 @@ dvdjs-convert /dev/sr0       # convert using tools.json paths
 Solid custom elements: set `data-*` with `attr:data-*={...}` (property binding does not create attributes, so generated button CSS selectors like `[data-domain="0"] …` would miss).
 
 `generateMenuCellTable` merges into existing `menuCell` entries (preserves `css` / `buttons` / SPU from later convert steps when stills are re-run alone).
+
+Menu button CSS and SPU frame height use `resolveMenuFrameHeight` (`menuFrameHeight.ts`): IFO **menu** `video_format` (VMGM/VTSM → PAL 576 / NTSC 480), never title `vts_video_attr` (can disagree). Falls back to PCI button `y_end` when menu attrs are missing.
 ## Common commands
 
 ```bash

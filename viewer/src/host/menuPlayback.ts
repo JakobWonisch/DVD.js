@@ -1,3 +1,9 @@
+import {
+  notifyAutoplayBlocked,
+  playWithAutoplayFallback,
+  type AutoplayHost,
+} from './autoplay.js';
+
 export const TITLE_UNAVAILABLE_MESSAGE =
   'Title video was not included in this archive.';
 
@@ -412,6 +418,9 @@ export function playMenuMotionSegment(
       if (host._dvdjsMenuTimeUpdate === onTimeUpdate) {
         host._dvdjsMenuTimeUpdate = null;
       }
+      if (opts.buttons && opts.buttons.length > 0) {
+        return;
+      }
       if (typeof host._dvdjsMenuPost === 'function') {
         const post = host._dvdjsMenuPost;
         host._dvdjsMenuPost = null;
@@ -426,37 +435,69 @@ export function playMenuMotionSegment(
 
   if (host._dvdjsMenuTimeUpdate) {
     menuVideo.removeEventListener('timeupdate', host._dvdjsMenuTimeUpdate);
+    host._dvdjsMenuTimeUpdate = null;
   }
-  host._dvdjsMenuTimeUpdate = onTimeUpdate;
 
   menuVideo.hidden = false;
   menuVideo.style.cssText =
-    'position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;z-index:0;';
+    'position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;z-index:0;';
   const still = host._dvdjsActiveMenu?.querySelector(
     'img.menu-still',
   ) as HTMLImageElement | null;
-  if (still) {
-    still.style.opacity = '0';
-  }
 
-  const startPlayback = () => {
-    menuVideo.currentTime = start;
+  const beginPlayback = () => {
+    host._dvdjsMenuTimeUpdate = onTimeUpdate;
     menuVideo.addEventListener('timeupdate', onTimeUpdate);
-    const p = menuVideo.play();
-    if (p && typeof p.catch === 'function') {
-      p.catch(() => {
-        /* autoplay may fail; still UI remains usable */
-      });
+    void playWithAutoplayFallback(menuVideo, host as AutoplayHost).then(
+      (ok) => {
+        if (ok) {
+          if (still) {
+            still.style.opacity = '0';
+          }
+          onReady?.();
+          return;
+        }
+        menuVideo.removeEventListener('timeupdate', onTimeUpdate);
+        if (host._dvdjsMenuTimeUpdate === onTimeUpdate) {
+          host._dvdjsMenuTimeUpdate = null;
+        }
+        try {
+          menuVideo.pause();
+        } catch {
+          // ignore
+        }
+        if (still) {
+          still.style.opacity = '';
+        }
+        notifyAutoplayBlocked(host as AutoplayHost);
+      },
+    );
+  };
+
+  const seekThenPlay = () => {
+    const onSeeked = () => {
+      menuVideo.removeEventListener('seeked', onSeeked);
+      beginPlayback();
+    };
+    if (Math.abs(menuVideo.currentTime - start) < 0.04) {
+      beginPlayback();
+      return;
     }
-    onReady?.();
+    menuVideo.addEventListener('seeked', onSeeked);
+    try {
+      menuVideo.currentTime = start;
+    } catch {
+      menuVideo.removeEventListener('seeked', onSeeked);
+      beginPlayback();
+    }
   };
 
   if (menuVideo.readyState >= 1) {
-    startPlayback();
+    seekThenPlay();
   } else {
     const onMeta = () => {
       menuVideo.removeEventListener('loadedmetadata', onMeta);
-      startPlayback();
+      seekThenPlay();
     };
     menuVideo.addEventListener('loadedmetadata', onMeta);
     menuVideo.load();

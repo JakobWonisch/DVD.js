@@ -49,10 +49,11 @@ function pickExistingLang(host: HTMLElement) {
 }
 
 /**
- * Load a converted disc's vm.js, bind window.dvd, then start FP_PGC.
+ * Load a converted disc's vm.js and bind window.dvd.
+ * Does not start FP_PGC — call {@link startVm} after a user gesture (Start).
  * Returns a disposer that removes the script tag.
  */
-export function loadAndStartVm(
+export function loadVm(
   dvdId: string,
   host: HTMLElement,
 ): Promise<() => void> {
@@ -69,7 +70,7 @@ export function loadAndStartVm(
     };
 
     script.onload = () => {
-      console.log('Start the DVD.');
+      console.log('DVD vm.js loaded.');
       (window as any).dvd = host;
 
       const g = window as unknown as VmGlobals;
@@ -77,9 +78,6 @@ export function loadAndStartVm(
         g.init();
       }
       pickExistingLang(host);
-      if (typeof g.fp_pgc === 'function') {
-        g.fp_pgc();
-      }
       resolve(dispose);
     };
     script.onerror = () => {
@@ -88,5 +86,32 @@ export function loadAndStartVm(
     };
 
     document.head.appendChild(script);
+  });
+}
+
+/** Run First-Play (intro) from the beginning. Call from a user gesture when possible. */
+export function startVm(host: HTMLElement) {
+  (window as any).dvd = host;
+  const g = window as unknown as VmGlobals;
+  if (typeof g.init === 'function') {
+    g.init();
+  }
+  pickExistingLang(host);
+  if (typeof g.fp_pgc === 'function') {
+    console.log('Start the DVD.');
+    g.fp_pgc();
+  }
+}
+
+/**
+ * @deprecated Prefer loadVm + startVm so playback begins after a user gesture.
+ */
+export function loadAndStartVm(
+  dvdId: string,
+  host: HTMLElement,
+): Promise<() => void> {
+  return loadVm(dvdId, host).then((dispose) => {
+    startVm(host);
+    return dispose;
   });
 }

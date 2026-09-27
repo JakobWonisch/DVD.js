@@ -24,6 +24,8 @@ import generateCover from '../server/convert/generateCover.js';
 import extractSpu from '../server/convert/extractSpu.js';
 import generateJavaScript from '../server/convert/generateJavaScript.js';
 import encodeVideo from '../server/convert/encodeVideo.js';
+import packConvertedDisc from '../server/convert/packDiscArchive.js';
+import { waitUntilDiscReady } from '../server/discCache.js';
 
 /** Options for a convert run. */
 export type ConvertOptions = {
@@ -181,10 +183,13 @@ function resolveDvdPath(pathArg: string, opts: ConvertOptions): string {
   return path.join(appConfig.webFolder, path.basename(normalized));
 }
 
-function assertVmInputs(dvdPath: string) {
+async function assertVmInputs(dvdPath: string) {
   var webPath = serverUtils.getWebPath(dvdPath);
+  var discId = path.basename(webPath);
+  var webFolder = path.dirname(webPath);
+  var status = await waitUntilDiscReady(webFolder, discId);
   var metadataPath = path.join(webPath, 'metadata.json');
-  if (!fs.existsSync(metadataPath)) {
+  if (status !== 'ready' || !fs.existsSync(metadataPath)) {
     console.error(
       'Missing ' +
         metadataPath +
@@ -243,13 +248,18 @@ function convertDVD(dvdPathArg: string, options: ConvertOptions) {
 
 function continueConvert(dvdPath: string, options: ConvertOptions) {
   if (options.vmOnly) {
-    assertVmInputs(dvdPath);
-    process.stdout.write(
-      '\nConvert mode: vm-only (regenerate vm.js from existing JSON)\n'
-    );
-    process.stdout.write('  web path: ' + serverUtils.getWebPath(dvdPath) + '\n');
-    generateJavaScript(dvdPath, function () {
-      afterConvertHooks(dvdPath, options);
+    assertVmInputs(dvdPath).then(function () {
+      process.stdout.write(
+        '\nConvert mode: vm-only (regenerate vm.js from existing JSON)\n'
+      );
+      process.stdout.write('  web path: ' + serverUtils.getWebPath(dvdPath) + '\n');
+      generateJavaScript(dvdPath, function () {
+        packConvertedDisc(dvdPath, function () {
+          generateCatalogue(function () {
+            afterConvertHooks(dvdPath, options);
+          });
+        });
+      });
     });
     return;
   }
@@ -286,8 +296,10 @@ function startConvertPipeline(dvdPath: string, options: ConvertOptions) {
                   extractSpu(dvdPath, function () {
                     generateJavaScript(dvdPath, function () {
                       encodeVideo(dvdPath, options, function () {
-                        generateCatalogue(function () {
-                          afterConvertHooks(dvdPath, options);
+                        packConvertedDisc(dvdPath, function () {
+                          generateCatalogue(function () {
+                            afterConvertHooks(dvdPath, options);
+                          });
                         });
                       });
                     });
@@ -316,7 +328,10 @@ function afterConvertHooks(dvdPath: string, opts: ConvertOptions) {
     console.log("That's all folks!");
     return;
   }
-  var packagePath = serverUtils.getWebPath(dvdPath);
+  var webPath = serverUtils.getWebPath(dvdPath);
+  var discId = path.basename(webPath);
+  var archive = path.join(path.dirname(webPath), discId + '.tar.gz');
+  var packagePath = fs.existsSync(archive) ? archive : webPath;
   uploadConvertedPackage({ packagePath: packagePath }).then(function (result) {
     console.error(result.message);
     console.log("That's all folks!");

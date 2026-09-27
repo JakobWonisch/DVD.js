@@ -17,6 +17,7 @@ import {
   renderBaseSpuPng,
   renderSelectSpuPng,
 } from '../spu/render.js';
+import { resolveMenuFrameHeight } from './menuFrameHeight.js';
 
 var toHex = utils.toHex;
 
@@ -126,6 +127,16 @@ function extractSpu(dvdPath: string, callback) {
         vobPointer++;
         setTimeout(processCell, 0);
         return;
+      }
+
+      // Match stills/buttons: PAL menus are 576 lines even when DCSQ y2 < 480.
+      var menuHeight = resolveMenuFrameHeight(
+        ifoJson,
+        nav && nav.pci && nav.pci.hli && nav.pci.hli.btnit,
+        btnNs || 0
+      );
+      if (menuHeight > decoded.frameHeight) {
+        decoded.frameHeight = menuHeight;
       }
 
       var palette = findPalette(ifoJson, cellID, vobID) || defaultPalette();

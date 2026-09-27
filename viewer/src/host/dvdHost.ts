@@ -1,4 +1,13 @@
 import { TITLE_UNAVAILABLE_MESSAGE } from './titleUnavailable.js';
+import {
+  notifyAutoplayBlocked,
+  playWithAutoplayFallback,
+  type AutoplayHost,
+} from './autoplay.js';
+import {
+  applyDebugHitboxLabels,
+  bindMenuKeys,
+} from './menuKeys.js';
 
 export type MenuCellPlayOpts = {
   menuId?: string;
@@ -41,6 +50,7 @@ export type XVideoElement = HTMLElement & {
   playMenuCell: (opts: MenuCellPlayOpts) => void;
   setMenuHighlight: (menu: Element | null, buttonIndex: number) => void;
   flashMenuActivate: (menu: Element | null, buttonIndex: number) => void;
+  setDebugHitboxes: (enabled: boolean) => void;
 };
 
 function hideAllMenu(host: HTMLElement) {
@@ -245,51 +255,102 @@ export function flashMenuButtonActivate(
   }, durationMs);
 }
 
+function resolveMenuAssetBase(
+  menu: HTMLElement,
+  domain: string | number | null | undefined,
+  opts: MenuCellPlayOpts,
+): string | null {
+  const fromList = [...(opts.spuSelect || []), ...(opts.spuActivate || [])];
+  for (const src of fromList) {
+    const m = src && src.match(/^(.*\/)menu-\d+-\d+-\d+/);
+    if (m) {
+      return m[1];
+    }
+  }
+
+  const still = menu.querySelector('img.menu-still') as HTMLImageElement | null;
+  const stillSrc = still?.getAttribute('src');
+  if (stillSrc) {
+    const m = stillSrc.match(/^(.*\/)menu-\d+-\d+-\d+\.png/);
+    if (m) {
+      return m[1];
+    }
+  }
+
+  const dom = domain != null ? String(domain) : menu.dataset.domain;
+  if (dom != null && menu.ownerDocument) {
+    const menuVideo = menu.ownerDocument.getElementById(
+      `menu-video-${dom}`,
+    ) as HTMLVideoElement | null;
+    const vsrc =
+      menuVideo?.getAttribute('src') || menuVideo?.currentSrc || '';
+    const vm = vsrc.match(/^(.*\/)[^/]+$/);
+    if (vm) {
+      return vm[1];
+    }
+  }
+
+  // Any still/CSS already on the page for this disc.
+  const any = document.querySelector(
+    'img.menu-still[src*="menu-"], link[href*="menu-"]',
+  ) as HTMLElement | null;
+  const href =
+    (any as HTMLImageElement)?.src ||
+    (any as HTMLLinkElement)?.href ||
+    any?.getAttribute('src') ||
+    any?.getAttribute('href') ||
+    '';
+  const am = href.match(/^(.*\/)menu-\d+-\d+-\d+/);
+  return am ? am[1] : null;
+}
+
 function updateMenuCellVisuals(menu: HTMLElement, opts: MenuCellPlayOpts) {
   if (opts.cellID == null || opts.vobID == null) {
     return;
   }
   const domain =
     opts.domain != null ? opts.domain : menu.dataset.domain;
-  const still = menu.querySelector('img.menu-still') as HTMLImageElement | null;
+  const baseDir = resolveMenuAssetBase(menu, domain, opts);
+  const prefix =
+    domain != null
+      ? `menu-${domain}-${opts.cellID}-${opts.vobID}`
+      : null;
+
+  let still = menu.querySelector('img.menu-still') as HTMLImageElement | null;
   let cssHref: string | null = null;
   let stillSrc: string | null = null;
 
+  if (baseDir && prefix) {
+    stillSrc = `${baseDir}${prefix}.png`;
+    cssHref = `${baseDir}${prefix}.css`;
+  }
+
+  // Prefer an already-linked stylesheet for this cell when present.
   const links = document.querySelectorAll(
     `link[href*="menu-${domain}-${opts.cellID}-${opts.vobID}"]`,
   );
   if (links.length) {
-    cssHref = links[0].getAttribute('href');
-  }
-  const imgs = document.querySelectorAll(
-    `img.menu-still[src*="menu-${domain}-${opts.cellID}-${opts.vobID}"]`,
-  );
-  if (imgs.length) {
-    stillSrc = imgs[0].getAttribute('src');
-  }
-  if (!stillSrc && still?.getAttribute('src')) {
-    const m = still
-      .getAttribute('src')!
-      .match(/^(.*\/)menu-\d+-\d+-\d+\.png$/);
-    if (m) {
-      stillSrc = `${m[1]}menu-${domain}-${opts.cellID}-${opts.vobID}.png`;
-      cssHref = `${m[1]}menu-${domain}-${opts.cellID}-${opts.vobID}.css`;
-    }
-  }
-  if (stillSrc && still) {
-    still.setAttribute('src', stillSrc);
+    cssHref = links[0].getAttribute('href') || cssHref;
   }
 
-  let baseDir: string | null = null;
   if (stillSrc) {
-    const bm = stillSrc.match(/^(.*\/)menu-\d+-\d+-\d+\.png$/);
-    if (bm) {
-      baseDir = bm[1];
+    if (!still) {
+      still = document.createElement('img');
+      still.className = 'menu-still';
+      still.alt = '';
+      menu.insertBefore(still, menu.firstChild);
     }
+    still.setAttribute('src', stillSrc);
+    still.style.display = '';
+    still.onerror = () => {
+      // Motion-only cells may lack a still PNG — keep video visible.
+      still!.style.display = 'none';
+    };
   }
-  if (baseDir) {
+
+  if (baseDir && prefix) {
     let spu = menu.querySelector('img.menu-spu') as HTMLImageElement | null;
-    const spuSrc = `${baseDir}menu-${domain}-${opts.cellID}-${opts.vobID}-spu.png`;
+    const spuSrc = `${baseDir}${prefix}-spu.png`;
     if (spu) {
       spu.setAttribute('src', spuSrc);
     } else {
@@ -313,12 +374,8 @@ function updateMenuCellVisuals(menu: HTMLElement, opts: MenuCellPlayOpts) {
     let actList = opts.spuActivate ? [...opts.spuActivate] : [];
     if (!selList.length && opts.buttons && opts.buttons.length) {
       for (let si = 0; si < opts.buttons.length; si++) {
-        selList.push(
-          `${baseDir}menu-${domain}-${opts.cellID}-${opts.vobID}-spu-sel-${si}.png`,
-        );
-        actList.push(
-          `${baseDir}menu-${domain}-${opts.cellID}-${opts.vobID}-spu-act-${si}.png`,
-        );
+        selList.push(`${baseDir}${prefix}-spu-sel-${si}.png`);
+        actList.push(`${baseDir}${prefix}-spu-act-${si}.png`);
       }
     }
     for (let sj = 0; sj < selList.length; sj++) {
@@ -339,6 +396,32 @@ function updateMenuCellVisuals(menu: HTMLElement, opts: MenuCellPlayOpts) {
       aimg.alt = '';
       aimg.setAttribute('aria-hidden', 'true');
       aimg.src = actList[aj];
+      menu.appendChild(aimg);
+    }
+  } else if (opts.spuSelect && opts.spuSelect.length) {
+    // Absolute SPU URLs without a resolved baseDir (still-less menus).
+    menu
+      .querySelectorAll('img.menu-spu-sel, img.menu-spu-act')
+      .forEach((el) => el.remove());
+    for (let sj = 0; sj < opts.spuSelect.length; sj++) {
+      const simg = document.createElement('img');
+      simg.className = 'menu-spu-sel';
+      simg.dataset.id = String(sj);
+      simg.hidden = true;
+      simg.alt = '';
+      simg.setAttribute('aria-hidden', 'true');
+      simg.src = opts.spuSelect[sj];
+      menu.appendChild(simg);
+    }
+    const acts = opts.spuActivate || [];
+    for (let aj = 0; aj < acts.length; aj++) {
+      const aimg = document.createElement('img');
+      aimg.className = 'menu-spu-act';
+      aimg.dataset.id = String(aj);
+      aimg.hidden = true;
+      aimg.alt = '';
+      aimg.setAttribute('aria-hidden', 'true');
+      aimg.src = acts[aj];
       menu.appendChild(aimg);
     }
   }
@@ -396,6 +479,11 @@ function playMenuMotionSegment(
       if (host._dvdjsMenuTimeUpdate === onTimeUpdate) {
         host._dvdjsMenuTimeUpdate = null;
       }
+      // Menu cells with buttons: hold the last frame until the user picks
+      // (still_time 0 would otherwise race through and leave a dead end).
+      if (opts.buttons && opts.buttons.length > 0) {
+        return;
+      }
       if (typeof host._dvdjsMenuPost === 'function') {
         const post = host._dvdjsMenuPost;
         host._dvdjsMenuPost = null;
@@ -410,37 +498,72 @@ function playMenuMotionSegment(
 
   if (host._dvdjsMenuTimeUpdate) {
     menuVideo.removeEventListener('timeupdate', host._dvdjsMenuTimeUpdate);
+    host._dvdjsMenuTimeUpdate = null;
   }
-  host._dvdjsMenuTimeUpdate = onTimeUpdate;
 
+  // Match still/SPU: fill the DVD stage (letterboxing is on the stage, not here).
   menuVideo.hidden = false;
   menuVideo.style.cssText =
-    'position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;z-index:0;';
+    'position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;z-index:0;';
   const still =
     host._dvdjsActiveMenu &&
     host._dvdjsActiveMenu.querySelector('img.menu-still');
-  if (still) {
-    (still as HTMLElement).style.opacity = '0';
-  }
 
-  const startPlayback = () => {
-    menuVideo.currentTime = start;
+  const beginPlayback = () => {
+    host._dvdjsMenuTimeUpdate = onTimeUpdate;
     menuVideo.addEventListener('timeupdate', onTimeUpdate);
-    const p = menuVideo.play();
-    if (p && typeof p.catch === 'function') {
-      p.catch(() => {
-        /* autoplay may fail */
-      });
+    void playWithAutoplayFallback(menuVideo, host as AutoplayHost).then(
+      (ok) => {
+        if (ok) {
+          if (still) {
+            (still as HTMLElement).style.opacity = '0';
+          }
+          onReady();
+          return;
+        }
+        // Autoplay blocked: keep still visible, wait for Start gesture.
+        menuVideo.removeEventListener('timeupdate', onTimeUpdate);
+        if (host._dvdjsMenuTimeUpdate === onTimeUpdate) {
+          host._dvdjsMenuTimeUpdate = null;
+        }
+        try {
+          menuVideo.pause();
+        } catch {
+          // ignore
+        }
+        if (still) {
+          (still as HTMLElement).style.opacity = '';
+        }
+        notifyAutoplayBlocked(host as AutoplayHost);
+      },
+    );
+  };
+
+  /** Seek then play — avoids black/skip when re-entering a segment already near end. */
+  const seekThenPlay = () => {
+    const onSeeked = () => {
+      menuVideo.removeEventListener('seeked', onSeeked);
+      beginPlayback();
+    };
+    if (Math.abs(menuVideo.currentTime - start) < 0.04) {
+      beginPlayback();
+      return;
     }
-    onReady();
+    menuVideo.addEventListener('seeked', onSeeked);
+    try {
+      menuVideo.currentTime = start;
+    } catch {
+      menuVideo.removeEventListener('seeked', onSeeked);
+      beginPlayback();
+    }
   };
 
   if (menuVideo.readyState >= 1) {
-    startPlayback();
+    seekThenPlay();
   } else {
     const onMeta = () => {
       menuVideo.removeEventListener('loadedmetadata', onMeta);
-      startPlayback();
+      seekThenPlay();
     };
     menuVideo.addEventListener('loadedmetadata', onMeta);
     menuVideo.load();
@@ -482,21 +605,27 @@ class XVideo extends HTMLElement implements XVideoElement {
   playlist: PlaylistEntry[] = [];
   videoIndex = 0;
   onmenu: ((event: object) => void) | null = null;
+  #unbindKeys: (() => void) | null = null;
 
   connectedCallback() {
     if (getComputedStyle(this).position === 'static') {
       this.style.position = 'relative';
     }
     this.style.display = 'block';
-    this.style.width = '100%';
-    this.style.maxWidth = '720px';
-    this.style.aspectRatio = '720 / 480';
     this.style.margin = '0 auto';
     this.style.background = '#000';
     this.style.overflow = 'hidden';
+    this.tabIndex = 0;
+
+    this.#unbindKeys = bindMenuKeys(this);
 
     // Defer until Solid finishes painting children.
     queueMicrotask(() => this.#refreshPlaylist());
+  }
+
+  disconnectedCallback() {
+    this.#unbindKeys?.();
+    this.#unbindKeys = null;
   }
 
   #refreshPlaylist() {
@@ -703,6 +832,14 @@ class XVideo extends HTMLElement implements XVideoElement {
     const enableButtons = () => {
       highlightMenuButton(menu, btnIndex);
       setMenuButtonsEnabled(menu, true);
+      if (this.classList.contains('dvdjs-debug-hitboxes')) {
+        applyDebugHitboxLabels(menu);
+      }
+      try {
+        this.focus({ preventScroll: true });
+      } catch {
+        // ignore
+      }
     };
 
     setMenuButtonsEnabled(menu, false);
@@ -761,10 +898,11 @@ class XVideo extends HTMLElement implements XVideoElement {
   }
 
   setMenuHighlight(menu: Element | null, buttonIndex: number) {
-    highlightMenuButton(
-      menu || (this as any)._dvdjsActiveMenu,
-      buttonIndex,
-    );
+    const target = (menu || (this as any)._dvdjsActiveMenu) as HTMLElement | null;
+    highlightMenuButton(target, buttonIndex);
+    if (this.classList.contains('dvdjs-debug-hitboxes')) {
+      applyDebugHitboxLabels(target);
+    }
   }
 
   flashMenuActivate(menu: Element | null, buttonIndex: number) {
@@ -773,6 +911,19 @@ class XVideo extends HTMLElement implements XVideoElement {
       buttonIndex,
       120,
     );
+  }
+
+  /** Toggle green hitbox chrome + B0..Bn labels on menu buttons. */
+  setDebugHitboxes(enabled: boolean) {
+    this.classList.toggle('dvdjs-debug-hitboxes', enabled);
+    if (enabled) {
+      applyDebugHitboxLabels((this as any)._dvdjsActiveMenu);
+    } else {
+      const menu = (this as any)._dvdjsActiveMenu as HTMLElement | null;
+      menu?.querySelectorAll('input.btn').forEach((btn) => {
+        (btn as HTMLInputElement).value = '';
+      });
+    }
   }
 }
 

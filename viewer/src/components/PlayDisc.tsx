@@ -8,10 +8,57 @@ import {
 } from 'solid-js';
 import { useParams } from '@solidjs/router';
 import { DvdDisc } from './DvdDisc.js';
-import { loadAndStartVm } from '../vm/loadVm.js';
+import { AUTOPLAY_BLOCKED_EVENT, pageHasUserGesture, unlockDvdAudio } from '../host/autoplay.js';
+import { loadVm, startVm } from '../vm/loadVm.js';
 import type { DiscMetadata } from '../types/metadata.js';
 
-async function fetchMetadata(dvdId: string): Promise<DiscMetadata> {
+type PlayerHost = HTMLElement & {
+  setDebugHitboxes?: (enabled: boolean) => void;
+};
+
+type EnsureStatus = 'ready' | 'decompressing' | 'missing';
+
+async function ensureDiscReady(
+  dvdId: string,
+  onStatus?: (status: EnsureStatus) => void,
+): Promise<EnsureStatus> {
+  const pollMs = 400;
+  const maxWaitMs = 30 * 60 * 1000;
+  const started = Date.now();
+
+  while (Date.now() - started < maxWaitMs) {
+    const res = await fetch(`/api/disc/${encodeURIComponent(dvdId)}/ensure`);
+    if (res.status === 404) {
+      onStatus?.('missing');
+      return 'missing';
+    }
+    if (!res.ok) {
+      throw new Error(`Could not prepare /${dvdId} (${res.status})`);
+    }
+    const body = (await res.json()) as { status?: EnsureStatus };
+    const status: EnsureStatus =
+      body.status === 'ready' ||
+      body.status === 'decompressing' ||
+      body.status === 'missing'
+        ? body.status
+        : 'missing';
+    onStatus?.(status);
+    if (status === 'ready' || status === 'missing') {
+      return status;
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  throw new Error(`Timed out waiting for /${dvdId} to decompress`);
+}
+
+async function fetchMetadata(
+  dvdId: string,
+  onEnsureStatus?: (status: EnsureStatus) => void,
+): Promise<DiscMetadata> {
+  const status = await ensureDiscReady(dvdId, onEnsureStatus);
+  if (status === 'missing') {
+    throw new Error(`Disc “${dvdId}” was not found (no archive or folder).`);
+  }
   const res = await fetch(`/${dvdId}/metadata.json`);
   if (!res.ok) {
     throw new Error(`Could not load /${dvdId}/metadata.json (${res.status})`);
@@ -21,12 +68,22 @@ async function fetchMetadata(dvdId: string): Promise<DiscMetadata> {
 
 export const PlayDisc: Component = () => {
   const params = useParams<{ dvdId: string }>();
+  const [decompressing, setDecompressing] = createSignal(false);
   const [metadata] = createResource(
     () => params.dvdId,
-    (id) => fetchMetadata(id),
+    (id) =>
+      fetchMetadata(id, (status) => {
+        setDecompressing(status === 'decompressing');
+      }).finally(() => setDecompressing(false)),
   );
-  const [hostEl, setHostEl] = createSignal<HTMLElement | null>(null);
+  const [hostEl, setHostEl] = createSignal<PlayerHost | null>(null);
+  const [stageEl, setStageEl] = createSignal<HTMLElement | null>(null);
   const [vmError, setVmError] = createSignal<string | null>(null);
+  const [vmReady, setVmReady] = createSignal(false);
+  // Hard refresh: no gesture yet → Start overlay. Catalogue click: skip overlay.
+  const [needsStart, setNeedsStart] = createSignal(!pageHasUserGesture());
+  const [debugHitboxes, setDebugHitboxes] = createSignal(false);
+  const [isFullscreen, setIsFullscreen] = createSignal(false);
 
   createEffect(() => {
     const id = params.dvdId;
@@ -39,13 +96,24 @@ export const PlayDisc: Component = () => {
     let disposed = false;
     let disposeVm: (() => void) | undefined;
 
-    loadAndStartVm(id, host)
+    setVmReady(false);
+    const hadGesture = pageHasUserGesture();
+    setNeedsStart(!hadGesture);
+
+    loadVm(id, host)
       .then((dispose) => {
         if (disposed) {
           dispose();
           return;
         }
         disposeVm = dispose;
+        setVmReady(true);
+        // Prior click (e.g. catalogue → player): start immediately.
+        if (pageHasUserGesture()) {
+          unlockDvdAudio(host);
+          setNeedsStart(false);
+          startVm(host);
+        }
       })
       .catch((e) => {
         if (!disposed) {
@@ -53,16 +121,74 @@ export const PlayDisc: Component = () => {
         }
       });
 
+    const onBlocked = () => setNeedsStart(true);
+    host.addEventListener(AUTOPLAY_BLOCKED_EVENT, onBlocked);
+
     onCleanup(() => {
       disposed = true;
+      host.removeEventListener(AUTOPLAY_BLOCKED_EVENT, onBlocked);
       disposeVm?.();
       setVmError(null);
+      setVmReady(false);
+      setNeedsStart(!pageHasUserGesture());
     });
   });
 
+  createEffect(() => {
+    const host = hostEl();
+    const on = debugHitboxes();
+    host?.setDebugHitboxes?.(on);
+  });
+
+  createEffect(() => {
+    const stage = stageEl();
+    if (!stage) {
+      return;
+    }
+    const onFs = () => {
+      setIsFullscreen(document.fullscreenElement === stage);
+    };
+    document.addEventListener('fullscreenchange', onFs);
+    onCleanup(() => document.removeEventListener('fullscreenchange', onFs));
+  });
+
+  const toggleFullscreen = async () => {
+    const stage = stageEl();
+    if (!stage) {
+      return;
+    }
+    try {
+      if (document.fullscreenElement === stage) {
+          await document.exitFullscreen();
+        } else {
+          await stage.requestFullscreen();
+        }
+    } catch (e) {
+      console.warn('Fullscreen failed', e);
+    }
+  };
+
+  const onStart = () => {
+    const host = hostEl();
+    if (!host || !vmReady()) {
+      return;
+    }
+    unlockDvdAudio(host);
+    setNeedsStart(false);
+    startVm(host);
+  };
+
   return (
-    <div class="player-stage">
-      <Show when={metadata.loading}>
+    <div class="player-stage" ref={setStageEl}>
+      <Show when={decompressing() && metadata.loading}>
+        <div class="decompress-screen" role="status" aria-live="polite">
+          <p class="decompress-screen__title">Decompressing…</p>
+          <p class="decompress-screen__hint">
+            Preparing this disc’s menus. Playback starts when ready.
+          </p>
+        </div>
+      </Show>
+      <Show when={metadata.loading && !decompressing()}>
         <p class="muted">Loading disc…</p>
       </Show>
       <Show when={metadata.error}>
@@ -77,6 +203,39 @@ export const PlayDisc: Component = () => {
       </Show>
       <Show when={metadata()}>
         {(meta) => <DvdDisc metadata={meta()} hostRef={setHostEl} />}
+      </Show>
+      <Show when={needsStart() && vmReady() && metadata()}>
+        <div class="dvdjs-start-overlay">
+          <button
+            type="button"
+            class="dvdjs-start-overlay__btn"
+            onClick={onStart}
+          >
+            Start disc
+          </button>
+          <p class="dvdjs-start-overlay__hint">
+            Browsers block video until you interact — press to play the intro.
+          </p>
+        </div>
+      </Show>
+      <Show when={metadata()}>
+        <div class="player-toolbar">
+          <label class="player-toolbar__debug">
+            <input
+              type="checkbox"
+              checked={debugHitboxes()}
+              onChange={(e) => setDebugHitboxes(e.currentTarget.checked)}
+            />
+            Debug button hitboxes
+          </label>
+          <button
+            type="button"
+            class="player-toolbar__fs"
+            onClick={() => void toggleFullscreen()}
+          >
+            {isFullscreen() ? 'Exit fullscreen' : 'Fullscreen'}
+          </button>
+        </div>
       </Show>
     </div>
   );

@@ -464,11 +464,11 @@ function compile_linksub_instruction(command) {
         break;
       case 6:
         // LinkNextPG
-        code += highlight + 'pgN += 1; return 1;';
+        code += highlight + 'pgN += 1; cellN = pgN; playCurrentMenuCell(); return 1;';
         break;
       case 7:
         // LinkPrevPG
-        code += highlight + 'pgN -= 1; return 1;';
+        code += highlight + 'pgN -= 1; cellN = pgN; playCurrentMenuCell(); return 1;';
         break;
       case 9:
         // LinkTopPGC — restart current PGC (re-run including pre).
@@ -542,8 +542,10 @@ function compile_link_instruction(command, optional: boolean) {
       break;
     case 6:
       // LinkPGN x (button y)
-      // Link to a program in the same PGC.
-      code += sprintf('sprm["HL_BTNN"] = %s * 0x0400; pgN = %s; return 1;',
+      // Link to a program in the same PGC (also used in menu pre to select
+      // the entry program — must actually start playback, like LinkCN).
+      code += sprintf(
+        'sprm["HL_BTNN"] = %s * 0x0400; pgN = %s; cellN = pgN; playCurrentMenuCell(); return 1;',
         getbits(command, 15, 6),
         getbits(command, 6, 7)
       );

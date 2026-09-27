@@ -42,7 +42,9 @@ export const Catalogue: Component = () => {
             {(dvd) => (
               <li
                 class="thumbnail"
-                style={{ 'background-image': `url('/${dvd.dir}/cover.jpg')` }}
+                style={{
+                  'background-image': `url('/${dvd.cover || dvd.dir + '/cover.jpg'}')`,
+                }}
               >
                 <A href={`/play/${dvd.dir}`}>
                   <span>{dvd.name}</span>
