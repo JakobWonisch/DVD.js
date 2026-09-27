@@ -2,27 +2,26 @@
 
 Convert decrypted DVDs to a web-friendly package and play their menus in the browser — for interoperability and long-term menu preservation.
 
-Clients never download the full ISO. The converter rips server-side and streams WebM + JSON/CSS/JS (and eventually stills).
+Clients never download the full ISO. The converter rips server-side and streams WebM + JSON/CSS/JS (+ stills).
 
 > Historical talk (JS Conf 2014): [video](https://www.youtube.com/watch?v=lb-8euLqfRg) · [slides](https://gmarty.github.io/jsconf-2014-talk-play-dvd-in-js/)
 
 ## Status
 
-This checkout continues the **converter** architecture (pre-rip + stream). It is a strong prototype, not a finished commercial-menu player: basic discs can work; still menus, full VM coverage, and SPU compositing are incomplete. See `AGENTS.md` for goals and build order.
+This checkout continues the **converter** architecture (pre-rip + stream). The product focus is **menus**: default convert is menus-only; navigate still/motion menus with mouse and D-pad. JumpTT on a menu-only rip shows “title not included”. SPU bitmap compositing and a modern viewer are still open. See `AGENTS.md` for goals and build order.
 
 Requires a **decrypted** `VIDEO_TS` / ISO (CSS/DRM out of scope).
 
 ## Pipeline
 
-Default convert is **menus only** (IFO/NAV/VM/buttons + menu WebMs). Pass `--full` to also encode title VOBs.
+Default convert is **menus only** (IFO/NAV/VM/buttons/stills + menu WebMs). Pass `--full` only if you also want title VOBs (optional).
 
 1. IFO → JSON  
 2. Chapters → WebVTT *(full mode only)*  
 3. NAV packs → JSON  
-4. Button hitboxes → CSS  
-5. Menu still frames → PNG *(to be done)*  
-6. VM commands → JavaScript  
-7. VOB → WebM (ffmpeg): menu VOBs by default; all VOBs with `--full`
+4. Menu maps (all cells) + still PNGs + button CSS/adjacency  
+5. VM commands → JavaScript (`vm.js`)  
+6. VOB → WebM (ffmpeg): menu VOBs by default; title VOBs with `--full`
 
 ## Requirements
 
@@ -107,7 +106,7 @@ Needs `<video>`, `<track>`, and WebVTT.
 ## FAQ
 
 **Why not only re-encode the feature?**  
-DVDs include menus, audio/subtitle selection, and interactive navigation. Preserving that is the point. The default convert therefore rips **menus only**; use `--full` when you also want title playback. Play/JumpTT on a menu-only archive shows a short “title not included” message instead of breaking.
+DVDs include menus, audio/subtitle selection, and interactive navigation. Preserving **menus** is the point. The default convert therefore rips **menus only**; `--full` is optional when you also want title playback. Play/JumpTT on a menu-only archive shows a short “title not included” message instead of breaking.
 
 **Why not full ISO-in-browser / OS emulation?**  
 Overkill for this product. Convert once, stream assets, drive navigation with converted VM/menu data (and optionally libdvdnav later).

@@ -12,6 +12,13 @@ export const RUNTIME_GLOBALS = [
   'gprm_mode',
   'sprm',
   'rsm_cell',
+  'rsm_vtsN',
+  'rsm_pgcN',
+  'rsm_regs',
+  'saveRSM',
+  'resumeRSM',
+  'playCurrentMenuCell',
+  'pickLang',
   'MPGCIUT',
   'PGCIUT',
   'VTT_TABLE',
@@ -55,6 +62,7 @@ generateJavaScript runtime contract:
 - JumpVTS_*: PTT_TABLE + dvd.playChapter
 - JumpSS VMGM menu / VTSM: MENU_TYPES[…] then MPGCIUT[menu.domain][menu.lang][menu.pgc]
 - HL_BTNN at runtime is button_id * 0x0400
-- cellN / pgN: LinkNextC/PrevC/PGN/CN and RSM mutate these
+- cellN / pgN: LinkNextC/PrevC/PGN/CN and RSM mutate these; cell links call playCurrentMenuCell()
+- CallSS: saveRSM(n) then jump; RSM: resumeRSM()
 - MPGCIUT[…][pgc].next_pgc / prev_pgc / goup_pgc: LinkNextPGC / PrevPGC / GoUpPGC
 `.trim();

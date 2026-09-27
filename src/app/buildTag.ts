@@ -4,35 +4,63 @@
 
 
 function buildTag(metadata) {
+  if (!Array.isArray(metadata)) {
+    return '';
+  }
+
   return `<x-video controls style="width: 100%; max-width: 720px; max-height: 480px;">` +
     metadata
       .map((videos, id) => {
-        return buildXMenuTag(videos, id) + buildVideoTag(videos, id);
+        return buildXMenuTag(videos, id) + buildMenuVideoTag(videos, id) + buildVideoTag(videos, id);
       })
       .join(``) +
     `</x-video>`;
 
   function buildXMenuTag(videos, id) {
     var tpl = ``;
+    var menusByLang = videos && videos.menu;
 
-    for (var lang in videos.menu) {
-      videos.menu[lang].forEach(menu => {
+    if (!menusByLang) {
+      return tpl;
+    }
+
+    for (var lang in menusByLang) {
+      (menusByLang[lang] || []).forEach(menu => {
         var cellID = menu.cellID;
         var vobID = menu.vobID;
+        var cellsAttr = menu.cells && menu.cells.length
+          ? ` data-cells="${encodeURIComponent(JSON.stringify(menu.cells))}"`
+          : ``;
 
         tpl += `<x-menu id="menu-${lang}-${id}-${menu.pgc}"
           data-domain="${id}" data-cell="${cellID}" data-vob="${vobID}"
+          data-still-time="${menu.still_time || 0}"${cellsAttr}
           lang="${lang}">`;
 
-        if (cellID !== null || vobID !== null) {
-          var menuCell = videos.menuCell[String(cellID)][String(vobID)];
+        var menuCell =
+          videos.menuCell &&
+          cellID != null &&
+          vobID != null &&
+          videos.menuCell[String(cellID)] &&
+          videos.menuCell[String(cellID)][String(vobID)];
 
-          if (menuCell.btn_nb > 0) {
-            tpl += `<link href="${menuCell.css}" rel="stylesheet"><img src="${menuCell.still}">`;
+        if (menuCell && menuCell.still) {
+          if (menuCell.css) {
+            tpl += `<link href="${menuCell.css}" rel="stylesheet">`;
+          }
+          tpl += `<img class="menu-still" src="${menuCell.still}" alt="">`;
 
-            for (var i = 0; i < menuCell.btn_nb; i++) {
-              tpl += `<input type="button" data-id="${i}" class="btn">`;
-            }
+          var btnCount = menuCell.btn_nb || 0;
+          var buttons = menuCell.buttons || [];
+          for (var i = 0; i < btnCount; i++) {
+            var nav = buttons[i] || {};
+            tpl += `<input type="button" data-id="${i}" class="btn"` +
+              (nav.up != null ? ` data-up="${nav.up}"` : ``) +
+              (nav.down != null ? ` data-down="${nav.down}"` : ``) +
+              (nav.left != null ? ` data-left="${nav.left}"` : ``) +
+              (nav.right != null ? ` data-right="${nav.right}"` : ``) +
+              (nav.auto_action_mode ? ` data-auto-action="${nav.auto_action_mode}"` : ``) +
+              `>`;
           }
         }
 
@@ -43,13 +71,26 @@ function buildTag(metadata) {
     return tpl;
   }
 
-  function buildVideoTag(videos, id) {
-    if (!(videos.video && videos.video.length) && !(videos.vtt && videos.vtt.length)) {
+  function buildMenuVideoTag(videos, id) {
+    if (!videos || !Array.isArray(videos.index) || !videos.index.length) {
       return ``;
     }
+    return `<video id="menu-video-${id}" class="dvdjs-menu-video" src="${videos.index[0]}" preload="metadata" hidden></video>`;
+  }
 
-    var src = (videos.video && videos.video.length) ? ` src="${videos.video[0]}"` : ``;
-    var vtt = (videos.vtt && videos.vtt.length) ? buildTracksTag(videos.vtt) : ``;
+  function buildVideoTag(videos, id) {
+    var sources = [];
+    if (videos && Array.isArray(videos.video)) {
+      sources = sources.concat(videos.video);
+    }
+
+    var hasTracks = videos && Array.isArray(videos.vtt) && videos.vtt.length > 0;
+    if (!sources.length && !hasTracks) {
+      return `<video id="video-${id}"></video>`;
+    }
+
+    var src = sources.length ? ` src="${sources[0]}"` : ``;
+    var vtt = hasTracks ? buildTracksTag(videos.vtt) : ``;
 
     return `<video id="video-${id}"${src}>${vtt}</video>`;
 

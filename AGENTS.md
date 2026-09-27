@@ -23,19 +23,19 @@ Architecture: **converter** (this checkout). Do not revive an on-the-fly/full-IS
 
 ## MVP success criteria
 
-Given a decrypted disc: open in browser, navigate main menus (still + simple motion), select titles/chapters, play corresponding video — without downloading the ISO to the client.
+Given a decrypted disc and **default menus-only** convert: open in browser, navigate main menus (still + simple motion) with mouse and D-pad — without downloading the ISO. JumpTT on missing titles shows a clear “not included” message. Title/`--full` export is optional and not required for a successful demo.
 
 ## Priority work (build order)
 
-1. **Package/seek model** — domain/PGC/cell (or sector→time) addressable segments
-2. **Still menus** — PNG stills + infinite/N-second stills (`extractMenu` metadata-only today)
-3. **VM completeness** — finish stubs in `src/vm/recompile.ts` (CallSS/resume, Link*, JumpSS FP, lang switch, …) — **TDD**
-4. **SPU + highlight compositing** — beyond CSS rect hitboxes
-5. **Cell/timing** — intro→interactive→loop, `hli_s_ptm`, still/`post()`
-6. **D-pad / auto-activate** — `btnit` adjacency
-7. **Hardening** — disc corpus QA
+1. ~~**Package/seek model**~~ — multi-cell menu maps + sector→time on menu VOBs (done on `mvp-dpad`)
+2. ~~**Still menus**~~ — PNG stills + `still_time` / `hli_s_ptm` / `post()` wiring (done)
+3. ~~**VM runtime (menus)**~~ — opcode fixtures green; CallSS/`saveRSM` + `resumeRSM`, lang LU pick, cell play helpers (done)
+4. ~~**D-pad / auto-activate**~~ — `btnit` adjacency + Arrow/Enter + CSS selected state (done)
+5. **SPU + highlight compositing** — beyond CSS rect hitboxes / selected class
+6. **Hardening** — disc corpus QA; exotic menu games
+7. **Optional `--full`** — title/chapter WebM fidelity (demoted; not MVP)
 
-MVP cut: packaging → stills + clicks → VM/resume → (defer perfect SPU / exotic games).
+MVP cut (menus-first): packaging → stills + clicks + D-pad → VM/resume → (defer perfect SPU / title export / exotic games).
 
 ## Engineering standards
 
