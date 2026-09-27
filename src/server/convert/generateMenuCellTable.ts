@@ -7,9 +7,9 @@ import { loadJsonFile } from '../utils/loadJson.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as child_process from 'node:child_process';
+import * as os from 'node:os';
 
 import * as serverUtils from '../../server/utils/index.js';
-import editMetadataFile from '../../server/utils/editMetadataFile.js';
 import { dvdTimeToSeconds } from '../../server/utils/dvdTime.js';
 
 var spawn = child_process.spawn;
@@ -19,6 +19,15 @@ var spawn = child_process.spawn;
  * @const
  */
 var DVD_VIDEO_LB_LEN = 2048;
+
+/** Skip cells that are only a few packs (no usable video). */
+var MIN_CELL_BYTES = 64 * 1024;
+
+/** Decode this many frames and keep the largest PNG (skips lead-in gray). */
+var STILL_FRAME_CANDIDATES = 48;
+
+/** PNGs smaller than this are treated as failed/gray stills. */
+var MIN_STILL_BYTES = 8 * 1024;
 
 export default extractMenu;
 
@@ -40,14 +49,21 @@ function extractMenu(dvdPath: string, callback) {
   var menuCell = [];
   var pointer = 0;
 
-  next(filesList[pointer].ifo);
+  next(filesList[pointer] && filesList[pointer].ifo);
 
   function next(ifoFile: string) {
+    if (!ifoFile) {
+      callNext();
+      return;
+    }
+
     ifoFile = path.join(webPath, '../', ifoFile);
     var json = loadJsonFile(ifoFile);
-    var inputFile = path
-      .join(dvdPath, 'VIDEO_TS', path.basename(ifoFile, '.json') + '.VOB')
-      .replace(/ /, '\\ ');
+    var inputFile = path.join(
+      dvdPath,
+      'VIDEO_TS',
+      path.basename(ifoFile, '.json') + '.VOB'
+    );
 
     var timingByKey = buildCellTimingMap(json);
     var vobPointer = 0;
@@ -60,127 +76,242 @@ function extractMenu(dvdPath: string, callback) {
         return;
       }
 
+      if (!fs.existsSync(inputFile)) {
+        console.error('Missing menu VOB:', inputFile);
+        callNext();
+        return;
+      }
+
       var vob = json.menu_c_adt.cell_adr_table[vobPointer];
       var start = vob.start_sector * DVD_VIDEO_LB_LEN;
       var end = (vob.last_sector + 1) * DVD_VIDEO_LB_LEN;
-      var outputFile = path.resolve(
-        ifoFile,
-        '..',
-        'stillFrame' + pointer + '-' + vobPointer + '.mpg'
-      );
-
+      var cellBytes = end - start;
       var cellID = vob.cell_id;
       var vobID = vob.vob_id;
       var timing = timingByKey[cellID + ':' + vobID] || {};
+      var imgFile = path.join(
+        webPath,
+        'menu-' + pointer + '-' + cellID + '-' + vobID + '.png'
+      );
 
-      fs.readFile(inputFile, { flag: 'r' }, function (err, data) {
-        if (err) {
-          throw err;
-        }
+      ensureMenuCellEntry(cellID, vobID);
+      var entry = menuCell[pointer].menuCell[cellID][vobID];
+      entry.start_sector = vob.start_sector;
+      entry.last_sector = vob.last_sector;
+      if (timing.startSec != null) {
+        entry.startSec = timing.startSec;
+      }
+      if (timing.endSec != null) {
+        entry.endSec = timing.endSec;
+      }
+      if (timing.still_time != null) {
+        entry.still_time = timing.still_time;
+      }
+      if (timing.playback_mode != null) {
+        entry.playback_mode = timing.playback_mode;
+      }
 
-        var buffer = data.slice(start, end);
+      if (cellBytes < MIN_CELL_BYTES) {
+        console.warn(
+          'Skipping tiny menu cell',
+          path.basename(imgFile),
+          '(' + cellBytes + ' bytes)'
+        );
+        finishCell();
+        return;
+      }
 
-        fs.open(outputFile, 'w+', function (err, fd) {
-          if (err) {
-            throw err;
+      extractBestStillPng(inputFile, start, timing, imgFile, function (ok) {
+        if (ok) {
+          entry.still =
+            '/' +
+            dvdName +
+            '/menu-' +
+            pointer +
+            '-' +
+            cellID +
+            '-' +
+            vobID +
+            '.png';
+          process.stdout.write('.');
+        } else {
+          console.warn('No usable still for', path.basename(imgFile));
+          try {
+            fs.unlinkSync(imgFile);
+          } catch (e) {
+            // ignore
           }
-
-          fs.write(fd, buffer, 0, buffer.length, null, function (err) {
-            if (err) {
-              throw err;
-            }
-
-            var imgFile = path.resolve(
-              outputFile,
-              '..',
-              'menu-' + pointer + '-' + cellID + '-' + vobID + '.png'
-            );
-
-            outputFile = outputFile.replace(' ', '\\ ');
-            imgFile = imgFile.replace(' ', '\\ ');
-
-            var cmd = [
-              '-i',
-              outputFile,
-              '-frames',
-              '1',
-              '-f',
-              'image2',
-              imgFile,
-              '-y',
-            ];
-
-            var ffmpeg = spawn('ffmpeg', cmd);
-
-            ffmpeg.on('error', function (err) {
-              console.error(err);
-            });
-
-            ffmpeg.on('close', function () {
-              process.stdout.write('.');
-
-              if (!menuCell[pointer]) {
-                menuCell[pointer] = {};
-                menuCell[pointer].menuCell = {};
-              }
-              if (!menuCell[pointer].menuCell[cellID]) {
-                menuCell[pointer].menuCell[cellID] = {};
-              }
-              if (!menuCell[pointer].menuCell[cellID][vobID]) {
-                menuCell[pointer].menuCell[cellID][vobID] = {};
-              }
-              var entry = menuCell[pointer].menuCell[cellID][vobID];
-              entry.still =
-                '/' +
-                dvdName +
-                '/menu-' +
-                pointer +
-                '-' +
-                cellID +
-                '-' +
-                vobID +
-                '.png';
-              entry.start_sector = vob.start_sector;
-              entry.last_sector = vob.last_sector;
-              if (timing.startSec != null) {
-                entry.startSec = timing.startSec;
-              }
-              if (timing.endSec != null) {
-                entry.endSec = timing.endSec;
-              }
-              if (timing.still_time != null) {
-                entry.still_time = timing.still_time;
-              }
-              if (timing.playback_mode != null) {
-                entry.playback_mode = timing.playback_mode;
-              }
-
-              vobPointer++;
-              if (vobPointer < json.menu_c_adt.nr_of_vobs) {
-                setTimeout(function () {
-                  extractStillImage();
-                }, 0);
-              } else {
-                callNext();
-              }
-            });
-          });
-        });
+        }
+        finishCell();
       });
 
-      function callNext() {
-        pointer++;
-        if (pointer < filesList.length) {
-          setTimeout(function () {
-            next(filesList[pointer].ifo);
-          }, 0);
+      function finishCell() {
+        vobPointer++;
+        if (vobPointer < json.menu_c_adt.nr_of_vobs) {
+          setTimeout(extractStillImage, 0);
         } else {
-          editMetadataFile(getWebName('metadata'), menuCell, function () {
-            callback();
-          });
+          callNext();
         }
       }
     }
+
+    function ensureMenuCellEntry(cellID, vobID) {
+      if (!menuCell[pointer]) {
+        menuCell[pointer] = { menuCell: {} };
+      }
+      if (!menuCell[pointer].menuCell[cellID]) {
+        menuCell[pointer].menuCell[cellID] = {};
+      }
+      if (!menuCell[pointer].menuCell[cellID][vobID]) {
+        menuCell[pointer].menuCell[cellID][vobID] = {};
+      }
+    }
+
+    function callNext() {
+      pointer++;
+      if (pointer < filesList.length) {
+        setTimeout(function () {
+          next(filesList[pointer] && filesList[pointer].ifo);
+        }, 0);
+      } else {
+        stampMenuCellMetadata(menuCell, function () {
+          callback();
+        });
+      }
+    }
+  }
+
+  /**
+   * Decode a short window from the cell and keep the largest PNG.
+   * DVD cells often start with NAV/blank/corrupt frames before a real picture.
+   */
+  function extractBestStillPng(vobFile, startBytes, timing, imgFile, done) {
+    var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-still-'));
+    var pattern = path.join(tmpDir, 'f_%03d.png');
+    var duration =
+      timing.endSec != null &&
+      timing.startSec != null &&
+      timing.endSec > timing.startSec
+        ? Math.min(3, Math.max(1, timing.endSec - timing.startSec))
+        : 2;
+
+    var cmd = [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-analyzeduration',
+      '50M',
+      '-probesize',
+      '20M',
+      '-fflags',
+      '+genpts+discardcorrupt',
+      '-err_detect',
+      'ignore_err',
+      '-skip_initial_bytes',
+      String(startBytes),
+      '-i',
+      vobFile,
+      '-map',
+      '0:v:0',
+      '-t',
+      String(duration),
+      '-frames:v',
+      String(STILL_FRAME_CANDIDATES),
+      '-vf',
+      'yadif=0:-1:0,format=rgb24',
+      '-y',
+      pattern,
+    ];
+
+    var child = spawn('ffmpeg', cmd);
+    var errBuf = '';
+    child.stderr.on('data', function (d) {
+      errBuf += d.toString();
+    });
+    child.on('error', function (err) {
+      console.error(err);
+      cleanupDir(tmpDir);
+      done(false);
+    });
+    child.on('close', function () {
+      var best = null;
+      var bestSize = 0;
+      try {
+        var files = fs.readdirSync(tmpDir).filter(function (f) {
+          return f.endsWith('.png');
+        });
+        for (var i = 0; i < files.length; i++) {
+          var full = path.join(tmpDir, files[i]);
+          var size = fs.statSync(full).size;
+          if (size > bestSize) {
+            bestSize = size;
+            best = full;
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      if (!best || bestSize < MIN_STILL_BYTES) {
+        if (errBuf) {
+          process.stderr.write(errBuf.slice(0, 500));
+        }
+        cleanupDir(tmpDir);
+        done(false);
+        return;
+      }
+
+      try {
+        fs.copyFileSync(best, imgFile);
+        cleanupDir(tmpDir);
+        done(true);
+      } catch (e) {
+        console.error(e);
+        cleanupDir(tmpDir);
+        done(false);
+      }
+    });
+  }
+
+  function cleanupDir(dir) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function stampMenuCellMetadata(menuCellData, done) {
+    var metaPath = getWebName('metadata');
+    var content: any[] = [];
+    try {
+      if (fs.existsSync(metaPath)) {
+        content = loadJsonFile(metaPath);
+      }
+    } catch (e) {
+      content = [];
+    }
+    if (!Array.isArray(content)) {
+      content = [];
+    }
+
+    menuCellData.forEach(function (entry, i) {
+      if (!entry) {
+        return;
+      }
+      if (!content[i]) {
+        content[i] = {};
+      }
+      content[i].menuCell = entry.menuCell;
+    });
+
+    fs.writeFile(metaPath, JSON.stringify(content), function (err) {
+      if (err) {
+        console.error(err);
+      }
+      process.stdout.write('.');
+      done();
+    });
   }
 
   /**

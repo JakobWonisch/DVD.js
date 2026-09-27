@@ -19,6 +19,9 @@ type EncodeVideoOptions = {
 /** VOBs smaller than this are placeholders / empty cells — skip encode. */
 var MIN_VOB_BYTES = 64 * 1024;
 
+/** High byte entropy with intact pack headers often means CSS still encrypted. */
+var CSS_LIKE_ENTROPY = 7.85;
+
 var spawn = child_process.spawn;
 var getFileIndex = serverUtils.getFileIndex;
 var getFileSuffix = serverUtils.getFileSuffix;
@@ -125,6 +128,8 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         return;
       }
 
+      warnIfCssLike(vobFile[0]);
+
       if (getFileSuffix(vobFile[0]) === 0) {
         filesList[index].index.push('/' + dvdName + '/' + path.basename(output));
       } else {
@@ -224,6 +229,51 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
     child.on('close', function(code) {
       done(code === null ? 1 : code);
     });
+  }
+
+  /**
+   * CSS-scrambled VOB payloads keep MPEG pack headers but look nearly random.
+   * Encoding them yields gray/blocky menus; warn so the rip can be re-done.
+   */
+  function warnIfCssLike(vobPath) {
+    try {
+      var fd = fs.openSync(vobPath, 'r');
+      var buf = Buffer.alloc(2048 * 16);
+      fs.readSync(fd, buf, 0, buf.length, 0);
+      fs.closeSync(fd);
+      var packs = 0;
+      for (var i = 0; i + 4 <= buf.length; i += 2048) {
+        if (
+          buf[i] === 0 &&
+          buf[i + 1] === 0 &&
+          buf[i + 2] === 1 &&
+          buf[i + 3] === 0xba
+        ) {
+          packs++;
+        }
+      }
+      var freq = new Map();
+      for (var j = 0; j < buf.length; j++) {
+        freq.set(buf[j], (freq.get(buf[j]) || 0) + 1);
+      }
+      var entropy = 0;
+      freq.forEach(function(count) {
+        var p = count / buf.length;
+        entropy -= p * Math.log2(p);
+      });
+      if (packs >= 8 && entropy >= CSS_LIKE_ENTROPY) {
+        console.warn(
+          'Warning: ' +
+            path.basename(vobPath) +
+            ' looks CSS-encrypted or badly decrypted ' +
+            '(entropy ' +
+            entropy.toFixed(2) +
+            '). Expect gray/artifact menus — re-rip with CSS removal.'
+        );
+      }
+    } catch (e) {
+      // ignore probe failures
+    }
   }
 
   function stampAndSave(filesList, done) {

@@ -30,10 +30,15 @@ function extractMenu(dvdPath: string, callback) {
   var menu = [];
   var pointer = 0;
 
-  next(filesList[pointer].ifo);
+  next(filesList[pointer] && filesList[pointer].ifo);
 
   // There are better ways to do async...
   function next(ifoFile: string) {
+    if (!ifoFile) {
+      callNext();
+      return;
+    }
+
     ifoFile = path.join(webPath, '../', ifoFile);
     var json = loadJsonFile(ifoFile);
 
@@ -96,18 +101,18 @@ function extractMenu(dvdPath: string, callback) {
       }
 
       callNext();
+    }
 
-      function callNext() {
-        pointer++;
-        if (pointer < filesList.length) {
-          setTimeout(function () {
-            next(filesList[pointer].ifo);
-          }, 0);
-        } else {
-          editMetadataFile(getWebName('metadata'), menu, function () {
-            callback();
-          });
-        }
+    function callNext() {
+      pointer++;
+      if (pointer < filesList.length) {
+        setTimeout(function () {
+          next(filesList[pointer] && filesList[pointer].ifo);
+        }, 0);
+      } else {
+        editMetadataFile(getWebName('metadata'), menu, function () {
+          callback();
+        });
       }
     }
   }

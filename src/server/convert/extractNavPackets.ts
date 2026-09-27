@@ -60,52 +60,112 @@ function extractNav(dvdPath: string, callback) {
       fs.readFile(vobFile, function(err, data) {
         if (err) {
           console.error(err);
+          advanceFile();
+          return;
+        }
+
+        // Empty / stub menu VOBs (common on multi-title extras discs).
+        if (!data || data.length < DVD_VIDEO_LB_LEN) {
+          console.warn(
+            'Skipping empty/invalid menu VOB:',
+            name,
+            '(' + (data ? data.length : 0) + ' bytes)'
+          );
+          advanceFile();
+          return;
         }
 
         var p = new Stream(data);
-        var lastSector = data.length / DVD_VIDEO_LB_LEN;
+        var lastSector = Math.floor(data.length / DVD_VIDEO_LB_LEN);
 
         extractFromSector(0x00);
 
         function extractFromSector(sector) {
-          p.seek(sector * DVD_VIDEO_LB_LEN);
-          var navPackets = decodePacket(p);
+          if (sector < 0 || sector >= lastSector) {
+            advanceFile();
+            return;
+          }
 
-          var json = {
-            pci: navRead.parsePCI(new jDataView(navPackets.pci, undefined, undefined, false)),
-            dsi: navRead.parseDSI(new jDataView(navPackets.dsi, undefined, undefined, false))
-          };
+          try {
+            p.seek(sector * DVD_VIDEO_LB_LEN);
+            var navPackets = decodePacket(p);
 
-          var jsonPath = getNavFilename(name, sector);
-          fs.writeFile(jsonPath, JSON.stringify(json), function(err) {
-            if (err) {
-              console.error(err);
+            if (!navPackets.pci || !navPackets.dsi) {
+              console.warn(
+                'No NAV packet at sector',
+                utils.toHex(sector),
+                'in',
+                name,
+                '— stopping this VOB'
+              );
+              advanceFile();
+              return;
             }
 
-            process.stdout.write('.');
+            var json = {
+              pci: navRead.parsePCI(new jDataView(navPackets.pci, undefined, undefined, false)),
+              dsi: navRead.parseDSI(new jDataView(navPackets.dsi, undefined, undefined, false))
+            };
 
-            // Extract the next NAV packets recursively.
-            var nextSector = json.dsi.dsi_gi.nv_pck_lbn + json.dsi.dsi_gi.vobu_ea + 1;
+            if (
+              !json.dsi ||
+              !json.dsi.dsi_gi ||
+              json.dsi.dsi_gi.nv_pck_lbn == null ||
+              json.dsi.dsi_gi.vobu_ea == null
+            ) {
+              console.warn('Incomplete DSI at sector', utils.toHex(sector), 'in', name);
+              advanceFile();
+              return;
+            }
 
-            if (nextSector < lastSector) {
-              setTimeout(function() {
-                extractFromSector(nextSector);
-              }, 0);
-            } else {
-              // Next iteration.
-              pointer++;
-              if (pointer < vobFiles.length) {
+            var jsonPath = getNavFilename(name, sector);
+            fs.writeFile(jsonPath, JSON.stringify(json), function(writeErr) {
+              if (writeErr) {
+                console.error(writeErr);
+              }
+
+              process.stdout.write('.');
+
+              // Extract the next NAV packets recursively.
+              var nextSector =
+                json.dsi.dsi_gi.nv_pck_lbn + json.dsi.dsi_gi.vobu_ea + 1;
+
+              if (
+                nextSector > sector &&
+                nextSector < lastSector
+              ) {
                 setTimeout(function() {
-                  next(vobFiles[pointer]);
+                  extractFromSector(nextSector);
                 }, 0);
               } else {
-                // At the end of all iterations.
-                callback();
+                advanceFile();
               }
-            }
-          });
+            });
+          } catch (parseErr) {
+            console.warn(
+              'Failed NAV extract at sector',
+              utils.toHex(sector),
+              'in',
+              name + ':',
+              parseErr && (parseErr as Error).message
+                ? (parseErr as Error).message
+                : parseErr
+            );
+            advanceFile();
+          }
         }
       });
+    }
+
+    function advanceFile() {
+      pointer++;
+      if (pointer < vobFiles.length) {
+        setTimeout(function() {
+          next(vobFiles[pointer]);
+        }, 0);
+      } else {
+        callback();
+      }
     }
   });
 

@@ -44,8 +44,18 @@ function generateChapters(dvdPath: string, callback) {
 
   // Filter out menu IFO files.
   filesList = filesList.filter(function(ifoFile) {
-    return !ifoFile.ifo.match(/VIDEO_TS\.json$/) && !ifoFile.ifo.match(/VTS_\d{1,2}_0.IFO\.json$/);
+    return (
+      ifoFile &&
+      ifoFile.ifo &&
+      !ifoFile.ifo.match(/VIDEO_TS\.json$/) &&
+      !ifoFile.ifo.match(/VTS_\d{1,2}_0.IFO\.json$/)
+    );
   });
+
+  if (!filesList.length) {
+    callback();
+    return;
+  }
 
   next(filesList[pointer].ifo);
 

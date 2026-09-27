@@ -132,9 +132,31 @@ function generateJavaScript(dvdPath: string, callback) {
     '}',
   ];
 
-  next(filesList[pointer].ifo);
+  next(filesList[pointer] && filesList[pointer].ifo);
 
   function next(ifoFile: string) {
+    if (!ifoFile) {
+      pointer++;
+      if (pointer < filesList.length) {
+        setTimeout(function () {
+          next(filesList[pointer] && filesList[pointer].ifo);
+        }, 0);
+      } else {
+        code = addEventListener(null, code);
+
+        fs.writeFile(path.join(webPath, 'vm.js'), code.join('\n'), function (err) {
+          if (err) {
+            console.error(err);
+          }
+
+          process.stdout.write('.');
+
+          callback();
+        });
+      }
+      return;
+    }
+
     ifoFile = path.join(webPath, '../', ifoFile);
     var name = path.basename(ifoFile);
     var basename = path.basename(name, '.json');
@@ -151,7 +173,7 @@ function generateJavaScript(dvdPath: string, callback) {
     pointer++;
     if (pointer < filesList.length) {
       setTimeout(function () {
-        next(filesList[pointer].ifo);
+        next(filesList[pointer] && filesList[pointer].ifo);
       }, 0);
     } else {
       code = addEventListener(json, code);
