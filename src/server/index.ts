@@ -14,8 +14,10 @@ import appConfig from '../loadAppConfig.js';
  * Start the server.
  */
 function startServer() {
+  // Solid viewer build (dist/viewer) first; legacy public/ keeps test/parse-ifo tools.
   var app = connect()
     .use(cors({ origin: true }))
+    .use(serveStatic('dist/viewer/'))
     .use(serveStatic('public/'))
     .use(serveStatic(appConfig.webFolder));
   http.createServer(app).listen(appConfig.staticServerPort);
