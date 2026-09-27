@@ -19,7 +19,7 @@ Architecture: **converter** (this checkout). Do not revive an on-the-fly/full-IS
 - Default convert is **menus only** (`VIDEO_TS.VOB` / `VTS_*_0.VOB`); `--full` encodes title VOBs too
 - Title JumpTT / play on a menu-only rip must show a clear “not included” message (not a broken player)
 - Catalogue thumbnail is one `cover.jpg` from the best VMGM menu still — **no menu gallery** (stored as `<discId>.cover.jpg` sidecar beside the archive)
-- Converted discs are stored **compressed at rest** (`webFolder/<discId>.tar.gz`); the HTTP server decompresses on first play, keeps the folder warm for **1 hour**, then deletes the cache and leaves only the archive
+- Converted discs are stored **compressed at rest** (`webFolder/<discId>.tar.gz`); the HTTP server decompresses on first play. Set `evictDiscCache: true` in config to drop decompressed folders after **1 hour** idle (default off for local/dev — extract once, keep around)
 - Ideal UX: insert an optical disc (CSS-encrypted OK) → convert → playable web package; ship as Linux-first standalone CLI (Windows/macOS later)
 
 ## MVP success criteria
@@ -179,7 +179,7 @@ dvdjs-convert /dev/sr0       # convert using tools.json paths
 | Area | Path |
 |------|------|
 | Rip pipeline | `src/server/convert/*` |
-| Disc archive / cache | `src/server/discCache.ts` (pack `.tar.gz`, ensure/extract, 1h TTL eviction) |
+| Disc archive / cache | `src/server/discCache.ts` (pack `.tar.gz`, ensure/extract; optional 1h TTL via `evictDiscCache`) |
 | Rip / decrypt stub | `src/server/convert/ripDisc.ts` |
 | Upload stub | `src/server/convert/upload.ts` |
 | App config | `src/loadAppConfig.ts`, `config/app.example.json` |
@@ -195,6 +195,11 @@ Solid custom elements: set `data-*` with `attr:data-*={...}` (property binding d
 `generateMenuCellTable` merges into existing `menuCell` entries (preserves `css` / `buttons` / SPU from later convert steps when stills are re-run alone).
 
 Menu button CSS and SPU frame height use `resolveMenuFrameHeight` (`menuFrameHeight.ts`): IFO **menu** `video_format` (VMGM/VTSM → PAL 576 / NTSC 480), never title `vts_video_attr` (can disagree). Falls back to PCI button `y_end` when menu attrs are missing.
+
+Menu convert pitfalls (LOTR-class discs):
+- Iterate `menu_c_adt.cell_adr_table.length`, not `nr_of_vobs` — `nr_of_vobs` counts unique VOB IDs; multi-cell VOBs make the table longer and trailing cells (buttons/SPU/stills) get skipped otherwise.
+- Emit `MPGCIUT` entries even when `command_tbl` is null — interactive menus often have only PCI button cmds; skipping them makes `linkPGC` after a transition clip a dead end.
+- Cell `startSec`/`endSec` for the menu WebM must follow **C_ADT sector order** (`buildMenuCellTimingMap`), not per-PGC relative times (single-cell PGCs would all look like `startSec: 0`).
 ## Common commands
 
 ```bash

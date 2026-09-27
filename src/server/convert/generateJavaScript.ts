@@ -11,6 +11,7 @@ import recompile from '../../vm/recompile.js';
 import * as serverUtils from '../../server/utils/index.js';
 import * as utils from '../../utils.js';
 import { dvdTimeToSeconds } from '../../server/utils/dvdTime.js';
+import { menuCellAdrCount } from './menuCellAdrCount.js';
 
 var toHex = utils.toHex;
 
@@ -114,10 +115,13 @@ function generateJavaScript(dvdPath: string, callback) {
     '  t = setTimeout(function() {',
     '    if (pgcSpace === "title") {',
     '      if (PGCIUT[domain] && PGCIUT[domain][n]) { PGCIUT[domain][n].run(); }',
+    '      else { console.warn("DVD.js linkPGC: missing title PGC", domain, n); }',
     '      return;',
     '    }',
     '    if (MPGCIUT[domain] && MPGCIUT[domain][lang] && MPGCIUT[domain][lang][n]) {',
     '      MPGCIUT[domain][lang][n].run();',
+    '    } else {',
+    '      console.warn("DVD.js linkPGC: missing menu PGC", domain, lang, n);',
     '    }',
     '  });',
     '  return 1;',
@@ -264,7 +268,9 @@ function generateJavaScript(dvdPath: string, callback) {
       for (var j = 0; j < json.vts_pgcit.nr_of_pgci_srp; j++) {
         var pgci_srp = json.vts_pgcit.pgci_srp[j];
         var pgcIndex = j + 1;
-        if (pgci_srp.pgc && pgci_srp.pgc.command_tbl) {
+        // Emit even when command_tbl is null — titles may still be JumpTT targets.
+        if (pgci_srp.pgc) {
+          var titleCmds = pgci_srp.pgc.command_tbl;
           code = code.concat([
             'PGCIUT[' + index + '][' + pgcIndex + '] = {',
             'run: function() {',
@@ -277,13 +283,13 @@ function generateJavaScript(dvdPath: string, callback) {
             '  if(this.cell()){return;}',
             '},',
             'pre: function() {' +
-              recompile(pgci_srp.pgc.command_tbl.pre_cmds) +
+              recompile(titleCmds && titleCmds.pre_cmds) +
               '},',
             'post: function() {' +
-              recompile(pgci_srp.pgc.command_tbl.post_cmds) +
+              recompile(titleCmds && titleCmds.post_cmds) +
               '},',
             'cell: function() {' +
-              recompile(pgci_srp.pgc.command_tbl.cell_cmds) +
+              recompile(titleCmds && titleCmds.cell_cmds) +
               '}',
             '};',
           ]);
@@ -309,7 +315,10 @@ function generateJavaScript(dvdPath: string, callback) {
         for (var j = 0; j < lu.pgcit.nr_of_pgci_srp; j++) {
           var pgci_srp = lu.pgcit.pgci_srp[j];
           var pgcIndex = j + 1;
-          if (pgci_srp.pgc && pgci_srp.pgc.command_tbl) {
+          // Emit even when command_tbl is null — interactive menus often have
+          // only PCI button commands (LOTR Specials destinations, etc.).
+          if (pgci_srp.pgc) {
+            var menuCmds = pgci_srp.pgc.command_tbl;
             var cellsJs = buildMenuCells(
               pgci_srp.pgc,
               domainMeta.menuCell || {},
@@ -336,13 +345,13 @@ function generateJavaScript(dvdPath: string, callback) {
               'still_time: ' + (pgci_srp.pgc.still_time || 0) + ',',
               'cells: ' + JSON.stringify(cellsJs) + ',',
               'pre: function() {' +
-                recompile(pgci_srp.pgc.command_tbl.pre_cmds) +
+                recompile(menuCmds && menuCmds.pre_cmds) +
                 '},',
               'post: function() {' +
-                recompile(pgci_srp.pgc.command_tbl.post_cmds) +
+                recompile(menuCmds && menuCmds.post_cmds) +
                 '},',
               'cell: function() {' +
-                recompile(pgci_srp.pgc.command_tbl.cell_cmds) +
+                recompile(menuCmds && menuCmds.cell_cmds) +
                 '}',
               '};',
             ]);
@@ -396,14 +405,15 @@ function generateJavaScript(dvdPath: string, callback) {
               cell.still_time != null
                 ? cell.still_time
                 : menuCell && menuCell.still_time,
+            // Prefer file-absolute times from menuCell over PGC-relative cells.
             startSec:
-              cell.startSec != null
-                ? cell.startSec
-                : menuCell && menuCell.startSec,
+              menuCell && menuCell.startSec != null
+                ? menuCell.startSec
+                : cell.startSec,
             endSec:
-              cell.endSec != null
-                ? cell.endSec
-                : menuCell && menuCell.endSec,
+              menuCell && menuCell.endSec != null
+                ? menuCell.endSec
+                : cell.endSec,
             hli_s_ptm: menuCell && menuCell.hli_s_ptm,
             buttons: (menuCell && menuCell.buttons) || [],
             spuSelect: (menuCell && menuCell.spuSelect) || [],
@@ -414,14 +424,15 @@ function generateJavaScript(dvdPath: string, callback) {
     }
 
     function btn_cmd(json, code) {
-      if (!json.menu_c_adt || !json.menu_c_adt.nr_of_vobs) {
+      var cellCount = menuCellAdrCount(json.menu_c_adt);
+      if (!cellCount) {
         return code;
       }
 
       code.push('btnCmd[' + pointer + '] = [];');
       code.push('btnNav[' + pointer + '] = [];');
 
-      for (var i = 0; i < json.menu_c_adt.nr_of_vobs; i++) {
+      for (var i = 0; i < cellCount; i++) {
         var vobPointer = json.menu_c_adt.cell_adr_table[i].vob_id;
         var vob = json.menu_c_adt.cell_adr_table[i];
         var start = vob.start_sector;

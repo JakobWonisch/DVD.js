@@ -18,6 +18,7 @@ import {
   renderSelectSpuPng,
 } from '../spu/render.js';
 import { resolveMenuFrameHeight } from './menuFrameHeight.js';
+import { menuCellAdrCount } from './menuCellAdrCount.js';
 
 var toHex = utils.toHex;
 
@@ -77,7 +78,7 @@ function extractSpu(dvdPath: string, callback) {
     processCell();
 
     function processCell() {
-      if (vobPointer >= ifoJson.menu_c_adt.nr_of_vobs) {
+      if (vobPointer >= menuCellAdrCount(ifoJson.menu_c_adt)) {
         callNext();
         return;
       }

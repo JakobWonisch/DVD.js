@@ -11,6 +11,7 @@ import * as serverUtils from '../../server/utils/index.js';
 import editMetadataFile from '../../server/utils/editMetadataFile.js';
 import * as utils from '../../utils.js';
 import { resolveMenuFrameHeight } from './menuFrameHeight.js';
+import { menuCellAdrCount } from './menuCellAdrCount.js';
 
 var toHex = utils.toHex;
 
@@ -126,7 +127,7 @@ function generateButtons(dvdPath: string, callback) {
       } else {
         // Still advance even with no buttons.
         vobPointer++;
-        if (vobPointer < ifoJson.menu_c_adt.nr_of_vobs) {
+        if (vobPointer < menuCellAdrCount(ifoJson.menu_c_adt)) {
           setTimeout(function () {
             generateButtonsCss();
           }, 0);
@@ -200,7 +201,7 @@ function generateButtons(dvdPath: string, callback) {
           }
 
           vobPointer++;
-          if (vobPointer < ifoJson.menu_c_adt.nr_of_vobs) {
+          if (vobPointer < menuCellAdrCount(ifoJson.menu_c_adt)) {
             setTimeout(function () {
               generateButtonsCss();
             }, 0);

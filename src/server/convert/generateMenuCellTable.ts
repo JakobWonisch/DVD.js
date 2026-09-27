@@ -10,8 +10,9 @@ import * as child_process from 'node:child_process';
 import * as os from 'node:os';
 
 import * as serverUtils from '../../server/utils/index.js';
-import { dvdTimeToSeconds } from '../../server/utils/dvdTime.js';
 import { mergeMenuCellMaps } from './mergeMenuCellMaps.js';
+import { menuCellAdrCount } from './menuCellAdrCount.js';
+import { buildMenuCellTimingMap } from './buildMenuCellTimingMap.js';
 
 var spawn = child_process.spawn;
 
@@ -89,7 +90,7 @@ function extractMenu(dvdPath: string, callback) {
       var cellBytes = end - start;
       var cellID = vob.cell_id;
       var vobID = vob.vob_id;
-      var timing = timingByKey[cellID + ':' + vobID] || {};
+      var timing = timingByKey[cellID + ':' + vobID];
       var imgFile = path.join(
         webPath,
         'menu-' + pointer + '-' + cellID + '-' + vobID + '.png'
@@ -99,16 +100,16 @@ function extractMenu(dvdPath: string, callback) {
       var entry = menuCell[pointer].menuCell[cellID][vobID];
       entry.start_sector = vob.start_sector;
       entry.last_sector = vob.last_sector;
-      if (timing.startSec != null) {
+      if (timing && timing.startSec != null) {
         entry.startSec = timing.startSec;
       }
-      if (timing.endSec != null) {
+      if (timing && timing.endSec != null) {
         entry.endSec = timing.endSec;
       }
-      if (timing.still_time != null) {
+      if (timing && timing.still_time != null) {
         entry.still_time = timing.still_time;
       }
-      if (timing.playback_mode != null) {
+      if (timing && timing.playback_mode != null) {
         entry.playback_mode = timing.playback_mode;
       }
 
@@ -148,7 +149,7 @@ function extractMenu(dvdPath: string, callback) {
 
       function finishCell() {
         vobPointer++;
-        if (vobPointer < json.menu_c_adt.nr_of_vobs) {
+        if (vobPointer < menuCellAdrCount(json.menu_c_adt)) {
           setTimeout(extractStillImage, 0);
         } else {
           callNext();
@@ -190,6 +191,7 @@ function extractMenu(dvdPath: string, callback) {
     var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-still-'));
     var pattern = path.join(tmpDir, 'f_%03d.png');
     var duration =
+      timing &&
       timing.endSec != null &&
       timing.startSec != null &&
       timing.endSec > timing.startSec
@@ -324,42 +326,7 @@ function extractMenu(dvdPath: string, callback) {
    * Map cellID:vobID → start/end seconds within the menu VOB timeline.
    */
   function buildCellTimingMap(json) {
-    var map = {};
-    if (!json.pgci_ut || !json.pgci_ut.lu) {
-      return map;
-    }
-
-    for (var i = 0; i < json.pgci_ut.lu.length; i++) {
-      var lu = json.pgci_ut.lu[i];
-      if (!lu.pgcit || !lu.pgcit.pgci_srp) {
-        continue;
-      }
-      for (var j = 0; j < lu.pgcit.pgci_srp.length; j++) {
-        var pgc = lu.pgcit.pgci_srp[j].pgc;
-        if (!pgc || !pgc.cell_position || !pgc.cell_playback) {
-          continue;
-        }
-        var t = 0;
-        for (var c = 0; c < pgc.cell_position.length; c++) {
-          var pos = pgc.cell_position[c];
-          var playback = pgc.cell_playback[c];
-          var duration = playback
-            ? dvdTimeToSeconds(playback.playback_time)
-            : 0;
-          var key = pos.cell_nr + ':' + pos.vob_id_nr;
-          if (!map[key]) {
-            map[key] = {
-              startSec: t,
-              endSec: t + duration,
-              still_time: playback ? playback.still_time : 0,
-              playback_mode: playback ? playback.playback_mode : 0,
-            };
-          }
-          t += duration;
-        }
-      }
-    }
-    return map;
+    return buildMenuCellTimingMap(json);
   }
 
   function getWebName(name: string): string {
