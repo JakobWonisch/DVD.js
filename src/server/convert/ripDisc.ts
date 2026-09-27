@@ -160,6 +160,100 @@ export function sourceNeedsRip(sourcePath: string): boolean {
   return false;
 }
 
+/**
+ * List optical block devices (Linux-first: `/dev/srN`).
+ * Symlink aliases (`/dev/cdrom`) are ignored when they resolve to an `sr*` node.
+ */
+export function listOpticalDrives(): string[] {
+  var names: string[] = [];
+  try {
+    names = fs.readdirSync('/dev');
+  } catch (e) {
+    return [];
+  }
+
+  var srDevs: string[] = [];
+  for (var i = 0; i < names.length; i++) {
+    var name = names[i];
+    if (/^sr\d+$/.test(name)) {
+      var srPath = '/dev/' + name;
+      if (isBlockDevice(srPath)) {
+        srDevs.push(srPath);
+      }
+    }
+  }
+  srDevs.sort();
+  if (srDevs.length > 0) {
+    return uniqueByRealpath(srDevs);
+  }
+
+  // Fallback when only classic aliases exist (no /dev/sr*).
+  var aliases = ['/dev/cdrom', '/dev/dvd', '/dev/dvdrom'];
+  var fallback: string[] = [];
+  for (var j = 0; j < aliases.length; j++) {
+    if (isBlockDevice(aliases[j])) {
+      fallback.push(aliases[j]);
+    }
+  }
+  return uniqueByRealpath(fallback);
+}
+
+/**
+ * Pick the sole optical drive for a no-path convert, or explain why not.
+ */
+export function pickDefaultDvdSource(drives: string[]): {
+  ok: true;
+  path: string;
+} | {
+  ok: false;
+  message: string;
+} {
+  if (drives.length === 0) {
+    return {
+      ok: false,
+      message:
+        'No optical disk drive found. Pass a path to a DVD folder, ISO, or device.',
+    };
+  }
+  if (drives.length > 1) {
+    return {
+      ok: false,
+      message:
+        'Multiple optical disk drives found (' +
+        drives.join(', ') +
+        '). Pass a path to the one you want.',
+    };
+  }
+  return { ok: true, path: drives[0] };
+}
+
+function isBlockDevice(devPath: string): boolean {
+  try {
+    return fs.statSync(devPath).isBlockDevice();
+  } catch (e) {
+    return false;
+  }
+}
+
+function uniqueByRealpath(devs: string[]): string[] {
+  var seen = new Set();
+  var out: string[] = [];
+  for (var i = 0; i < devs.length; i++) {
+    var key = devs[i];
+    try {
+      key = fs.realpathSync(devs[i]);
+    } catch (e) {
+      // keep original path as key
+    }
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(devs[i]);
+  }
+  return out;
+}
+
 function findBinary(name: string): string | null {
   var pathEnv = process.env.PATH || '';
   var parts = pathEnv.split(path.delimiter);

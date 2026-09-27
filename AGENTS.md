@@ -51,17 +51,20 @@ Ship the convert pipeline as a **standalone app** (CLI first; GUI optional later
 | **Rip + keep work** | no | Decrypt/copy to a writable work dir and **leave** the `VIDEO_TS` tree for iterative re-converts (`--vm-only`, still re-extract, etc.) |
 | **Upload** | no | After convert, push the menu package to a media server (stub today — see `upload.ts`) |
 
-Default path: insert disc or point at a folder → convert straight to our format. Rip-to-workdir is an explicit option for debugging and iteration. Upload is a post-convert hook, not part of the browser player.
+Default path: insert disc (or omit the path when a single optical drive is present) → convert straight to our format. Rip-to-workdir (`--keep-rip` / `--rip-only`) is for debugging and iteration. Upload is a post-convert hook, not part of the browser player.
 
 Suggested CLI shape (implement incrementally):
 
 ```bash
-# Default: convert in place (no copy) from a VIDEO_TS folder / mount
+# Default: sole optical drive (/dev/sr0, …); errors if none or several
+pnpm convert --
+
+# Explicit VIDEO_TS folder / mount (in place, no copy)
 pnpm convert -- /path/to/DVD
 
-# Explicit rip then convert (temp work dir unless --work-dir)
-pnpm convert -- --rip /dev/sr0
-pnpm convert -- --rip --work-dir ~/dvd/work /dev/sr0
+# Explicit device / ISO (rips via dvdbackup; --rip is optional for these)
+pnpm convert -- /dev/sr0
+pnpm convert -- --work-dir ~/dvd/work /dev/sr0
 
 # Rip ISO/disc to a work dir and stop (or keep after convert)
 pnpm convert -- --rip-only --work-dir ~/dvd/work /dev/sr0
@@ -84,7 +87,8 @@ pnpm convert -- --upload /path/to/already-converted-or-source
 ```
 
 - Already-decrypted folder: skip rip; convert reads files directly.
-- Encrypted disc/ISO: pass **`--rip`** (or `--rip-only` / `--keep-rip`) so **dvdbackup** (libdvdread + libdvdcss) copies into a work dir. Without `--rip`, convert reads the given path in place (no copy).
+- Optical device / ISO: convert **auto-rips** via **dvdbackup** (libdvdread + libdvdcss) into a temp work dir (or `--work-dir`). `--rip` / `--rip-only` / `--keep-rip` remain for explicit control.
+- No path: use the sole `/dev/sr*` (Linux); error if zero or multiple drives — pass an explicit path then.
 - Upload: HTTP(S) of the **converted** menu tree — no disc access, no libdvdcss.
 - Do not reimplement CSS; shell out (or later spawn a bundled helper) to `dvdbackup`.
 
@@ -209,6 +213,7 @@ pnpm build                  # tsc → dist/ + Solid viewer → dist/viewer/
 pnpm dev:viewer             # Vite HMR (proxies disc assets to :3000)
 pnpm test
 pnpm start                  # http://localhost:3000/
+pnpm convert --                        # sole optical drive (errors if 0 or many)
 pnpm convert -- path/to/DVD/root          # menus only (default)
 pnpm convert -- --full path/to/DVD/root   # menus + titles
 pnpm convert -- --vm-only --web discName  # regenerate vm.js only

@@ -2,7 +2,11 @@
 
 'use strict';
 
-import ripDisc from '../server/convert/ripDisc.js';
+import ripDisc, {
+  listOpticalDrives,
+  pickDefaultDvdSource,
+  sourceNeedsRip,
+} from '../server/convert/ripDisc.js';
 import uploadConvertedPackage from '../server/convert/upload.js';
 import * as serverUtils from '../server/utils/index.js';
 import { probeDvdSource } from '../server/utils/probeDvdSource.js';
@@ -105,7 +109,6 @@ const { values, positionals } = parseArgs({
   },
 });
 
-const inputPath = positionals[0];
 const options: ConvertOptions = {
   full: Boolean(values.full || values.titles),
   vmOnly: Boolean(values['vm-only']),
@@ -117,32 +120,69 @@ const options: ConvertOptions = {
   upload: Boolean(values.upload),
 };
 
-if (values.help || !inputPath) {
+if (values.help) {
   console.log(`Convert a DVD for the web (Linux-first standalone CLI).
 
 Usage:
+  pnpm convert --
   pnpm convert -- path/to/DVD/root
   pnpm convert -- --full path/to/DVD/root
   pnpm convert -- --vm-only path/to/DVD/root
   pnpm convert -- --vm-only --web lotr1_part1
   pnpm convert -- --vm-only --web /path/to/webFolder/lotr1_part1
 
+With no path: use the sole optical drive (/dev/sr0, …). Errors if none or
+several drives are present — pass an explicit path in those cases.
+
 Default: convert a readable VIDEO_TS tree (or mounted disc) in place — no copy.
-Pass --full (or --titles) to also encode title content (feature, extras).
+Optical devices and ISOs are ripped via dvdbackup first. Pass --full (or
+--titles) to also encode title content (feature, extras).
 
 --vm-only regenerates vm.js only from existing converted JSON under webFolder
 (IFO JSON, NAV JSON, metadata.json). No ffmpeg / stills / SPU re-extract.
 With --web, the positional is a disc folder name (or path) under webFolder —
 the original VIDEO_TS tree is not required.
 
-Rip (dvdbackup + libdvdcss) — only when explicitly requested:
+Rip (dvdbackup + libdvdcss):
   --rip [--work-dir DIR]      Decrypt/copy then convert (temp dir if no --work-dir)
   --rip-only --work-dir DIR   Decrypt/copy to DIR and stop
   --keep-rip --work-dir DIR   Convert, leave the decrypted rip in DIR
   --upload                    Upload converted menu package to media server (stub)
 
+Convert always packs webFolder/<disc>.tar.gz (+ cover sidecar) at the end.
+
 Use nix develop so ffmpeg-full + dvdbackup + libdvdcss are on PATH.`);
   process.exit(0);
+}
+
+const inputPath = resolveInputPath(positionals[0], options);
+
+/**
+ * Resolve the convert source: explicit positional, or the sole optical drive.
+ */
+function resolveInputPath(
+  positional: string | undefined,
+  opts: ConvertOptions,
+): string {
+  if (positional) {
+    return positional;
+  }
+  if (opts.vmOnly || opts.web) {
+    console.error(
+      'Missing path. Pass a disc folder' +
+        (opts.web ? ' name under webFolder' : '') +
+        ', e.g.:\n  pnpm convert -- --vm-only --web <discName>',
+    );
+    process.exit(1);
+  }
+
+  var picked = pickDefaultDvdSource(listOpticalDrives());
+  if (!picked.ok) {
+    console.error(picked.message);
+    process.exit(1);
+  }
+  console.error('Using optical drive ' + picked.path);
+  return picked.path;
 }
 
 /**
@@ -208,7 +248,11 @@ async function runRipIfNeeded(
     process.exit(1);
   }
 
-  var mustRip = opts.rip || opts.ripOnly || opts.keepRip;
+  var mustRip =
+    opts.rip ||
+    opts.ripOnly ||
+    opts.keepRip ||
+    sourceNeedsRip(dvdPathArg);
   if (!mustRip) {
     return null;
   }
