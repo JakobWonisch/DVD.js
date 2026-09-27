@@ -472,28 +472,24 @@ function compile_linksub_instruction(command) {
         break;
       case 9:
         // LinkTopPGC — restart current PGC (re-run including pre).
-        code += highlight +
-          'clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][pgc].run.bind(MPGCIUT[domain][lang][pgc])); return 1;';
+        code += highlight + 'linkPGC(pgc); return 1;';
         break;
       case 10:
         // LinkNextPGC
-        code += highlight +
-          'var _pgc = MPGCIUT[domain][lang][pgc].next_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1;';
+        code += highlight + 'linkPGCField("next_pgc"); return 1;';
         break;
       case 11:
         // LinkPrevPGC
-        code += highlight +
-          'var _pgc = MPGCIUT[domain][lang][pgc].prev_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1;';
+        code += highlight + 'linkPGCField("prev_pgc"); return 1;';
         break;
       case 12:
         // LinkGoUpPGC
-        code += highlight +
-          'var _pgc = MPGCIUT[domain][lang][pgc].goup_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1;';
+        code += highlight + 'linkPGCField("goup_pgc"); return 1;';
         break;
       case 13:
         // LinkTailPGC
         // Link to post-command section of current PGC.
-        code += highlight + sprintf('MPGCIUT[domain][lang][pgc].post();');
+        code += highlight + 'var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); }';
         break;
       case 16:
         // RSM — restore CallSS resume state (saveRSM / resumeRSM).
@@ -531,10 +527,8 @@ function compile_link_instruction(command, optional: boolean) {
       break;
     case 4:
       // LinkPGCN x
-      // Link to a PGC in the same domain.
-      code += sprintf('clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][%i].run.bind(MPGCIUT[domain][lang][%i])); return 1;',
-        getbits(command, 14, 15),
-        getbits(command, 14, 15),
+      // Link to a PGC in the same domain / PGC space (menu vs title).
+      code += sprintf('linkPGC(%i); return 1;',
         getbits(command, 14, 15)
       );
       break;

@@ -40,6 +40,7 @@ export type XVideoElement = HTMLElement & {
   playMenuByID: (elementID: string) => void;
   playMenuCell: (opts: MenuCellPlayOpts) => void;
   setMenuHighlight: (menu: Element | null, buttonIndex: number) => void;
+  flashMenuActivate: (menu: Element | null, buttonIndex: number) => void;
 };
 
 function hideAllMenu(host: HTMLElement) {
@@ -49,6 +50,7 @@ function hideAllMenu(host: HTMLElement) {
       m.hide();
     } else {
       m.style.display = 'none';
+      m.hidden = true;
     }
   });
 }
@@ -59,6 +61,30 @@ function showTitleUnavailable(host: XVideoElement, message?: string) {
     host.pause();
   } catch {
     // ignore
+  }
+
+  const fromButton = !!(host as any)._dvdjsFromButton;
+  (host as any)._dvdjsFromButton = false;
+
+  // Menus-only / FP: missing studio-logo titles should continue via PGC post
+  // (e.g. LOTR → VMGM intro). Button-initiated JumpTT keeps the message.
+  if (!fromButton) {
+    const g = window as any;
+    const pgcObj = g.PGCIUT?.[g.domain]?.[g.pgc];
+    if (pgcObj && typeof pgcObj.post === 'function') {
+      hideTitleUnavailable(host);
+      setTimeout(() => {
+        try {
+          pgcObj.post();
+        } catch (e) {
+          console.warn('DVD.js missing-title post failed', e);
+          if (typeof host.onmenu === 'function') {
+            host.onmenu({});
+          }
+        }
+      }, 0);
+      return;
+    }
   }
 
   if (getComputedStyle(host).position === 'static') {
@@ -740,11 +766,20 @@ class XVideo extends HTMLElement implements XVideoElement {
       buttonIndex,
     );
   }
+
+  flashMenuActivate(menu: Element | null, buttonIndex: number) {
+    flashMenuButtonActivate(
+      menu || (this as any)._dvdjsActiveMenu,
+      buttonIndex,
+      120,
+    );
+  }
 }
 
 class XMenu extends HTMLElement {
   connectedCallback() {
     this.style.display = 'none';
+    this.hidden = true;
     this.style.position = 'absolute';
     this.style.inset = '0';
     this.style.zIndex = '1';
@@ -753,12 +788,13 @@ class XMenu extends HTMLElement {
   }
 
   show() {
-    this.style.display = 'flex';
     this.hidden = false;
+    this.style.display = 'flex';
   }
 
   hide() {
     this.style.display = 'none';
+    this.hidden = true;
   }
 }
 

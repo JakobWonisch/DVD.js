@@ -17,6 +17,10 @@ export const RUNTIME_GLOBALS = [
   'rsm_regs',
   'saveRSM',
   'resumeRSM',
+  'pgcSpace',
+  'linkPGC',
+  'linkPGCField',
+  'currentPgcObject',
   'playCurrentMenuCell',
   'pickLang',
   'MPGCIUT',
@@ -50,19 +54,20 @@ export const SPRM_KEYS = [
  * Navigation return protocol used by pre/cell/btnCmd wrappers:
  * - `return 1` short-circuits further PGC steps
  * - Break is bare `return;`
- * - LinkPGCN uses clearTimeout/setTimeout(...run.bind(...)); return 1
+ * - LinkPGCN uses linkPGC(N); return 1 (menu vs title via pgcSpace)
  * - btnCmd wrappers prepend `domain = N;` before the compiled body
  */
 export const RUNTIME_NOTES = `
 generateJavaScript runtime contract:
 - Globals: ${RUNTIME_GLOBALS.join(', ')}
 - sprm keys: ${SPRM_KEYS.join(', ')}
-- LinkPGCN: clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][N].run.bind(...)); return 1;
+- LinkPGCN: linkPGC(N); return 1 (menu → MPGCIUT, title → PGCIUT via pgcSpace)
 - JumpTT: VTT_TABLE[ttn] → PGCIUT[vtt.domain][vtt.pgc].run(); return 1;
 - JumpVTS_*: PTT_TABLE + dvd.playChapter
 - JumpSS VMGM menu / VTSM: MENU_TYPES[…] then MPGCIUT[menu.domain][menu.lang][menu.pgc]
 - HL_BTNN at runtime is button_id * 0x0400
 - cellN / pgN: LinkNextC/PrevC/PGN/CN and RSM mutate these; cell links call playCurrentMenuCell()
 - CallSS: saveRSM(n) then jump; RSM: resumeRSM()
-- MPGCIUT[…][pgc].next_pgc / prev_pgc / goup_pgc: LinkNextPGC / PrevPGC / GoUpPGC
+- LinkNextPGC / PrevPGC / GoUpPGC: linkPGCField("next_pgc"|"prev_pgc"|"goup_pgc")
+- playCurrentMenuCell onPost advances cellN before PGC post
 `.trim();

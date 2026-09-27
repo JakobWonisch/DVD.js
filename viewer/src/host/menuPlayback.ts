@@ -78,6 +78,26 @@ export function showTitleUnavailable(
     // ignore
   }
 
+  const fromButton = !!(host as any)._dvdjsFromButton;
+  (host as any)._dvdjsFromButton = false;
+
+  if (!fromButton) {
+    const g = window as any;
+    const pgcObj = g.PGCIUT?.[g.domain]?.[g.pgc];
+    if (pgcObj && typeof pgcObj.post === 'function') {
+      hideTitleUnavailable(host);
+      setTimeout(() => {
+        try {
+          pgcObj.post();
+        } catch (e) {
+          console.warn('DVD.js missing-title post failed', e);
+          host.onmenu?.({});
+        }
+      }, 0);
+      return;
+    }
+  }
+
   if (getComputedStyle(host).position === 'static') {
     host.style.position = 'relative';
   }

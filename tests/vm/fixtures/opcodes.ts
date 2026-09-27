@@ -126,7 +126,7 @@ function linkSubFixtures(): OpcodeFixture[] {
         linkNibble: 1,
         linkSub: 13,
         fields: linkSub(13),
-        expect: '{ MPGCIUT[domain][lang][pgc].post(); }',
+        expect: '{ var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); } }',
         status: 'ok',
         refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
       };
@@ -150,10 +150,10 @@ function linkSubFixtures(): OpcodeFixture[] {
       5: '{ sprm["HL_BTNN"] = 1 * 0x0400; playCurrentMenuCell(); return 1; }',
       6: '{ sprm["HL_BTNN"] = 1 * 0x0400; pgN += 1; return 1; }',
       7: '{ sprm["HL_BTNN"] = 1 * 0x0400; pgN -= 1; return 1; }',
-      9: '{ sprm["HL_BTNN"] = 1 * 0x0400; clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][pgc].run.bind(MPGCIUT[domain][lang][pgc])); return 1; }',
-      10: '{ sprm["HL_BTNN"] = 1 * 0x0400; var _pgc = MPGCIUT[domain][lang][pgc].next_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1; }',
-      11: '{ sprm["HL_BTNN"] = 1 * 0x0400; var _pgc = MPGCIUT[domain][lang][pgc].prev_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1; }',
-      12: '{ sprm["HL_BTNN"] = 1 * 0x0400; var _pgc = MPGCIUT[domain][lang][pgc].goup_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1; }',
+      9: '{ sprm["HL_BTNN"] = 1 * 0x0400; linkPGC(pgc); return 1; }',
+      10: '{ sprm["HL_BTNN"] = 1 * 0x0400; linkPGCField("next_pgc"); return 1; }',
+      11: '{ sprm["HL_BTNN"] = 1 * 0x0400; linkPGCField("prev_pgc"); return 1; }',
+      12: '{ sprm["HL_BTNN"] = 1 * 0x0400; linkPGCField("goup_pgc"); return 1; }',
       16: '{ sprm["HL_BTNN"] = 1 * 0x0400; resumeRSM(); return 1; }',
     };
     return {
@@ -278,7 +278,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     linkNibble: 4,
     fields: linkCmd(4, [{ start: 14, count: 15, value: 3 }]),
     expect:
-      '{ clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][3].run.bind(MPGCIUT[domain][lang][3])); return 1; }',
+      '{ linkPGC(3); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
   },
@@ -655,7 +655,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 14, count: 15, value: 1 },
     ],
     expect:
-      '{ sprm["AMXMD"] /*Audio Mixing Mode for Karaoke (SRPM:11)*/ = 0x00; clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][1].run.bind(MPGCIUT[domain][lang][1])); return 1; }',
+      '{ sprm["AMXMD"] /*Audio Mixing Mode for Karaoke (SRPM:11)*/ = 0x00; linkPGC(1); return 1; }',
     status: 'ok',
     refs: [REF_MPU, 'http://www.mpucoder.com/DVD/vmi44.html'],
     notes: 'Optional post-set link after SetAMXMD (mpucoder K link field).',
@@ -828,7 +828,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 14, count: 15, value: 2 },
     ],
     expect:
-      '{ gprm[0x00] = 0x01; clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][2].run.bind(MPGCIUT[domain][lang][2])); return 1; }',
+      '{ gprm[0x00] = 0x01; linkPGC(2); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_DVDNAV],
     notes: 'Optional link after Set; single semicolon between statements.',
@@ -890,7 +890,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 7, count: 8, value: 13 },
     ],
     expect:
-      'if (gprm[0x00] === 0x00) { gprm[0x00] = gprm[0x00]; MPGCIUT[domain][lang][pgc].post(); }',
+      'if (gprm[0x00] === 0x00) { gprm[0x00] = gprm[0x00]; var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); } }',
     status: 'ok',
     refs: [REF_MPU, REF_DVDNAV, REF_NONGOAL],
     notes: 'CSetCLnk: if { set; linksub }. set_immediate=0 branch of if_version_5.',
@@ -915,7 +915,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 7, count: 8, value: 13 },
     ],
     expect:
-      'if (gprm[0x00] === gprm[0x01]) { gprm[0x00] = 0x01; MPGCIUT[domain][lang][pgc].post(); }',
+      'if (gprm[0x00] === gprm[0x01]) { gprm[0x00] = 0x01; var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); } }',
     status: 'ok',
     refs: [REF_MPU, REF_DVDNAV, REF_NONGOAL],
     notes: 'set_immediate=1 alternate compare layout in if_version_5 (gprm vs gprm).',
@@ -941,7 +941,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 7, count: 8, value: 13 },
     ],
     expect:
-      'if (gprm[0x00] === 0x00) { gprm[0x00] = gprm[0x00]; } MPGCIUT[domain][lang][pgc].post();',
+      'if (gprm[0x00] === 0x00) { gprm[0x00] = gprm[0x00]; } var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); }',
     status: 'ok',
     refs: [REF_MPU, REF_DVDNAV, REF_NONGOAL],
     notes: 'CSetLnk: if { set } then linksub always outside if (mpucoder group 6).',
