@@ -77,6 +77,7 @@ pnpm test
 pnpm start                  # http://localhost:3000/
 pnpm convert -- path/to/DVD/root          # menus only (default)
 pnpm convert -- --full path/to/DVD/root   # menus + titles
+pnpm convert -- --vm-only --web discName  # regenerate vm.js only
 ```
 
 Copy `config/app.example.json` → `config/app.json` and set `webFolder` before convert/start.

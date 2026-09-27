@@ -82,6 +82,7 @@ Open [http://localhost:3000/](http://localhost:3000/).
 | `pnpm start` | Serve `dist/viewer/` + `public/` + `webFolder` |
 | `pnpm convert -- <dvd-root>` | Rip menus into `webFolder` (default) |
 | `pnpm convert -- --full <dvd-root>` | Rip menus + title video |
+| `pnpm convert -- --vm-only --web <disc>` | Regenerate `vm.js` from existing web JSON only |
 | `pnpm test` | Vitest |
 | `pnpm typecheck` | `tsc --noEmit` (server + viewer) |
 
