@@ -113,10 +113,10 @@ function linkSubFixtures(): OpcodeFixture[] {
         linkNibble: 1,
         linkSub: 1,
         fields: linkSub(1),
-        expect: '{ return 1; }',
+        expect: '{ playCurrentMenuCell(); return 1; }',
         status: 'ok',
         refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
-        notes: 'Restart current cell; return 1 short-circuits pre/cell.',
+        notes: 'Restart current cell via playCurrentMenuCell; return 1 short-circuits pre/cell.',
       };
     }
     if (sub === 13) {
@@ -145,16 +145,16 @@ function linkSubFixtures(): OpcodeFixture[] {
       };
     }
     const expects: Record<number, string> = {
-      2: '{ sprm["HL_BTNN"] = 1 * 0x0400; cellN += 1; return 1; }',
-      3: '{ sprm["HL_BTNN"] = 1 * 0x0400; cellN -= 1; return 1; }',
-      5: '{ sprm["HL_BTNN"] = 1 * 0x0400; return 1; }',
+      2: '{ sprm["HL_BTNN"] = 1 * 0x0400; cellN += 1; playCurrentMenuCell(); return 1; }',
+      3: '{ sprm["HL_BTNN"] = 1 * 0x0400; cellN -= 1; playCurrentMenuCell(); return 1; }',
+      5: '{ sprm["HL_BTNN"] = 1 * 0x0400; playCurrentMenuCell(); return 1; }',
       6: '{ sprm["HL_BTNN"] = 1 * 0x0400; pgN += 1; return 1; }',
       7: '{ sprm["HL_BTNN"] = 1 * 0x0400; pgN -= 1; return 1; }',
       9: '{ sprm["HL_BTNN"] = 1 * 0x0400; clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][pgc].run.bind(MPGCIUT[domain][lang][pgc])); return 1; }',
       10: '{ sprm["HL_BTNN"] = 1 * 0x0400; var _pgc = MPGCIUT[domain][lang][pgc].next_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1; }',
       11: '{ sprm["HL_BTNN"] = 1 * 0x0400; var _pgc = MPGCIUT[domain][lang][pgc].prev_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1; }',
       12: '{ sprm["HL_BTNN"] = 1 * 0x0400; var _pgc = MPGCIUT[domain][lang][pgc].goup_pgc; if (_pgc) { clearTimeout(t); t = setTimeout(MPGCIUT[domain][lang][_pgc].run.bind(MPGCIUT[domain][lang][_pgc])); } return 1; }',
-      16: '{ sprm["HL_BTNN"] = 1 * 0x0400; cellN = rsm_cell; return 1; }',
+      16: '{ sprm["HL_BTNN"] = 1 * 0x0400; resumeRSM(); return 1; }',
     };
     return {
       id: name,
@@ -316,7 +316,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 7, count: 8, value: 3 },
       { start: 15, count: 6, value: 1 },
     ]),
-    expect: '{ sprm["HL_BTNN"] = 1 * 0x0400; cellN = 3; return 1; }',
+    expect: '{ sprm["HL_BTNN"] = 1 * 0x0400; cellN = 3; playCurrentMenuCell(); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
   },
@@ -451,10 +451,10 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 23, count: 2, value: 0 },
       { start: 31, count: 8, value: 2 },
     ]),
-    expect: '{ rsm_cell = 2; fp_pgc(); return 1; }',
+    expect: '{ saveRSM(2); fp_pgc(); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI],
-    notes: 'CallSS saves resume cell then jumps (libdvdnav set_RSMinfo).',
+    notes: 'CallSS saves full resume state via saveRSM then jumps (libdvdnav set_RSMinfo).',
   },
   {
     id: 'CallSS_VMGM_MENU',
@@ -466,7 +466,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 31, count: 8, value: 1 },
     ]),
     expect:
-      '{ rsm_cell = 1; var menu = MENU_TYPES[0][lang][2]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1; }',
+      '{ saveRSM(1); var menu = MENU_TYPES[0][lang][2]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI],
   },
@@ -480,7 +480,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 31, count: 8, value: 1 },
     ]),
     expect:
-      '{ rsm_cell = 1; var menu = MENU_TYPES[domain][lang][3]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1; }',
+      '{ saveRSM(1); var menu = MENU_TYPES[domain][lang][3]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI],
   },
@@ -494,7 +494,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 31, count: 8, value: 2 },
     ]),
     expect:
-      '{ rsm_cell = 2; clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][4].run.bind(MPGCIUT[0][lang][4])); return 1; }',
+      '{ saveRSM(2); clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][4].run.bind(MPGCIUT[0][lang][4])); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI],
   },
@@ -864,7 +864,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 31, count: 16, value: 9 },
       { start: 7, count: 8, value: 1 },
     ],
-    expect: 'gprm[0x00] = 0x09; if (gprm[0x00] === 0x09) { return 1; }',
+    expect: 'gprm[0x00] = 0x09; if (gprm[0x00] === 0x09) { playCurrentMenuCell(); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_DVDNAV, REF_NONGOAL],
     notes: 'SetCLnk: set then conditional LinkSub. Clean JS (no stray comma).',

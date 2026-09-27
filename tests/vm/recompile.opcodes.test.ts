@@ -82,9 +82,9 @@ describe('vm/recompile opcodes', () => {
       expect(f?.refs.some((r) => /mpucoder|vmi44/i.test(r))).toBe(true);
     });
 
-    it('records CallSS saving rsm_cell before jump', () => {
+    it('records CallSS saving resume state via saveRSM before jump', () => {
       const f = opcodeFixtures.find((x) => x.id === 'CallSS_FP');
-      expect(normalizeJs(f!.expect)).toMatch(/rsm_cell\s*=\s*2/);
+      expect(normalizeJs(f!.expect)).toMatch(/saveRSM\s*\(\s*2\s*\)/);
       expect(normalizeJs(f!.expect)).toContain('fp_pgc()');
     });
 

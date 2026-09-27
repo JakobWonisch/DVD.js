@@ -448,19 +448,19 @@ function compile_linksub_instruction(command) {
         break;
       case 1:
         // LinkTopC — restart current cell (short-circuit further PGC steps).
-        code += highlight + 'return 1;';
+        code += highlight + 'playCurrentMenuCell(); return 1;';
         break;
       case 2:
         // LinkNextC
-        code += highlight + 'cellN += 1; return 1;';
+        code += highlight + 'cellN += 1; playCurrentMenuCell(); return 1;';
         break;
       case 3:
         // LinkPrevC
-        code += highlight + 'cellN -= 1; return 1;';
+        code += highlight + 'cellN -= 1; playCurrentMenuCell(); return 1;';
         break;
       case 5:
         // LinkTopPG — restart current program.
-        code += highlight + 'return 1;';
+        code += highlight + 'playCurrentMenuCell(); return 1;';
         break;
       case 6:
         // LinkNextPG
@@ -496,8 +496,8 @@ function compile_linksub_instruction(command) {
         code += highlight + sprintf('MPGCIUT[domain][lang][pgc].post();');
         break;
       case 16:
-        // RSM — resume at CallSS saved cell (rsm_cell).
-        code += highlight + 'cellN = rsm_cell; return 1;';
+        // RSM — restore CallSS resume state (saveRSM / resumeRSM).
+        code += highlight + 'resumeRSM(); return 1;';
         break;
       default:
         code += sprintf('console.log(\'%s (button %d)\');',
@@ -557,7 +557,7 @@ function compile_link_instruction(command, optional: boolean) {
     case 7:
       // LinkCN x (button y)
       // Link to a cell in the same PGC.
-      code += sprintf('sprm["HL_BTNN"] = %s * 0x0400; cellN = %s; return 1;',
+      code += sprintf('sprm["HL_BTNN"] = %s * 0x0400; cellN = %s; playCurrentMenuCell(); return 1;',
         getbits(command, 15, 6),
         getbits(command, 7, 8)
       );
@@ -643,26 +643,26 @@ function compile_jump_instruction(command) {
       switch (getbits(command, 23, 2)) {
         case 0:
           // CallSS FP (rsm_cell x)
-          code += sprintf('rsm_cell = %s; fp_pgc(); return 1;',
+          code += sprintf('saveRSM(%s); fp_pgc(); return 1;',
             getbits(command, 31, 8)
           );
           break;
         case 1:
           // CallSS VMGM (menu x, rsm_cell y)
           // x is the type of menu (Root, Title...)
-          code += sprintf('rsm_cell = %s; var menu = MENU_TYPES[0][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
+          code += sprintf('saveRSM(%s); var menu = MENU_TYPES[0][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
             getbits(command, 31, 8), getbits(command, 19, 4));
           break;
         case 2:
           // CallSS VTSM (menu x, rsm_cell y)
-          code += sprintf('rsm_cell = %s; var menu = MENU_TYPES[domain][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
+          code += sprintf('saveRSM(%s); var menu = MENU_TYPES[domain][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
             getbits(command, 31, 8),
             getbits(command, 19, 4)
           );
           break;
         case 3:
           // CallSS VMGM (pgc x, rsm_cell y)
-          code += sprintf('rsm_cell = %s; clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][%s].run.bind(MPGCIUT[0][lang][%s])); return 1;',
+          code += sprintf('saveRSM(%s); clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][%s].run.bind(MPGCIUT[0][lang][%s])); return 1;',
             getbits(command, 31, 8),
             getbits(command, 46, 15),
             getbits(command, 46, 15)

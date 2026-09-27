@@ -10,7 +10,11 @@ function buildTag(metadata) {
     '<x-video controls style="width: 100%; max-width: 720px; max-height: 480px;">' +
     metadata
       .map(function (videos, id) {
-        return buildXMenuTag(videos, id) + buildVideoTag(videos, id);
+        return (
+          buildXMenuTag(videos, id) +
+          buildMenuVideoTag(videos, id) +
+          buildVideoTag(videos, id)
+        );
       })
       .join('') +
     '</x-video>'
@@ -29,6 +33,13 @@ function buildTag(metadata) {
       menus.forEach(function (menu) {
         var cellID = menu.cellID;
         var vobID = menu.vobID;
+        var cellsAttr = '';
+        if (menu.cells && menu.cells.length) {
+          cellsAttr =
+            ' data-cells="' +
+            encodeURIComponent(JSON.stringify(menu.cells)) +
+            '"';
+        }
 
         tpl +=
           '<x-menu id="menu-' +
@@ -43,7 +54,11 @@ function buildTag(metadata) {
           cellID +
           '" data-vob="' +
           vobID +
-          '" lang="' +
+          '" data-still-time="' +
+          (menu.still_time || 0) +
+          '"' +
+          cellsAttr +
+          ' lang="' +
           lang +
           '">';
 
@@ -59,11 +74,25 @@ function buildTag(metadata) {
             if (menuCell.css) {
               tpl += '<link href="' + menuCell.css + '" rel="stylesheet">';
             }
-            tpl += '<img src="' + menuCell.still + '">';
+            tpl +=
+              '<img class="menu-still" src="' + menuCell.still + '" alt="">';
 
             var btnCount = menuCell.btn_nb || 0;
+            var buttons = menuCell.buttons || [];
             for (var i = 0; i < btnCount; i++) {
-              tpl += '<input type="button" data-id="' + i + '" class="btn">';
+              var nav = buttons[i] || {};
+              tpl +=
+                '<input type="button" data-id="' +
+                i +
+                '" class="btn"' +
+                (nav.up != null ? ' data-up="' + nav.up + '"' : '') +
+                (nav.down != null ? ' data-down="' + nav.down + '"' : '') +
+                (nav.left != null ? ' data-left="' + nav.left + '"' : '') +
+                (nav.right != null ? ' data-right="' + nav.right + '"' : '') +
+                (nav.auto_action_mode
+                  ? ' data-auto-action="' + nav.auto_action_mode + '"'
+                  : '') +
+                '>';
             }
           }
         }
@@ -75,19 +104,33 @@ function buildTag(metadata) {
     return tpl;
   }
 
+  /**
+   * Menu VOB WebMs for motion-menu seek/play. Kept separate from title slots
+   * so JumpTT on menus-only rips shows "not included" instead of playing menus.
+   */
+  function buildMenuVideoTag(videos, id) {
+    if (!videos || !Array.isArray(videos.index) || !videos.index.length) {
+      return '';
+    }
+    return (
+      '<video id="menu-video-' +
+      id +
+      '" class="dvdjs-menu-video" src="' +
+      videos.index[0] +
+      '" preload="metadata" hidden></video>'
+    );
+  }
+
   function buildVideoTag(videos, id) {
-    // Title VOBs live in `video`; menu VOBs in `index`. Prefer title, else menu.
+    // Title VOBs only — never fall back to menu index (menus-only archives).
     var sources = [];
     if (videos && Array.isArray(videos.video)) {
       sources = sources.concat(videos.video);
     }
-    if (!sources.length && videos && Array.isArray(videos.index)) {
-      sources = sources.concat(videos.index);
-    }
 
     var hasTracks = videos && Array.isArray(videos.vtt) && videos.vtt.length > 0;
+    // Always emit a video slot so vm.js playByID("video-N") can resolve the domain.
     if (!sources.length && !hasTracks) {
-      // Always emit a video slot so vm.js playByID("video-N") can resolve the domain.
       return '<video id="video-' + id + '"></video>';
     }
 

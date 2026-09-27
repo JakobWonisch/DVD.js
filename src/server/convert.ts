@@ -80,17 +80,12 @@ function convertDVD(dvdPathArg: string, options: ConvertOptions) {
       afterChapters(function() {
         // Extract NAV packets.
         extractNavPackets(dvdPath, function() {
-          // Generate JavaScript from VM instructions.
-          generateJavaScript(dvdPath, function() {
-            // Extract menu still frames.
-            extractMenu(dvdPath, function() {
-              // Generate menu cell table.
-              generateMenuCellTable(dvdPath, function() {
-                // Generate buttons for menu UI.
-                generateButtons(dvdPath, function() {
-                  // Convert video (menus only unless --full).
+          // Menu maps + stills + buttons before VM JS (needs cell/btn metadata).
+          extractMenu(dvdPath, function() {
+            generateMenuCellTable(dvdPath, function() {
+              generateButtons(dvdPath, function() {
+                generateJavaScript(dvdPath, function() {
                   encodeVideo(dvdPath, options, function() {
-                    // Regenerate the list of DVD.
                     generateCatalogue(function() {
                       console.log('That\'s all folks!');
                     });

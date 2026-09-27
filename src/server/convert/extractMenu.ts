@@ -1,4 +1,4 @@
-// Extract menu still frames.
+// Extract menu still-frame maps (all cells per PGC).
 
 'use strict';
 
@@ -9,11 +9,12 @@ import * as path from 'node:path';
 import * as serverUtils from '../../server/utils/index.js';
 import * as utils from '../../utils.js';
 import editMetadataFile from '../../server/utils/editMetadataFile.js';
+import { dvdTimeToSeconds } from '../../server/utils/dvdTime.js';
 
 export default extractMenu;
 
 /**
- * Extract menu still frames.
+ * Extract menu metadata: language → PGC → cells (vob/cell + timing).
  *
  * @param {string} dvdPath
  * @param {function} callback
@@ -54,17 +55,42 @@ function extractMenu(dvdPath: string, callback) {
         for (var j = 0; j < lu.pgcit.nr_of_pgci_srp; j++) {
           var pgci_srp = lu.pgcit.pgci_srp[j];
           var pgcIndex = j + 1;
-          var vobID = null;
-          var cellID = null;
-          if (pgci_srp.pgc.cell_position && pgci_srp.pgc.cell_position.length) {
-            vobID = pgci_srp.pgc.cell_position[0].vob_id_nr;
-            cellID = pgci_srp.pgc.cell_position[0].cell_nr;
+          var pgc = pgci_srp.pgc || {};
+          var cells = [];
+          var t = 0;
+
+          if (pgc.cell_position && pgc.cell_position.length) {
+            for (var c = 0; c < pgc.cell_position.length; c++) {
+              var pos = pgc.cell_position[c];
+              var playback = pgc.cell_playback && pgc.cell_playback[c];
+              var duration = playback
+                ? dvdTimeToSeconds(playback.playback_time)
+                : 0;
+              var startSec = t;
+              t += duration;
+              cells.push({
+                cellID: pos.cell_nr,
+                vobID: pos.vob_id_nr,
+                still_time: playback ? playback.still_time : 0,
+                playback_mode: playback ? playback.playback_mode : 0,
+                first_sector: playback ? playback.first_sector : null,
+                last_sector: playback ? playback.last_sector : null,
+                startSec: startSec,
+                endSec: t,
+                duration: duration,
+              });
+            }
           }
+
+          var first = cells[0] || {};
           menu[pointer].menu[lang].push({
             pgc: pgcIndex,
             entry: pgci_srp.entry_id,
-            vobID: vobID,
-            cellID: cellID
+            vobID: first.vobID != null ? first.vobID : null,
+            cellID: first.cellID != null ? first.cellID : null,
+            still_time: pgc.still_time || 0,
+            pg_playback_mode: pgc.pg_playback_mode || 0,
+            cells: cells,
           });
         }
       }
@@ -74,13 +100,11 @@ function extractMenu(dvdPath: string, callback) {
       function callNext() {
         pointer++;
         if (pointer < filesList.length) {
-          setTimeout(function() {
+          setTimeout(function () {
             next(filesList[pointer].ifo);
           }, 0);
         } else {
-          // At the end of all iterations.
-          // Save a metadata file containing the list of all IFO files.
-          editMetadataFile(getWebName('metadata'), menu, function() {
+          editMetadataFile(getWebName('metadata'), menu, function () {
             callback();
           });
         }
@@ -89,9 +113,6 @@ function extractMenu(dvdPath: string, callback) {
   }
 
   /**
-   * Return the file path for the web given a file.
-   * Used for naming both the IFO files and the metadata file.
-   *
    * @param name A file name.
    * @return {string}
    */
@@ -101,8 +122,6 @@ function extractMenu(dvdPath: string, callback) {
 }
 
 /**
- * Transform the file name of a JSON file.
- *
  * @param {string} name A file name.
  * @return {string}
  */

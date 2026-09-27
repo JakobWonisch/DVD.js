@@ -10,6 +10,7 @@ import * as path from 'node:path';
 import recompile from '../../vm/recompile.js';
 import * as serverUtils from '../../server/utils/index.js';
 import * as utils from '../../utils.js';
+import { dvdTimeToSeconds } from '../../server/utils/dvdTime.js';
 
 var toHex = utils.toHex;
 
@@ -28,11 +29,12 @@ function generateJavaScript(dvdPath: string, callback) {
 
   var ifoPath = getWebName('metadata');
   var filesList = loadJsonFile(ifoPath);
+  var metadata = loadJsonFile(ifoPath);
 
   var pointer = 0;
   var currentVideoTitle = 1;
   var code = [
-    '\'use strict\';',
+    "'use strict';",
     '',
     'var lang = "en";',
     'var domain = 0;',
@@ -42,65 +44,119 @@ function generateJavaScript(dvdPath: string, callback) {
     'var gprm = Array(16);',
     'var gprm_mode = Array(16);',
     'var rsm_cell = 0;',
+    'var rsm_vtsN = 0;',
+    'var rsm_pgcN = 0;',
+    'var rsm_regs = [0, 0, 0, 0, 0];',
     'var sprm = {ASTN: 15, SPSTN: 62, AGLN: 1, TTN: 1, VTS_TTN: 1, TT_PGCN: 0, PTTN: 1, HL_BTNN: 1 * 0x400, NVTMR: 0, NV_PGCN: 0, AMXMD: 0, CC_PLT: 0, PLT: 15};',
     'var PGCIUT = [];',
     'var MPGCIUT = [];',
     'var btnCmd = [];',
+    'var btnNav = [];',
     'var VTT_TABLE = {};',
     'var PTT_TABLE = {};',
     'var MENU_TYPES = [];',
     'var dummy = 0;',
     'var t = null; // Handler to setTimeout IDs.',
+    'var stillTimer = null;',
     '',
     'for (var i = 0; i < 16; i++) {',
     '  gprm[i] = 0;',
     '  gprm_mode[i] = 0;',
-    '}'
+    '}',
+    '',
+    'function saveRSM(cell) {',
+    '  rsm_cell = (cell !== undefined && cell !== null && cell !== 0) ? cell : cellN;',
+    '  rsm_vtsN = domain;',
+    '  rsm_pgcN = pgc;',
+    '  rsm_regs = [sprm["TTN"], sprm["VTS_TTN"], sprm["TT_PGCN"], sprm["PTTN"], sprm["HL_BTNN"]];',
+    '}',
+    '',
+    'function resumeRSM() {',
+    '  if (!rsm_vtsN) {',
+    '    console.error("RSM without resume info");',
+    '    if (typeof dvd !== "undefined" && dvd.onmenu) { dvd.onmenu({}); }',
+    '    return 1;',
+    '  }',
+    '  cellN = rsm_cell || 1;',
+    '  domain = rsm_vtsN;',
+    '  pgc = rsm_pgcN;',
+    '  if (rsm_regs && rsm_regs.length === 5) {',
+    '    sprm["TTN"] = rsm_regs[0];',
+    '    sprm["VTS_TTN"] = rsm_regs[1];',
+    '    sprm["TT_PGCN"] = rsm_regs[2];',
+    '    sprm["PTTN"] = rsm_regs[3];',
+    '    sprm["HL_BTNN"] = rsm_regs[4];',
+    '  }',
+    '  if (PGCIUT[domain] && PGCIUT[domain][pgc]) {',
+    '    PGCIUT[domain][pgc].run();',
+    '  } else if (typeof dvd !== "undefined") {',
+    '    dvd.playByID("video-" + domain);',
+    '  }',
+    '  return 1;',
+    '}',
+    '',
+    'function pickLang(domainIndex) {',
+    '  var obj = MPGCIUT[domainIndex];',
+    '  if (!obj) { return lang; }',
+    '  var keys = Object.keys(obj).filter(function(k) { return obj[k] && typeof obj[k] === "object"; });',
+    '  if (!keys.length) { return lang; }',
+    '  var pref = (typeof navigator !== "undefined" && navigator.language) ? navigator.language.slice(0, 2).toLowerCase() : "en";',
+    '  if (keys.indexOf(pref) >= 0) { return pref; }',
+    '  if (keys.indexOf("en") >= 0) { return "en"; }',
+    '  return keys[0];',
+    '}',
+    '',
+    'function playCurrentMenuCell() {',
+    '  var menu = MPGCIUT[domain] && MPGCIUT[domain][lang] && MPGCIUT[domain][lang][pgc];',
+    '  if (!menu) { return; }',
+    '  var cells = menu.cells || [];',
+    '  var idx = cells.length ? Math.max(0, Math.min((cellN || 1) - 1, cells.length - 1)) : 0;',
+    '  var cell = cells[idx] || {};',
+    '  var menuId = "menu-" + lang + "-" + domain + "-" + pgc;',
+    '  if (typeof dvd === "undefined" || !dvd.playMenuCell) {',
+    '    if (dvd && dvd.playMenuByID) { dvd.playMenuByID(menuId); }',
+    '    return;',
+    '  }',
+    '  dvd.playMenuCell({',
+    '    menuId: menuId,',
+    '    domain: domain,',
+    '    cellID: cell.cellID,',
+    '    vobID: cell.vobID,',
+    '    still_time: (cell.still_time != null ? cell.still_time : menu.still_time) || 0,',
+    '    startSec: cell.startSec,',
+    '    endSec: cell.endSec,',
+    '    hli_s_ptm: cell.hli_s_ptm,',
+    '    buttons: cell.buttons || [],',
+    '    onPost: function() { if (menu.post) { menu.post(); } }',
+    '  });',
+    '}',
   ];
 
   next(filesList[pointer].ifo);
 
-  // There are better ways to do async...
   function next(ifoFile: string) {
     ifoFile = path.join(webPath, '../', ifoFile);
     var name = path.basename(ifoFile);
     var basename = path.basename(name, '.json');
     var json = loadJsonFile(ifoFile);
 
-    // First Play PGC
     code = first_play_pgc(json, code);
-
-    // PGCI Unit table
     code = pgciut(json, code);
-
-    // Menu PGCI Unit table
     code = pgci_srp(json, code);
-
-    // Button commands
     code = btn_cmd(json, code);
-
-    // VTT table (used for JumpTT)
     code = vtt_table(json, code);
-
-    // PTT table (used for JumpVTS_PTT)
     code = ptt_table(json, code);
-
-    // Menu type table (used for JumpSS VMGM, JumpSS VTSM, CallSS VMGM and CallSS VTSM)
     code = menu_type_table(json, code);
 
     pointer++;
     if (pointer < filesList.length) {
-      setTimeout(function() {
+      setTimeout(function () {
         next(filesList[pointer].ifo);
       }, 0);
     } else {
-      // At the end of all iterations.
-
-      // Add the event listener to the UI buttons.
       code = addEventListener(json, code);
 
-      // Save file.
-      fs.writeFile(path.join(webPath, 'vm.js'), code.join('\n'), function(err) {
+      fs.writeFile(path.join(webPath, 'vm.js'), code.join('\n'), function (err) {
         if (err) {
           console.error(err);
         }
@@ -112,7 +168,6 @@ function generateJavaScript(dvdPath: string, callback) {
     }
 
     function first_play_pgc(json, code) {
-      // First Play PGC
       if (!json.first_play_pgc || !json.first_play_pgc.command_tbl.nr_of_pre) {
         console.log('No First Play PGC present');
         return code;
@@ -122,49 +177,51 @@ function generateJavaScript(dvdPath: string, callback) {
         '',
         '// First Play PGC',
         'function fp_pgc() {',
-        // We need to delay startup to allow the browser to preload the video
-        // and get the VTT files.
-        // @todo Listen to video events of all videos.
-          '  setTimeout(function() {' + recompile(json.first_play_pgc.command_tbl.pre_cmds) + '}, 500);',
+        '  setTimeout(function() {' +
+          recompile(json.first_play_pgc.command_tbl.pre_cmds) +
+          '}, 500);',
         '}',
       ]);
       return code;
     }
 
     function pgciut(json, code) {
-      if (!json.vts_pgcit || !json.vts_pgcit.pgci_srp || !Array.isArray(json.vts_pgcit.pgci_srp)) {
+      if (
+        !json.vts_pgcit ||
+        !json.vts_pgcit.pgci_srp ||
+        !Array.isArray(json.vts_pgcit.pgci_srp)
+      ) {
         console.log('No Menu PGCI Unit table present');
         return code;
       }
-      var index = pointer; // 0 for VIDEO_TS (VMGM) ; > 0 for VTS (VTSM)
+      var index = pointer;
 
-      code = code.concat([
-        '',
-          'PGCIUT[' + index + '] = [];'
-      ]);
+      code = code.concat(['', 'PGCIUT[' + index + '] = [];']);
 
       for (var j = 0; j < json.vts_pgcit.nr_of_pgci_srp; j++) {
         var pgci_srp = json.vts_pgcit.pgci_srp[j];
         var pgcIndex = j + 1;
         if (pgci_srp.pgc && pgci_srp.pgc.command_tbl) {
           code = code.concat([
-              'PGCIUT[' + index + '][' + pgcIndex + '] = {',
+            'PGCIUT[' + index + '][' + pgcIndex + '] = {',
             'run: function() {',
-              '  domain = ' + index + ';',
-              '  pgc = ' + pgcIndex + ';',
+            '  domain = ' + index + ';',
+            '  pgc = ' + pgcIndex + ';',
             '  console.log(domain, lang, pgc); // DEBUG',
             '  if(this.pre()){return;}',
-              '  dvd.playByID("video-' + index + '");',
-            '  if(this.cell()){return;}'
-          ]);
-          // The post command should be executed at the end of the video.
-          //code.push('  this.post();');
-          code = code.concat([
+            '  dvd.playByID("video-' + index + '");',
+            '  if(this.cell()){return;}',
             '},',
-              'pre: function() {' + recompile(pgci_srp.pgc.command_tbl.pre_cmds) + '},',
-              'post: function() {' + recompile(pgci_srp.pgc.command_tbl.post_cmds) + '},',
-              'cell: function() {' + recompile(pgci_srp.pgc.command_tbl.cell_cmds) + '}',
-            '};'
+            'pre: function() {' +
+              recompile(pgci_srp.pgc.command_tbl.pre_cmds) +
+              '},',
+            'post: function() {' +
+              recompile(pgci_srp.pgc.command_tbl.post_cmds) +
+              '},',
+            'cell: function() {' +
+              recompile(pgci_srp.pgc.command_tbl.cell_cmds) +
+              '}',
+            '};',
           ]);
         }
       }
@@ -176,50 +233,117 @@ function generateJavaScript(dvdPath: string, callback) {
         console.log('No Menu PGCI Unit table present');
         return code;
       }
-      var index = pointer; // 0 for VIDEO_TS (VMGM) ; > 0 for VTS (VTSM)
+      var index = pointer;
+      var domainMeta = (metadata && metadata[index]) || {};
 
-      code = code.concat([
-        '',
-          'MPGCIUT[' + index + '] = [];'
-      ]);
+      code = code.concat(['', 'MPGCIUT[' + index + '] = [];']);
 
       for (var i = 0; i < json.pgci_ut.nr_of_lus; i++) {
         var lu = json.pgci_ut.lu[i];
-        var lang = utils.bit2str(lu.lang_code);
-        code.push(
-            'MPGCIUT[' + index + '].' + lang + ' = {};'
-        );
+        var langCode = utils.bit2str(lu.lang_code);
+        code.push('MPGCIUT[' + index + '].' + langCode + ' = {};');
         for (var j = 0; j < lu.pgcit.nr_of_pgci_srp; j++) {
           var pgci_srp = lu.pgcit.pgci_srp[j];
           var pgcIndex = j + 1;
           if (pgci_srp.pgc && pgci_srp.pgc.command_tbl) {
+            var cellsJs = buildMenuCells(
+              pgci_srp.pgc,
+              domainMeta.menuCell || {},
+              domainMeta.menu && domainMeta.menu[langCode],
+              pgcIndex
+            );
+
             code = code.concat([
-                'MPGCIUT[' + index + '].' + lang + '[' + pgcIndex + '] = {',
+              'MPGCIUT[' + index + '].' + langCode + '[' + pgcIndex + '] = {',
               'run: function() {',
-                '  domain = ' + index + ';',
-                '  pgc = ' + pgcIndex + ';',
+              '  domain = ' + index + ';',
+              '  pgc = ' + pgcIndex + ';',
+              '  lang = pickLang(' + index + ') || lang;',
+              '  cellN = 1;',
               '  console.log(domain, lang, pgc); // DEBUG',
               '  if(this.pre()){return;}',
-                '  dvd.playMenuByID("menu-' + lang + '-' + index + '-' + pgcIndex + '");',
-              '  if(this.cell()){return;}'
-            ]);
-            if (pgci_srp.pgc.cell_playback && pgci_srp.pgc.cell_playback[0].stc_discontinuity) {
-              code.push('  this.post();');
-            }
-            code = code.concat([
+              '  playCurrentMenuCell();',
+              '  if(this.cell()){return;}',
               '},',
-                'next_pgc: ' + (pgci_srp.pgc.next_pgc_nr || 0) + ',',
-                'prev_pgc: ' + (pgci_srp.pgc.prev_pgc_nr || 0) + ',',
-                'goup_pgc: ' + (pgci_srp.pgc.goup_pgc_nr || 0) + ',',
-                'pre: function() {' + recompile(pgci_srp.pgc.command_tbl.pre_cmds) + '},',
-                'post: function() {' + recompile(pgci_srp.pgc.command_tbl.post_cmds) + '},',
-                'cell: function() {' + recompile(pgci_srp.pgc.command_tbl.cell_cmds) + '}',
-              '};'
+              'next_pgc: ' + (pgci_srp.pgc.next_pgc_nr || 0) + ',',
+              'prev_pgc: ' + (pgci_srp.pgc.prev_pgc_nr || 0) + ',',
+              'goup_pgc: ' + (pgci_srp.pgc.goup_pgc_nr || 0) + ',',
+              'still_time: ' + (pgci_srp.pgc.still_time || 0) + ',',
+              'cells: ' + JSON.stringify(cellsJs) + ',',
+              'pre: function() {' +
+                recompile(pgci_srp.pgc.command_tbl.pre_cmds) +
+                '},',
+              'post: function() {' +
+                recompile(pgci_srp.pgc.command_tbl.post_cmds) +
+                '},',
+              'cell: function() {' +
+                recompile(pgci_srp.pgc.command_tbl.cell_cmds) +
+                '}',
+              '};',
             ]);
           }
         }
       }
       return code;
+
+      function buildMenuCells(pgc, menuCellTable, menusForLang, pgcIndex) {
+        var fromMeta = null;
+        if (Array.isArray(menusForLang)) {
+          for (var m = 0; m < menusForLang.length; m++) {
+            if (menusForLang[m].pgc === pgcIndex && menusForLang[m].cells) {
+              fromMeta = menusForLang[m].cells;
+              break;
+            }
+          }
+        }
+
+        var source = fromMeta;
+        if (!source || !source.length) {
+          source = [];
+          var t = 0;
+          if (pgc.cell_position) {
+            for (var c = 0; c < pgc.cell_position.length; c++) {
+              var pos = pgc.cell_position[c];
+              var playback = pgc.cell_playback && pgc.cell_playback[c];
+              var duration = playback
+                ? dvdTimeToSeconds(playback.playback_time)
+                : 0;
+              source.push({
+                cellID: pos.cell_nr,
+                vobID: pos.vob_id_nr,
+                still_time: playback ? playback.still_time : 0,
+                startSec: t,
+                endSec: t + duration,
+              });
+              t += duration;
+            }
+          }
+        }
+
+        return source.map(function (cell) {
+          var menuCell =
+            menuCellTable[String(cell.cellID)] &&
+            menuCellTable[String(cell.cellID)][String(cell.vobID)];
+          return {
+            cellID: cell.cellID,
+            vobID: cell.vobID,
+            still_time:
+              cell.still_time != null
+                ? cell.still_time
+                : menuCell && menuCell.still_time,
+            startSec:
+              cell.startSec != null
+                ? cell.startSec
+                : menuCell && menuCell.startSec,
+            endSec:
+              cell.endSec != null
+                ? cell.endSec
+                : menuCell && menuCell.endSec,
+            hli_s_ptm: menuCell && menuCell.hli_s_ptm,
+            buttons: (menuCell && menuCell.buttons) || [],
+          };
+        });
+      }
     }
 
     function btn_cmd(json, code) {
@@ -228,19 +352,54 @@ function generateJavaScript(dvdPath: string, callback) {
       }
 
       code.push('btnCmd[' + pointer + '] = [];');
+      code.push('btnNav[' + pointer + '] = [];');
 
       for (var i = 0; i < json.menu_c_adt.nr_of_vobs; i++) {
         var vobPointer = json.menu_c_adt.cell_adr_table[i].vob_id;
         var vob = json.menu_c_adt.cell_adr_table[i];
         var start = vob.start_sector;
 
-        var ifoFile = path.join(webPath, basename + '-' + toHex(start) + '.json');
-        var pci = loadJsonFile(ifoFile).pci;
+        var navFile = path.join(
+          webPath,
+          basename + '-' + toHex(start) + '.json'
+        );
+        var pci = loadJsonFile(navFile).pci;
 
         code.push('btnCmd[' + pointer + '][' + vobPointer + '] = [];');
+        code.push('btnNav[' + pointer + '][' + vobPointer + '] = [];');
         for (var j = 0; j < pci.hli.hl_gi.btn_ns; j++) {
           var cmd = pci.hli.btnit[j].cmd;
-          code.push('btnCmd[' + pointer + '][' + vobPointer + '][' + j + '] = function() {domain = ' + pointer + ';' + recompile([cmd]) + '};');
+          var btn = pci.hli.btnit[j];
+          code.push(
+            'btnCmd[' +
+              pointer +
+              '][' +
+              vobPointer +
+              '][' +
+              j +
+              '] = function() {domain = ' +
+              pointer +
+              ';' +
+              recompile([cmd]) +
+              '};'
+          );
+          code.push(
+            'btnNav[' +
+              pointer +
+              '][' +
+              vobPointer +
+              '][' +
+              j +
+              '] = ' +
+              JSON.stringify({
+                up: btn.up || 0,
+                down: btn.down || 0,
+                left: btn.left || 0,
+                right: btn.right || 0,
+                auto_action_mode: btn.auto_action_mode || 0,
+              }) +
+              ';'
+          );
         }
       }
 
@@ -248,17 +407,29 @@ function generateJavaScript(dvdPath: string, callback) {
     }
 
     function vtt_table(json, code) {
-      if (!json.vts_pgcit || !json.vts_pgcit.pgci_srp || !Array.isArray(json.vts_pgcit.pgci_srp)) {
+      if (
+        !json.vts_pgcit ||
+        !json.vts_pgcit.pgci_srp ||
+        !Array.isArray(json.vts_pgcit.pgci_srp)
+      ) {
         console.log('No PGCI Unit table present');
         return code;
       }
-      var domainIndex = pointer; // 0 for VIDEO_TS (VMGM) ; > 0 for VTS (VTSM)
+      var domainIndex = pointer;
 
       for (var i = 0; i < json.vts_pgcit.nr_of_pgci_srp; i++) {
         var pgci_srp = json.vts_pgcit.pgci_srp[i];
         var pgcIndex = i + 1;
         if (pgci_srp.pgc) {
-          code.push('VTT_TABLE[' + currentVideoTitle + '] = {domain: ' + domainIndex + ', pgc: ' + pgcIndex + '};');
+          code.push(
+            'VTT_TABLE[' +
+              currentVideoTitle +
+              '] = {domain: ' +
+              domainIndex +
+              ', pgc: ' +
+              pgcIndex +
+              '};'
+          );
         }
         currentVideoTitle++;
       }
@@ -266,13 +437,16 @@ function generateJavaScript(dvdPath: string, callback) {
       return code;
     }
 
-    // The table matches PTT to chapters.
     function ptt_table(json, code) {
-      if (!json.vts_pgcit || !json.vts_pgcit.pgci_srp || !Array.isArray(json.vts_pgcit.pgci_srp)) {
+      if (
+        !json.vts_pgcit ||
+        !json.vts_pgcit.pgci_srp ||
+        !Array.isArray(json.vts_pgcit.pgci_srp)
+      ) {
         console.log('No PGCI Unit table present');
         return code;
       }
-      var domainIndex = pointer; // 0 for VIDEO_TS (VMGM) ; > 0 for VTS (VTSM)
+      var domainIndex = pointer;
       var vtsIndex = 1;
       var chapterIndex = 1;
 
@@ -282,10 +456,26 @@ function generateJavaScript(dvdPath: string, callback) {
         var pgci_srp = json.vts_pgcit.pgci_srp[i];
         var pgcIndex = i + 1;
         var pttIndex = 0;
-        code.push('PTT_TABLE[' + domainIndex + '][' + vtsIndex + '] = [];');
+        code.push(
+          'PTT_TABLE[' + domainIndex + '][' + vtsIndex + '] = [];'
+        );
 
         for (var j = 0; j < pgci_srp.pgc.nr_of_programs; j++) {
-          code.push('PTT_TABLE[' + domainIndex + '][' + vtsIndex + '][' + pttIndex + '] = {domain: ' + domainIndex + ', pgc: ' + pgcIndex + ', chapter: ' + chapterIndex + '};');
+          code.push(
+            'PTT_TABLE[' +
+              domainIndex +
+              '][' +
+              vtsIndex +
+              '][' +
+              pttIndex +
+              '] = {domain: ' +
+              domainIndex +
+              ', pgc: ' +
+              pgcIndex +
+              ', chapter: ' +
+              chapterIndex +
+              '};'
+          );
           pttIndex++;
           chapterIndex++;
         }
@@ -295,69 +485,71 @@ function generateJavaScript(dvdPath: string, callback) {
       return code;
     }
 
-    // The table matches menu types to menu pgc.
     function menu_type_table(json, code) {
       if (!json.pgci_ut || !json.pgci_ut.lu || !Array.isArray(json.pgci_ut.lu)) {
         console.log('No Menu PGCI Unit table present');
         return code;
       }
-      var domainIndex = pointer; // 0 for VIDEO_TS (VMGM) ; > 0 for VTS (VTSM)
+      var domainIndex = pointer;
 
       code.push('MENU_TYPES[' + domainIndex + '] = {};');
 
       for (var i = 0; i < json.pgci_ut.nr_of_lus; i++) {
         var lu = json.pgci_ut.lu[i];
-        var lang = utils.bit2str(lu.lang_code);
-        code.push('MENU_TYPES[' + domainIndex + '].' + lang + ' = [];');
+        var langCode = utils.bit2str(lu.lang_code);
+        code.push('MENU_TYPES[' + domainIndex + '].' + langCode + ' = [];');
 
         for (var j = 0; j < lu.pgcit.nr_of_pgci_srp; j++) {
           var pgci_srp = lu.pgcit.pgci_srp[j];
           var pgcIndex = j + 1;
-          var menuType = pgci_srp.entry_id & 0x0F;
+          var menuType = pgci_srp.entry_id & 0x0f;
           var menuName = ifo_print_menu_name(menuType);
           if (menuType === 0) {
             continue;
           }
           if (pgci_srp.pgc) {
-            code.push('MENU_TYPES[' + domainIndex + '].' + lang + '[' + menuType + ' /* ' + menuName + ' */] = {' +
-              'domain: ' + domainIndex + ', ' +
-              'lang: "' + lang + '", ' +
-              'pgc: ' + pgcIndex + '};');
+            code.push(
+              'MENU_TYPES[' +
+                domainIndex +
+                '].' +
+                langCode +
+                '[' +
+                menuType +
+                ' /* ' +
+                menuName +
+                ' */] = {' +
+                'domain: ' +
+                domainIndex +
+                ', ' +
+                'lang: "' +
+                langCode +
+                '", ' +
+                'pgc: ' +
+                pgcIndex +
+                '};'
+            );
           }
         }
       }
 
       return code;
 
-      /**
-       * Function passed as reference.
-       * From /src/dvdread/ifo_print_html.ts.
-       * @param {number} type
-       * @return {string}
-       */
       function ifo_print_menu_name(type) {
         switch (type) {
           case 2:
             return 'Title';
-            break;
           case 3:
             return 'Root';
-            break;
           case 4:
             return 'Sub-Picture';
-            break;
           case 5:
             return 'Audio';
-            break;
           case 6:
             return 'Angle';
-            break;
           case 7:
             return 'PTT (Chapter)';
-            break;
           default:
             return 'Unknown';
-            break;
         }
       }
     }
@@ -365,6 +557,8 @@ function generateJavaScript(dvdPath: string, callback) {
     function addEventListener(json, code) {
       code = code.concat([
         'function init() {',
+        '  lang = pickLang(0) || lang;',
+        '',
         '  dvd.addEventListener(\'click\', function(event) {',
         '    event.stopImmediatePropagation();',
         '    var target = event.target;',
@@ -372,30 +566,70 @@ function generateJavaScript(dvdPath: string, callback) {
         '    var vob = target.parentNode.dataset.vob;',
         '    var id = target.dataset.id;',
         '',
-        '    sprm["HL_BTNN"] = parseInt(id, 10) * 0x0400;',
+        '    sprm["HL_BTNN"] = (parseInt(id, 10) + 1) * 0x0400;',
         '',
         '    if (target.tagName !== \'INPUT\' || domain === undefined || vob === undefined || id === undefined) {',
         '      return;',
         '    }',
+        '',
+        '    if (dvd.setMenuHighlight) { dvd.setMenuHighlight(target.parentNode, parseInt(id, 10)); }',
         '',
         '    if (!btnCmd[domain] || !btnCmd[domain][vob] || !btnCmd[domain][vob][id]) {',
         '      console.error(\'Missing button command for\', domain, vob, id);',
         '      return;',
         '    }',
         '',
-        '    // DEBUG',
         '    console.log(domain, vob, id, btnCmd[domain][vob][id]);',
-        '',
         '    btnCmd[domain][vob][id]();',
         '  });',
         '',
-        '  // Update the value of lang.',
-        '  MPGCIUT.forEach(function(obj) {',
-        '    lang = Object.keys(obj)[0] || lang;',
+        '  document.addEventListener(\'keydown\', function(event) {',
+        '    var menu = dvd.querySelector(\'x-menu:not([hidden])\') || dvd.querySelector(\'x-menu[style*="display: block"]\');',
+        '    if (!menu) {',
+        '      var menus = dvd.querySelectorAll(\'x-menu\');',
+        '      for (var mi = 0; mi < menus.length; mi++) {',
+        '        if (menus[mi].offsetParent !== null || (menus[mi].style && menus[mi].style.display === \'block\')) { menu = menus[mi]; break; }',
+        '      }',
+        '    }',
+        '    if (!menu) { return; }',
+        '    var domain = menu.dataset.domain;',
+        '    var vob = menu.dataset.vob;',
+        '    if (domain === undefined || vob === undefined) { return; }',
+        '    var nav = btnNav[domain] && btnNav[domain][vob];',
+        '    if (!nav || !nav.length) { return; }',
+        '',
+        '    var current = Math.floor((sprm["HL_BTNN"] || 0x0400) / 0x0400);',
+        '    if (current < 1) { current = 1; }',
+        '    var idx = current - 1;',
+        '    if (idx < 0 || idx >= nav.length) { idx = 0; current = 1; }',
+        '    var entry = nav[idx];',
+        '    if (!entry) { return; }',
+        '',
+        '    var nextId = null;',
+        '    if (event.key === \'ArrowUp\') { nextId = entry.up; }',
+        '    else if (event.key === \'ArrowDown\') { nextId = entry.down; }',
+        '    else if (event.key === \'ArrowLeft\') { nextId = entry.left; }',
+        '    else if (event.key === \'ArrowRight\') { nextId = entry.right; }',
+        '    else if (event.key === \'Enter\') {',
+        '      event.preventDefault();',
+        '      if (btnCmd[domain] && btnCmd[domain][vob] && btnCmd[domain][vob][idx]) {',
+        '        btnCmd[domain][vob][idx]();',
+        '      }',
+        '      return;',
+        '    } else { return; }',
+        '',
+        '    if (!nextId) { return; }',
+        '    event.preventDefault();',
+        '    sprm["HL_BTNN"] = nextId * 0x0400;',
+        '    if (dvd.setMenuHighlight) { dvd.setMenuHighlight(menu, nextId - 1); }',
+        '    var nextEntry = nav[nextId - 1];',
+        '    if (nextEntry && nextEntry.auto_action_mode && btnCmd[domain][vob][nextId - 1]) {',
+        '      btnCmd[domain][vob][nextId - 1]();',
+        '    }',
         '  });',
         '',
-        '  // Override the menu button logic.',
         '  dvd.onmenu = function(event) {',
+        '    lang = pickLang(domain) || pickLang(0) || lang;',
         '    var menu = null;',
         '    var domainMenus = MENU_TYPES[domain] && MENU_TYPES[domain][lang];',
         '    var vmgmMenus = MENU_TYPES[0] && MENU_TYPES[0][lang];',
@@ -406,36 +640,23 @@ function generateJavaScript(dvdPath: string, callback) {
         '    }',
         '',
         '    if (menu) {',
-        '      console.log(menu)',
+        '      console.log(menu);',
         '      MPGCIUT[menu.domain][menu.lang][menu.pgc].run();',
         '    }',
         '  };',
         '}',
-        ''
+        '',
       ]);
 
       return code;
     }
   }
 
-  /**
-   * Return the file path for the web given a file.
-   * Used for naming both the IFO files and the metadata file.
-   *
-   * @param name A file name.
-   * @return {string}
-   */
   function getWebName(name: string): string {
     return path.join(webPath, getJsonFileName(name));
   }
 }
 
-/**
- * Transform the file name of a JSON file.
- *
- * @param {string} name A file name.
- * @return {string}
- */
 function getJsonFileName(name: string): string {
   return name.replace(/\.IFO$/i, '') + '.json';
 }

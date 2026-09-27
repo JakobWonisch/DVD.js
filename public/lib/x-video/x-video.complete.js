@@ -242,9 +242,17 @@
     */
     function init(xVideo) {
         var playlist = [];
-        var videos = xtag.toArray(xVideo.querySelectorAll('x-video > video'));
+        var videos = xtag.toArray(xVideo.querySelectorAll('x-video > video')).filter(function (video) {
+            // Menu motion WebMs are handled separately via playMenuCell.
+            return !video.classList.contains('dvdjs-menu-video');
+        });
         var tracks = [];
         var menus = xtag.toArray(xVideo.querySelectorAll('x-menu'));
+        xVideo._dvdjsStillTimer = null;
+        xVideo._dvdjsHighlightTimer = null;
+        xVideo._dvdjsMenuPost = null;
+        xVideo._dvdjsActiveMenu = null;
+        xVideo._dvdjsMenuTimeUpdate = null;
 
         //var attributes = {};
         // Let's process the case where `<x-video>` tag has a src attribute or sub `<source>` elements.
@@ -653,6 +661,17 @@
                             break;
 
                         case 'ended':
+                            // Menu cell reached end → VM post() when wired.
+                            if (typeof xVideo._dvdjsMenuPost === 'function') {
+                                var post = xVideo._dvdjsMenuPost;
+                                xVideo._dvdjsMenuPost = null;
+                                try {
+                                    post();
+                                } catch (e) {
+                                    console.warn('DVD.js menu post failed', e);
+                                }
+                                break;
+                            }
                             // At the end of the video, update the src to the next in the playlist, if any.
                             if (xVideo.playlist.length > 1 && xVideo.videoIndex < xVideo.playlist.length - 1) {
                                 updateEventListeners(xVideo.playlist[xVideo.videoIndex].video, xVideo.playlist[++xVideo.videoIndex].video, xVideo.xtag.evt);
@@ -1405,11 +1424,296 @@
                 hideTitleUnavailable(this);
                 this.pause();
                 hideAllMenu(this);
+                clearDvdjsTimers(this);
+                var domainVideo = this.querySelector(
+                    '#menu-video-' + (menu.dataset.domain != null ? menu.dataset.domain : '')
+                );
+                resetMenuMotion(this, domainVideo, menu);
+                this._dvdjsActiveMenu = menu;
                 menu.show();
+                highlightMenuButton(menu, Math.floor((window.sprm && sprm.HL_BTNN ? sprm.HL_BTNN : 0x0400) / 0x0400) - 1);
+            },
+            /**
+             * Show/update a menu cell (still or motion segment) with timing + post callback.
+             * @param {Object} opts
+             */
+            playMenuCell: function (opts) {
+                opts = opts || {};
+                var self = this;
+                var menu = opts.menuId ? this.querySelector('#' + opts.menuId) : this._dvdjsActiveMenu;
+                if (!menu) {
+                    console.error('playMenuCell: unknown menu', opts.menuId);
+                    return;
+                }
+
+                hideTitleUnavailable(this);
+                clearDvdjsTimers(this);
+                this._dvdjsActiveMenu = menu;
+                this._dvdjsMenuPost = typeof opts.onPost === 'function' ? opts.onPost : null;
+
+                if (opts.cellID != null) {
+                    menu.dataset.cell = String(opts.cellID);
+                }
+                if (opts.vobID != null) {
+                    menu.dataset.vob = String(opts.vobID);
+                }
+
+                // Swap still/CSS for this cell when metadata is on the page.
+                updateMenuCellVisuals(menu, opts);
+
+                hideAllMenu(this);
+                this.pause();
+                menu.show();
+
+                var btnIndex = Math.floor((window.sprm && sprm.HL_BTNN ? sprm.HL_BTNN : 0x0400) / 0x0400) - 1;
+                var enableButtons = function () {
+                    highlightMenuButton(menu, btnIndex);
+                    setMenuButtonsEnabled(menu, true);
+                };
+
+                setMenuButtonsEnabled(menu, false);
+
+                var hliDelay = 0;
+                if (opts.hli_s_ptm != null && opts.hli_s_ptm > 0) {
+                    // PCI hli_s_ptm is absolute 90 kHz PTS; delay is relative to cell start.
+                    var cellStart = opts.startSec != null ? opts.startSec : 0;
+                    hliDelay = Math.max(0, opts.hli_s_ptm / 90000 - cellStart);
+                }
+
+                var stillTime = opts.still_time != null ? opts.still_time : 0;
+                var hasMotion =
+                    opts.startSec != null &&
+                    opts.endSec != null &&
+                    opts.endSec > opts.startSec &&
+                    stillTime !== 255;
+
+                var menuVideo = this.querySelector('#menu-video-' + (opts.domain != null ? opts.domain : menu.dataset.domain));
+
+                if (hasMotion && menuVideo && menuVideo.src) {
+                    playMenuMotionSegment(self, menuVideo, opts, function () {
+                        if (hliDelay > 0) {
+                            self._dvdjsHighlightTimer = setTimeout(enableButtons, hliDelay * 1000);
+                        } else {
+                            enableButtons();
+                        }
+                    });
+                    return;
+                }
+
+                // Still menu path: tear down any prior motion overlay.
+                resetMenuMotion(self, menuVideo, menu);
+
+                if (hliDelay > 0) {
+                    self._dvdjsHighlightTimer = setTimeout(enableButtons, hliDelay * 1000);
+                } else {
+                    enableButtons();
+                }
+
+                if (stillTime > 0 && stillTime < 255 && typeof opts.onPost === 'function') {
+                    self._dvdjsStillTimer = setTimeout(function () {
+                        var post = self._dvdjsMenuPost;
+                        self._dvdjsMenuPost = null;
+                        if (post) {
+                            post();
+                        }
+                    }, stillTime * 1000);
+                }
+                // still_time === 255 (or 0 with buttons): hold until user activates a button.
+            },
+            /**
+             * Update selected button visuals (D-pad / HL_BTNN).
+             * @param {Element} menu
+             * @param {number} buttonIndex 0-based
+             */
+            setMenuHighlight: function (menu, buttonIndex) {
+                highlightMenuButton(menu || this._dvdjsActiveMenu, buttonIndex);
             }
         }
     });
 })();
+
+function clearDvdjsTimers(xVideo) {
+    if (xVideo._dvdjsStillTimer) {
+        clearTimeout(xVideo._dvdjsStillTimer);
+        xVideo._dvdjsStillTimer = null;
+    }
+    if (xVideo._dvdjsHighlightTimer) {
+        clearTimeout(xVideo._dvdjsHighlightTimer);
+        xVideo._dvdjsHighlightTimer = null;
+    }
+}
+
+/**
+ * Hide/pause menu motion video and restore the still image overlay.
+ */
+function resetMenuMotion(xVideo, menuVideo, menu) {
+    if (menuVideo) {
+        if (xVideo._dvdjsMenuTimeUpdate) {
+            menuVideo.removeEventListener('timeupdate', xVideo._dvdjsMenuTimeUpdate);
+            xVideo._dvdjsMenuTimeUpdate = null;
+        }
+        try {
+            menuVideo.pause();
+        } catch (e) {
+            // ignore
+        }
+        menuVideo.hidden = true;
+        menuVideo.style.cssText = '';
+    }
+    var host = menu || (xVideo && xVideo._dvdjsActiveMenu);
+    var still = host && host.querySelector('img.menu-still');
+    if (still) {
+        still.style.opacity = '';
+    }
+}
+
+function setMenuButtonsEnabled(menu, enabled) {
+    if (!menu) {
+        return;
+    }
+    var buttons = menu.querySelectorAll('input.btn');
+    for (var i = 0; i < buttons.length; i++) {
+        buttons[i].disabled = !enabled;
+        buttons[i].style.pointerEvents = enabled ? '' : 'none';
+    }
+}
+
+function highlightMenuButton(menu, buttonIndex) {
+    if (!menu) {
+        return;
+    }
+    var buttons = menu.querySelectorAll('input.btn');
+    for (var i = 0; i < buttons.length; i++) {
+        if (i === buttonIndex) {
+            buttons[i].classList.add('selected');
+        } else {
+            buttons[i].classList.remove('selected');
+        }
+    }
+}
+
+function updateMenuCellVisuals(menu, opts) {
+    if (!menu || opts.cellID == null || opts.vobID == null) {
+        return;
+    }
+    var domain = opts.domain != null ? opts.domain : menu.dataset.domain;
+    var still = menu.querySelector('img.menu-still');
+    var cssHref = null;
+    var stillSrc = null;
+    var links = document.querySelectorAll('link[href*="menu-' + domain + '-' + opts.cellID + '-' + opts.vobID + '"]');
+    if (links.length) {
+        cssHref = links[0].getAttribute('href');
+    }
+    var imgs = document.querySelectorAll('img.menu-still[src*="menu-' + domain + '-' + opts.cellID + '-' + opts.vobID + '"]');
+    if (imgs.length) {
+        stillSrc = imgs[0].getAttribute('src');
+    }
+    // Fallback: construct conventional path from current still src directory.
+    if (!stillSrc && still && still.getAttribute('src')) {
+        var m = still.getAttribute('src').match(/^(.*\/)menu-\d+-\d+-\d+\.png$/);
+        if (m) {
+            stillSrc = m[1] + 'menu-' + domain + '-' + opts.cellID + '-' + opts.vobID + '.png';
+            cssHref = m[1] + 'menu-' + domain + '-' + opts.cellID + '-' + opts.vobID + '.css';
+        }
+    }
+    if (stillSrc && still) {
+        still.setAttribute('src', stillSrc);
+    }
+    if (cssHref) {
+        var link = menu.querySelector('link[rel="stylesheet"]');
+        if (link) {
+            link.setAttribute('href', cssHref);
+        } else {
+            link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = cssHref;
+            menu.insertBefore(link, menu.firstChild);
+        }
+    }
+
+    // Rebuild buttons if adjacency payload provided.
+    if (opts.buttons && opts.buttons.length) {
+        var existing = menu.querySelectorAll('input.btn');
+        for (var i = 0; i < existing.length; i++) {
+            existing[i].parentNode.removeChild(existing[i]);
+        }
+        for (var b = 0; b < opts.buttons.length; b++) {
+            var nav = opts.buttons[b] || {};
+            var input = document.createElement('input');
+            input.type = 'button';
+            input.className = 'btn';
+            input.dataset.id = String(b);
+            if (nav.up != null) input.dataset.up = String(nav.up);
+            if (nav.down != null) input.dataset.down = String(nav.down);
+            if (nav.left != null) input.dataset.left = String(nav.left);
+            if (nav.right != null) input.dataset.right = String(nav.right);
+            if (nav.auto_action_mode) input.dataset.autoAction = String(nav.auto_action_mode);
+            menu.appendChild(input);
+        }
+    }
+}
+
+function playMenuMotionSegment(xVideo, menuVideo, opts, onReady) {
+    var start = opts.startSec || 0;
+    var end = opts.endSec;
+    var onTimeUpdate = function () {
+        if (menuVideo.currentTime >= end - 0.05) {
+            menuVideo.pause();
+            menuVideo.removeEventListener('timeupdate', onTimeUpdate);
+            if (xVideo._dvdjsMenuTimeUpdate === onTimeUpdate) {
+                xVideo._dvdjsMenuTimeUpdate = null;
+            }
+            if (typeof xVideo._dvdjsMenuPost === 'function') {
+                var post = xVideo._dvdjsMenuPost;
+                xVideo._dvdjsMenuPost = null;
+                try {
+                    post();
+                } catch (e) {
+                    console.warn('DVD.js menu post failed', e);
+                }
+            }
+        }
+    };
+
+    // Drop any previous segment listener before attaching a new one.
+    if (xVideo._dvdjsMenuTimeUpdate) {
+        menuVideo.removeEventListener('timeupdate', xVideo._dvdjsMenuTimeUpdate);
+    }
+    xVideo._dvdjsMenuTimeUpdate = onTimeUpdate;
+
+    // Show motion under the menu overlay if possible.
+    menuVideo.hidden = false;
+    menuVideo.style.cssText =
+        'position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;z-index:0;';
+    var still = xVideo._dvdjsActiveMenu && xVideo._dvdjsActiveMenu.querySelector('img.menu-still');
+    if (still) {
+        still.style.opacity = '0';
+    }
+
+    var startPlayback = function () {
+        menuVideo.currentTime = start;
+        menuVideo.addEventListener('timeupdate', onTimeUpdate);
+        var p = menuVideo.play();
+        if (p && typeof p.catch === 'function') {
+            p.catch(function () {
+                /* autoplay may fail; still UI remains usable */
+            });
+        }
+        if (onReady) {
+            onReady();
+        }
+    };
+
+    if (menuVideo.readyState >= 1) {
+        startPlayback();
+    } else {
+        menuVideo.addEventListener('loadedmetadata', function onMeta() {
+            menuVideo.removeEventListener('loadedmetadata', onMeta);
+            startPlayback();
+        });
+        menuVideo.load();
+    }
+}
 
 ///<reference path='declarations/xtag.d.ts'/>
 /** @const */ var MENU_MODE;
