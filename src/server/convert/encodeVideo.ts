@@ -14,6 +14,8 @@ import { globFiles } from '../../server/utils/globFiles.js';
 
 type EncodeVideoOptions = {
   full?: boolean;
+  /** When true, pass through full ffmpeg stderr. Default: errors + progress only. */
+  verbose?: boolean;
 };
 
 /** VOBs smaller than this are placeholders / empty cells — skip encode. */
@@ -149,8 +151,10 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       }
 
       // Single-pass: DVD VOBs misreport duration so two-pass pass-1 often encodes 0 frames.
+      // Quiet by default: DVD audio PTS jitter floods stderr with libvorbis DTS warnings.
       var cmd = [
         '-hide_banner',
+        ...(options.verbose ? [] : ['-loglevel', 'error', '-stats']),
         '-analyzeduration', '200M',
         '-probesize', '100M',
         '-fflags', '+genpts+discardcorrupt',
@@ -168,6 +172,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         '-c:a', 'libvorbis',
         '-b:a', '128k',
         '-ac', '2',
+        '-af', 'aresample=async=1:first_pts=0',
         '-force_key_frames', forceKeyFramesTimestamps.join(','),
         '-threads', '0',
         '-vf', 'yadif=0:-1:0,format=yuv420p',

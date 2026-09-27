@@ -55,6 +55,8 @@ export type ConvertOptions = {
   workDir: string | null;
   /** After convert, upload package to media server (stub). */
   upload: boolean;
+  /** Show full ffmpeg stderr (DTS/libvorbis chatter, etc.). Default: quiet. */
+  verbose: boolean;
 };
 
 // pnpm often invokes as `node bin/convert.js -- --vm-only …`; drop leading `--` separators.
@@ -106,6 +108,11 @@ const { values, positionals } = parseArgs({
       type: 'boolean',
       default: false,
     },
+    verbose: {
+      type: 'boolean',
+      short: 'v',
+      default: false,
+    },
   },
 });
 
@@ -118,6 +125,7 @@ const options: ConvertOptions = {
   keepRip: Boolean(values['keep-rip']),
   workDir: values['work-dir'] ? String(values['work-dir']) : null,
   upload: Boolean(values.upload),
+  verbose: Boolean(values.verbose),
 };
 
 if (values.help) {
@@ -148,8 +156,10 @@ Rip (dvdbackup + libdvdcss):
   --rip-only --work-dir DIR   Decrypt/copy to DIR and stop
   --keep-rip --work-dir DIR   Convert, leave the decrypted rip in DIR
   --upload                    Upload converted menu package to media server (stub)
+  --verbose / -v              Show full ffmpeg stderr (non-monotonic DTS, etc.)
 
 Convert always packs webFolder/<disc>.tar.gz (+ cover sidecar) at the end.
+By default ffmpeg encode logs are quiet (errors + progress only).
 
 Use nix develop so ffmpeg-full + dvdbackup + libdvdcss are on PATH.`);
   process.exit(0);
@@ -177,12 +187,12 @@ function resolveInputPath(
   }
 
   var picked = pickDefaultDvdSource(listOpticalDrives());
-  if (!picked.ok) {
-    console.error(picked.message);
-    process.exit(1);
+  if (picked.ok) {
+    console.error('Using optical drive ' + picked.path);
+    return picked.path;
   }
-  console.error('Using optical drive ' + picked.path);
-  return picked.path;
+  console.error('message' in picked ? picked.message : 'No optical drive available.');
+  process.exit(1);
 }
 
 /**
