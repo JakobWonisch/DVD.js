@@ -8,7 +8,7 @@ Clients never download the full ISO. The converter rips server-side and streams 
 
 ## Status
 
-This checkout continues the **converter** architecture (pre-rip + stream). The product focus is **menus**: default convert is menus-only; navigate still/motion menus with mouse and D-pad. JumpTT on a menu-only rip shows “title not included”. Menu SPU select/activate overlays are baked at convert time; a modern viewer is still open. See `AGENTS.md` for goals and build order.
+This checkout continues the **converter** architecture (pre-rip + stream). The product focus is **menus**: default convert is menus-only; navigate still/motion menus with mouse and D-pad. JumpTT on a menu-only rip shows “title not included”. The browser UI is a **SolidJS** app under `viewer/` (Vite). Menu SPU select/activate overlays are baked at convert time. See `AGENTS.md` for goals and build order.
 
 Requires a **decrypted** `VIDEO_TS` / ISO (CSS/DRM out of scope).
 
@@ -75,21 +75,24 @@ Open [http://localhost:3000/](http://localhost:3000/).
 
 | Command | Purpose |
 |---------|---------|
-| `pnpm build` | Compile TypeScript (`tsc`) → `dist/` |
-| `pnpm watch` | Rebuild on change |
-| `pnpm start` | Serve `public/` + `webFolder` |
+| `pnpm build` | Compile TypeScript (`tsc`) → `dist/` and Solid viewer → `dist/viewer/` |
+| `pnpm build:viewer` | Vite build of `viewer/` only |
+| `pnpm dev:viewer` | Vite HMR for the viewer (proxy disc assets from `:3000`) |
+| `pnpm watch` | Rebuild server/convert on change |
+| `pnpm start` | Serve `dist/viewer/` + `public/` + `webFolder` |
 | `pnpm convert -- <dvd-root>` | Rip menus into `webFolder` (default) |
 | `pnpm convert -- --full <dvd-root>` | Rip menus + title video |
 | `pnpm test` | Vitest |
-| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm typecheck` | `tsc --noEmit` (server + viewer) |
 
 ## Tooling
 
 | Piece | Choice |
 |-------|--------|
 | Package manager | pnpm 12 (`packageManager` in `package.json`) |
-| Modules | ESM (`"type": "module"`, TypeScript `NodeNext`) |
-| Compile | `tsc` only (no Grunt / Bower / TSD) |
+| Modules | ESM (`"type": "module"`, TypeScript `NodeNext` for server) |
+| Compile | `tsc` (server/convert) + Vite/Solid (viewer) |
+| Viewer | SolidJS + TypeScript under `viewer/` |
 | Tests | Vitest 5 |
 | Types | TypeScript 7 + `@types/*` |
 | Nix | `flake.nix` → `devShell` with `nodejs_24`, `pnpm`, `ffmpeg` |
@@ -97,7 +100,7 @@ Open [http://localhost:3000/](http://localhost:3000/).
 
 Entry points: `bin/convert.js`, `bin/http-server.js` (load `dist/`).
 
-The browser catalogue UI under `src/app/` is still legacy and not part of the `tsc` build yet.
+Legacy Backbone sources under `src/app/` and the old CDN `public/index.html` shell are superseded by the Solid viewer; `public/test.html` / `parse-ifo.html` remain as utilities.
 
 ## Browser support
 

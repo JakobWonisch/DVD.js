@@ -1,49 +1,67 @@
-/** Converted disc metadata.json shape (menus-first pipeline). */
+/** Converted disc catalogue entry (`dvds.json`). */
+export type DvdListItem = {
+  name: string;
+  dir: string;
+};
 
-export interface ButtonNav {
+/** Button adjacency from PCI btnit (1-based neighbor ids). */
+export type MenuButtonNav = {
   id?: number;
   up?: number;
   down?: number;
   left?: number;
   right?: number;
   auto_action_mode?: number;
-}
+};
 
-export interface MenuCellInfo {
+export type MenuCellMeta = {
   still?: string;
   css?: string;
   btn_nb?: number;
-  buttons?: ButtonNav[];
+  buttons?: MenuButtonNav[];
   hli_s_ptm?: number;
   hli_e_ptm?: number;
   start_sector?: number;
   end_sector?: number;
   startSec?: number;
   endSec?: number;
-}
+  /** Base SPU overlay PNG (from extractSpu). */
+  spu?: string;
+  /** Per-button select-state SPU PNGs. */
+  spuSelect?: string[];
+  /** Per-button activate-state SPU PNGs. */
+  spuActivate?: string[];
+  spuFrameHeight?: number;
+};
 
-export interface MenuEntry {
+export type MenuCellMap = Record<string, Record<string, MenuCellMeta>>;
+
+export type MenuPgcEntry = {
   pgc: number;
   cellID?: number;
   vobID?: number;
   still_time?: number;
   cells?: unknown[];
-}
+};
 
-export interface DomainMetadata {
-  extractMode?: 'menus' | 'full';
-  menu?: Record<string, MenuEntry[]>;
-  menuCell?: Record<string, Record<string, MenuCellInfo>>;
-  /** Menu VOB WebMs (motion menus). */
+export type DomainMetadata = {
+  menu?: Record<string, MenuPgcEntry[]>;
+  menuCell?: MenuCellMap;
+  /** Menu VOB WebMs */
   index?: string[];
-  /** Title VOB WebMs (absent or empty in menus-only rips). */
+  /** Title VOB WebMs (absent on menus-only rips) */
   video?: string[];
   vtt?: string[];
-}
+  extractMode?: 'menus' | 'full';
+};
 
 export type DiscMetadata = DomainMetadata[];
 
-export interface CatalogueEntry {
-  name: string;
-  dir: string;
-}
+/** @deprecated Prefer MenuButtonNav */
+export type ButtonNav = MenuButtonNav;
+/** @deprecated Prefer MenuCellMeta */
+export type MenuCellInfo = MenuCellMeta;
+/** @deprecated Prefer MenuPgcEntry */
+export type MenuEntry = MenuPgcEntry;
+/** @deprecated Prefer DvdListItem */
+export type CatalogueEntry = DvdListItem;

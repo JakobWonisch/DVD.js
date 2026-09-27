@@ -1,174 +1,21 @@
 <!doctype html>
-<html>
-<head>
-<title>DVD.js - Play DVD in JavaScript for the sake of interoperability</title>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
-<meta name="msapplication-TileColor" content="#00aba9">
-<meta name="msapplication-TileImage" content="/mstile-144x144.png">
-<link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.0.3/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-IS73LIqjtYesmURkDE9MXKbXqYA8rvKEp/ghicjem7Vc3mGRdQRptJSz60tvrB6+" crossorigin="anonymous">
-<link href="/lib/x-video/x-video.css" rel="stylesheet">
-<link href="/favicon-196x196.png" rel="icon" sizes="196x196">
-<link href="/favicon-160x160.png" rel="icon" sizes="160x160">
-<link href="/favicon-96x96.png" rel="icon" sizes="96x96">
-<link href="/favicon-32x32.png" rel="icon" sizes="32x32">
-<link href="/favicon-16x16.png" rel="icon" sizes="16x16">
-<style>
-body {
-  padding-top: 20px;
-  padding-bottom: 20px;
-}
-
-.navbar {
-  margin-bottom: 20px;
-}
-
-.video-container {
-  position: relative;
-}
-
-x-video {
-  width: 100%;
-  max-width: 720px;
-  max-height: 480px;
-  margin: auto;
-}
-
-x-menu img {
-  width: 100%;
-  max-width: 720px;
-  max-height: 480px;
-}
-
-input[type="button"].btn {
-  position: absolute;
-  opacity: .5;
-  padding: 0;
-  margin: 0;
-  border-radius: 10px;
-  border: 3px solid black;
-  color: rgba(127, 127, 127, 0.5);
-}
-
-input[type="button"].btn.selected {
-  opacity: 1;
-  border-color: #fc0;
-  box-shadow: 0 0 0 2px rgba(255, 204, 0, 0.45);
-  z-index: 2;
-}
-
-/* When SPU highlight overlays are present, hitboxes stay invisible. */
-input[type="button"].btn.btn-spu {
-  opacity: 0;
-  border-color: transparent;
-  box-shadow: none;
-  background: transparent;
-  color: transparent;
-}
-
-input[type="button"].btn.btn-spu.selected {
-  opacity: 0;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-x-menu {
-  position: relative;
-  display: block;
-}
-
-x-menu img.menu-still,
-x-menu img.menu-spu,
-x-menu img.menu-spu-sel,
-x-menu img.menu-spu-act {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: auto;
-  pointer-events: none;
-}
-
-x-menu img.menu-still {
-  position: relative;
-}
-
-x-menu img.menu-spu-sel[hidden],
-x-menu img.menu-spu-act[hidden] {
-  display: none !important;
-}
-
-.dvdjs-menu-video {
-  pointer-events: none;
-}
-
-.thumbnail {
-  width: 12rem;
-  height: 17rem;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center 0;
-  float: left;
-  margin: 0 1rem 1rem 0;
-  padding: 0;
-  cursor: pointer;
-}
-
-.thumbnail a {
-  display: block;
-  width: 100%;
-  height: 100%;
-  position: relative;
-}
-
-.thumbnail a span {
-  color: #fff;
-  text-decoration: none;
-  display: block;
-  width: 100%;
-  height: 6rem;
-  background: rgba(0, 0, 0, .5);
-  bottom: 0;
-  position: absolute;
-  padding: .5rem;
-  font-size: 1.2rem;
-}
-</style>
-</head>
-<body>
-<div class="container">
-  <div class="navbar navbar-default" role="navigation">
-    <div class="navbar-header">
-      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-        <span class="sr-only">Toggle navigation</span> <span class="icon-bar"></span>
-        <span class="icon-bar"></span> <span class="icon-bar"></span>
-      </button>
-      <a class="navbar-brand" href="/"><img src="/img/dvd.js.svg" alt="DVD.js" title="DVD.js" width="18" height="18"> DVD.js</a>
-    </div>
-    <div class="navbar-collapse collapse">
-      <ul class="nav navbar-nav">
-        <li class="active"><a href="/">Play DVD</a></li>
-        <li><a href="/test.html">Test your browser</a></li>
-        <li><a href="/parse-ifo.html">Parse IFO files</a></li>
-      </ul>
-    </div>
-  </div>
-  <div class="row">
-    <div>
-      <div class="video-container"></div>
-    </div>
-  </div>
-  <footer>
-    <p>© 2018 Guillaume Marty (<a href="https://github.com/gmarty">https://github.com/gmarty</a>)</p>
-  </footer>
-</div>
-<script src="https://code.jquery.com/jquery-1.12.4.min.js" integrity="sha256-ZosEbRLbNQzLpnKIkEdrPv7lOy9C27hHQ+Xp8a4MxAQ=" crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js" integrity="sha384-FZY+KSLVXVyc1qAlqH9oCx1JEOlQh6iXfw3o2n3Iy32qGjXmUPWT9I0Z9e9wxYe3" crossorigin="anonymous"></script>
-<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.0.3/js/bootstrap.min.js" integrity="sha384-s1ITto93iSMDxlp/79qhWHi+LsIi9Gx6yL+cOKDuymvihkfol83TYbLbOw+W/wv4" crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.2.3/backbone-min.js"></script>
-<script src="/lib/x-tag/x-tag-core.min.js"></script>
-<script src="/lib/x-video/x-video.complete.js"></script>
-<script src="/lib/dvdjs/buildTag.js"></script>
-<script src="/lib/dvdjs/router.js"></script>
-</body>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>DVD.js</title>
+    <meta
+      http-equiv="refresh"
+      content="0; url=/?notice=build-viewer"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <p>
+      The Solid viewer is served from <code>dist/viewer/</code>. Run
+      <code>pnpm build</code> (or <code>pnpm build:viewer</code>) then
+      <code>pnpm start</code>.
+    </p>
+    <p>Utility pages: <a href="/test.html">test</a> ·
+      <a href="/parse-ifo.html">parse-ifo</a></p>
+  </body>
 </html>

@@ -50,7 +50,7 @@ MVP cut (menus-first): packaging → stills + clicks + D-pad → VM/resume → S
 - **TDD for the VM** — fixture-driven tests under `tests/` before/with VM op implementations
 - Optional later: libdvdnav (WASM or native at rip-time) for nav fidelity
 - Avoid full VLC/OS-in-WASM as the starting approach
-- Client `src/app/**` is legacy Backbone and excluded from `tsc` until a modern viewer lands
+- Browser viewer is **SolidJS + TypeScript** under `viewer/` (Vite → `dist/viewer/`). Legacy Backbone `src/app/**` is unused and still excluded from server `tsc`
 - Do **not** reintroduce Grunt, Bower, or TSD
 
 ## Key paths
@@ -60,7 +60,8 @@ MVP cut (menus-first): packaging → stills + clicks + D-pad → VM/resume → S
 | Rip pipeline | `src/server/convert/*` |
 | App config | `src/loadAppConfig.ts`, `config/app.example.json` |
 | VM → JS | `src/vm/recompile.ts` |
-| Player | `src/player/index.ts` |
+| Player host | `viewer/src/host/*` (native `x-video` / `x-menu`) |
+| Solid viewer | `viewer/` |
 | Entry bins | `bin/convert.js`, `bin/http-server.js` |
 | Tests | `tests/**/*.test.ts` |
 | Docs | `README.md`, this file |
@@ -70,7 +71,8 @@ MVP cut (menus-first): packaging → stills + clicks + D-pad → VM/resume → S
 ```bash
 nix develop                 # optional; node, pnpm, ffmpeg
 pnpm install                # or: npx pnpm@12.6.0 install
-pnpm build                  # tsc → dist/
+pnpm build                  # tsc → dist/ + Solid viewer → dist/viewer/
+pnpm dev:viewer             # Vite HMR (proxies disc assets to :3000)
 pnpm test
 pnpm start                  # http://localhost:3000/
 pnpm convert -- path/to/DVD/root          # menus only (default)
@@ -79,7 +81,7 @@ pnpm convert -- --full path/to/DVD/root   # menus + titles
 
 Copy `config/app.example.json` → `config/app.json` and set `webFolder` before convert/start.
 
-Convert writes `extractMode: "menus" | "full"` into per-title metadata entries. Menu-only archives keep Jump* in `vm.js`; the player (`src/player`, `public/lib/x-video`) surfaces a message when title media is absent.
+Convert writes `extractMode: "menus" | "full"` into per-title metadata entries. Menu-only archives keep Jump* in `vm.js`; the viewer host (`viewer/src/host`) surfaces a message when title media is absent.
 
 ## Agent habits
 

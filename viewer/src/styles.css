@@ -1,0 +1,186 @@
+:root {
+  --bg: #1a1c1e;
+  --panel: #24272b;
+  --text: #e8eaed;
+  --muted: #9aa0a6;
+  --accent: #2ec4b6;
+  --danger: #f07178;
+  --border: #3a3f45;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  color: var(--text);
+  background: radial-gradient(1200px 600px at 10% -10%, #2a3238, var(--bg));
+  line-height: 1.45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.app-shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.25rem 1.5rem 2rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.topbar nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  font-size: 0.92rem;
+}
+
+.topbar nav a {
+  color: var(--muted);
+}
+
+.topbar nav a.active,
+.topbar nav a[aria-current='page'] {
+  color: var(--accent);
+}
+
+footer {
+  margin-top: 2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--danger);
+}
+
+.catalogue-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.thumbnail {
+  width: 12rem;
+  height: 17rem;
+  background-color: var(--panel);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.thumbnail a {
+  display: block;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  color: #fff;
+}
+
+.thumbnail a span {
+  display: block;
+  width: 100%;
+  min-height: 6rem;
+  background: rgba(0, 0, 0, 0.55);
+  bottom: 0;
+  position: absolute;
+  padding: 0.5rem;
+  font-size: 1.05rem;
+}
+
+.player-stage {
+  position: relative;
+}
+
+x-video {
+  width: 100%;
+  max-width: 720px;
+  max-height: 480px;
+  margin: auto;
+  display: block;
+  background: #000;
+}
+
+x-menu {
+  width: 100%;
+  max-width: 720px;
+  max-height: 480px;
+}
+
+x-menu img.menu-still {
+  width: 100%;
+  max-width: 720px;
+  max-height: 480px;
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+input[type='button'].btn {
+  position: absolute;
+  opacity: 0.5;
+  padding: 0;
+  margin: 0;
+  border-radius: 10px;
+  border: 3px solid black;
+  color: rgba(127, 127, 127, 0.5);
+  background: transparent;
+  z-index: 2;
+  cursor: pointer;
+}
+
+input[type='button'].btn.selected {
+  opacity: 1;
+  border-color: #fc0;
+  box-shadow: 0 0 0 2px rgba(255, 204, 0, 0.45);
+  z-index: 3;
+}
+
+.dvdjs-menu-video {
+  pointer-events: none;
+}
+
+x-video > video {
+  width: 100%;
+  display: block;
+}
