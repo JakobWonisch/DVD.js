@@ -1527,6 +1527,12 @@
              */
             setMenuHighlight: function (menu, buttonIndex) {
                 highlightMenuButton(menu || this._dvdjsActiveMenu, buttonIndex);
+            },
+            /**
+             * Brief activate-state SPU flash before button command runs.
+             */
+            flashMenuActivate: function (menu, buttonIndex) {
+                flashMenuButtonActivate(menu || this._dvdjsActiveMenu, buttonIndex, 120);
             }
         }
     });
@@ -1590,6 +1596,46 @@ function highlightMenuButton(menu, buttonIndex) {
             buttons[i].classList.remove('selected');
         }
     }
+
+    // SPU select overlays: show the matching layer, hide others.
+    var sels = menu.querySelectorAll('img.menu-spu-sel');
+    var acts = menu.querySelectorAll('img.menu-spu-act');
+    for (var s = 0; s < sels.length; s++) {
+        var show = s === buttonIndex;
+        if (show) {
+            sels[s].removeAttribute('hidden');
+        } else {
+            sels[s].setAttribute('hidden', '');
+        }
+    }
+    // Activate flash layers stay hidden until explicit activate.
+    for (var a = 0; a < acts.length; a++) {
+        acts[a].setAttribute('hidden', '');
+    }
+}
+
+/**
+ * Briefly show the activate SPU overlay for a button (click / Enter).
+ */
+function flashMenuButtonActivate(menu, buttonIndex, durationMs) {
+    if (!menu) {
+        return;
+    }
+    var act = menu.querySelector('img.menu-spu-act[data-id="' + buttonIndex + '"]');
+    var sel = menu.querySelector('img.menu-spu-sel[data-id="' + buttonIndex + '"]');
+    if (!act) {
+        return;
+    }
+    if (sel) {
+        sel.setAttribute('hidden', '');
+    }
+    act.removeAttribute('hidden');
+    setTimeout(function () {
+        act.setAttribute('hidden', '');
+        if (sel) {
+            sel.removeAttribute('hidden');
+        }
+    }, durationMs || 120);
 }
 
 function updateMenuCellVisuals(menu, opts) {
@@ -1618,6 +1664,88 @@ function updateMenuCellVisuals(menu, opts) {
     }
     if (stillSrc && still) {
         still.setAttribute('src', stillSrc);
+    }
+    // Keep SPU overlays in sync with the active cell (conventional paths).
+    var baseDir = null;
+    if (stillSrc) {
+        var bm = stillSrc.match(/^(.*\/)menu-\d+-\d+-\d+\.png$/);
+        if (bm) {
+            baseDir = bm[1];
+        }
+    }
+    if (baseDir) {
+        var spu = menu.querySelector('img.menu-spu');
+        var spuSrc = baseDir + 'menu-' + domain + '-' + opts.cellID + '-' + opts.vobID + '-spu.png';
+        if (spu) {
+            spu.setAttribute('src', spuSrc);
+        } else {
+            spu = document.createElement('img');
+            spu.className = 'menu-spu';
+            spu.setAttribute('alt', '');
+            spu.setAttribute('aria-hidden', 'true');
+            spu.src = spuSrc;
+            if (still && still.nextSibling) {
+                menu.insertBefore(spu, still.nextSibling);
+            } else {
+                menu.appendChild(spu);
+            }
+        }
+        // Drop old select/activate layers; rebuild from opts if provided.
+        var oldSel = menu.querySelectorAll('img.menu-spu-sel, img.menu-spu-act');
+        for (var os = 0; os < oldSel.length; os++) {
+            oldSel[os].parentNode.removeChild(oldSel[os]);
+        }
+        var selList = opts.spuSelect || [];
+        var actList = opts.spuActivate || [];
+        if (!selList.length && opts.buttons && opts.buttons.length) {
+            // Conventional paths when metadata rebuild didn't pass overlays.
+            for (var si = 0; si < opts.buttons.length; si++) {
+                selList.push(
+                    baseDir +
+                        'menu-' +
+                        domain +
+                        '-' +
+                        opts.cellID +
+                        '-' +
+                        opts.vobID +
+                        '-spu-sel-' +
+                        si +
+                        '.png'
+                );
+                actList.push(
+                    baseDir +
+                        'menu-' +
+                        domain +
+                        '-' +
+                        opts.cellID +
+                        '-' +
+                        opts.vobID +
+                        '-spu-act-' +
+                        si +
+                        '.png'
+                );
+            }
+        }
+        for (var sj = 0; sj < selList.length; sj++) {
+            var simg = document.createElement('img');
+            simg.className = 'menu-spu-sel';
+            simg.dataset.id = String(sj);
+            simg.hidden = true;
+            simg.alt = '';
+            simg.setAttribute('aria-hidden', 'true');
+            simg.src = selList[sj];
+            menu.appendChild(simg);
+        }
+        for (var aj = 0; aj < actList.length; aj++) {
+            var aimg = document.createElement('img');
+            aimg.className = 'menu-spu-act';
+            aimg.dataset.id = String(aj);
+            aimg.hidden = true;
+            aimg.alt = '';
+            aimg.setAttribute('aria-hidden', 'true');
+            aimg.src = actList[aj];
+            menu.appendChild(aimg);
+        }
     }
     if (cssHref) {
         var link = menu.querySelector('link[rel="stylesheet"]');

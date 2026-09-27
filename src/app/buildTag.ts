@@ -45,16 +45,34 @@ function buildTag(metadata) {
           videos.menuCell[String(cellID)][String(vobID)];
 
         if (menuCell && menuCell.still) {
+          if (menuCell.spuFrameHeight) {
+            tpl = tpl.replace(
+              `id="menu-${lang}-${id}-${menu.pgc}"`,
+              `id="menu-${lang}-${id}-${menu.pgc}" data-spu-height="${menuCell.spuFrameHeight}"`
+            );
+          }
           if (menuCell.css) {
             tpl += `<link href="${menuCell.css}" rel="stylesheet">`;
           }
           tpl += `<img class="menu-still" src="${menuCell.still}" alt="">`;
+          if (menuCell.spu) {
+            tpl += `<img class="menu-spu" src="${menuCell.spu}" alt="" aria-hidden="true">`;
+          }
+          var spuSelect = menuCell.spuSelect || [];
+          var spuActivate = menuCell.spuActivate || [];
+          for (var s = 0; s < spuSelect.length; s++) {
+            tpl += `<img class="menu-spu-sel" data-id="${s}" hidden src="${spuSelect[s]}" alt="" aria-hidden="true">`;
+          }
+          for (var a = 0; a < spuActivate.length; a++) {
+            tpl += `<img class="menu-spu-act" data-id="${a}" hidden src="${spuActivate[a]}" alt="" aria-hidden="true">`;
+          }
 
           var btnCount = menuCell.btn_nb || 0;
           var buttons = menuCell.buttons || [];
+          var hasSpuHighlight = spuSelect.length > 0;
           for (var i = 0; i < btnCount; i++) {
             var nav = buttons[i] || {};
-            tpl += `<input type="button" data-id="${i}" class="btn"` +
+            tpl += `<input type="button" data-id="${i}" class="btn${hasSpuHighlight ? ' btn-spu' : ''}"` +
               (nav.up != null ? ` data-up="${nav.up}"` : ``) +
               (nav.down != null ? ` data-down="${nav.down}"` : ``) +
               (nav.left != null ? ` data-left="${nav.left}"` : ``) +

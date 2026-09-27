@@ -31,11 +31,11 @@ Given a decrypted disc and **default menus-only** convert: open in browser, navi
 2. ~~**Still menus**~~ — PNG stills + `still_time` / `hli_s_ptm` / `post()` wiring (done)
 3. ~~**VM runtime (menus)**~~ — opcode fixtures green; CallSS/`saveRSM` + `resumeRSM`, lang LU pick, cell play helpers (done)
 4. ~~**D-pad / auto-activate**~~ — `btnit` adjacency + Arrow/Enter + CSS selected state (done)
-5. **SPU + highlight compositing** — beyond CSS rect hitboxes / selected class
+5. ~~**SPU + highlight compositing**~~ — bake SPU PNG overlays + select/activate remap (done on `mvp-spu`)
 6. **Hardening** — disc corpus QA; exotic menu games
 7. **Optional `--full`** — title/chapter WebM fidelity (demoted; not MVP)
 
-MVP cut (menus-first): packaging → stills + clicks + D-pad → VM/resume → (defer perfect SPU / title export / exotic games).
+MVP cut (menus-first): packaging → stills + clicks + D-pad → VM/resume → SPU overlays → (defer exotic games / title export).
 
 ## Engineering standards
 

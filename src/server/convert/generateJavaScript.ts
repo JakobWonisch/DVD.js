@@ -127,6 +127,8 @@ function generateJavaScript(dvdPath: string, callback) {
     '    endSec: cell.endSec,',
     '    hli_s_ptm: cell.hli_s_ptm,',
     '    buttons: cell.buttons || [],',
+    '    spuSelect: cell.spuSelect || [],',
+    '    spuActivate: cell.spuActivate || [],',
     '    onPost: function() { if (menu.post) { menu.post(); } }',
     '  });',
     '}',
@@ -341,6 +343,8 @@ function generateJavaScript(dvdPath: string, callback) {
                 : menuCell && menuCell.endSec,
             hli_s_ptm: menuCell && menuCell.hli_s_ptm,
             buttons: (menuCell && menuCell.buttons) || [],
+            spuSelect: (menuCell && menuCell.spuSelect) || [],
+            spuActivate: (menuCell && menuCell.spuActivate) || [],
           };
         });
       }
@@ -573,6 +577,7 @@ function generateJavaScript(dvdPath: string, callback) {
         '    }',
         '',
         '    if (dvd.setMenuHighlight) { dvd.setMenuHighlight(target.parentNode, parseInt(id, 10)); }',
+        '    if (dvd.flashMenuActivate) { dvd.flashMenuActivate(target.parentNode, parseInt(id, 10)); }',
         '',
         '    if (!btnCmd[domain] || !btnCmd[domain][vob] || !btnCmd[domain][vob][id]) {',
         '      console.error(\'Missing button command for\', domain, vob, id);',
@@ -612,6 +617,8 @@ function generateJavaScript(dvdPath: string, callback) {
         '    else if (event.key === \'ArrowRight\') { nextId = entry.right; }',
         '    else if (event.key === \'Enter\') {',
         '      event.preventDefault();',
+        '      if (dvd.setMenuHighlight) { dvd.setMenuHighlight(menu, idx); }',
+        '      if (dvd.flashMenuActivate) { dvd.flashMenuActivate(menu, idx); }',
         '      if (btnCmd[domain] && btnCmd[domain][vob] && btnCmd[domain][vob][idx]) {',
         '        btnCmd[domain][vob][idx]();',
         '      }',

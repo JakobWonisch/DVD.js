@@ -57,6 +57,47 @@ input[type="button"].btn.selected {
   z-index: 2;
 }
 
+/* When SPU highlight overlays are present, hitboxes stay invisible. */
+input[type="button"].btn.btn-spu {
+  opacity: 0;
+  border-color: transparent;
+  box-shadow: none;
+  background: transparent;
+  color: transparent;
+}
+
+input[type="button"].btn.btn-spu.selected {
+  opacity: 0;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+x-menu {
+  position: relative;
+  display: block;
+}
+
+x-menu img.menu-still,
+x-menu img.menu-spu,
+x-menu img.menu-spu-sel,
+x-menu img.menu-spu-act {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+x-menu img.menu-still {
+  position: relative;
+}
+
+x-menu img.menu-spu-sel[hidden],
+x-menu img.menu-spu-act[hidden] {
+  display: none !important;
+}
+
 .dvdjs-menu-video {
   pointer-events: none;
 }

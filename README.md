@@ -8,7 +8,7 @@ Clients never download the full ISO. The converter rips server-side and streams 
 
 ## Status
 
-This checkout continues the **converter** architecture (pre-rip + stream). The product focus is **menus**: default convert is menus-only; navigate still/motion menus with mouse and D-pad. JumpTT on a menu-only rip shows “title not included”. SPU bitmap compositing and a modern viewer are still open. See `AGENTS.md` for goals and build order.
+This checkout continues the **converter** architecture (pre-rip + stream). The product focus is **menus**: default convert is menus-only; navigate still/motion menus with mouse and D-pad. JumpTT on a menu-only rip shows “title not included”. Menu SPU select/activate overlays are baked at convert time; a modern viewer is still open. See `AGENTS.md` for goals and build order.
 
 Requires a **decrypted** `VIDEO_TS` / ISO (CSS/DRM out of scope).
 
