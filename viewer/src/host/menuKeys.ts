@@ -33,7 +33,10 @@ function currentIndex(buttons: HTMLInputElement[]): number {
   let idx =
     Math.floor(((sprm && sprm.HL_BTNN) || 0x0400) / 0x0400) - 1;
   if (idx < 0 || idx >= buttons.length) {
-    idx = buttons.findIndex((b) => b.classList.contains('selected'));
+    idx = buttons.findIndex(
+      (b) =>
+        b.classList.contains('selected') || b.dataset.selected === '1',
+    );
   }
   if (idx < 0 || idx >= buttons.length) {
     idx = 0;

@@ -28,7 +28,10 @@ const MenuButtons: Component<{
       return (
         <input
           type="button"
-          class={props.hasSpuHighlight ? 'btn btn-spu' : 'btn'}
+          classList={{
+            btn: true,
+            'btn-spu': props.hasSpuHighlight,
+          }}
           data-id={i}
           data-up={nav().up}
           data-down={nav().down}

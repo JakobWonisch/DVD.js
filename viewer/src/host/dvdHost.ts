@@ -210,10 +210,13 @@ export function highlightMenuButton(
     return;
   }
   menu.querySelectorAll('input.btn').forEach((btn, i) => {
+    const el = btn as HTMLElement;
     if (i === buttonIndex) {
-      btn.classList.add('selected');
+      el.classList.add('selected');
+      el.dataset.selected = '1';
     } else {
-      btn.classList.remove('selected');
+      el.classList.remove('selected');
+      delete el.dataset.selected;
     }
   });
 
@@ -962,10 +965,15 @@ class XVideo extends HTMLElement implements XVideoElement {
   /** Toggle green hitbox chrome + B0..Bn labels on menu buttons. */
   setDebugHitboxes(enabled: boolean) {
     this.classList.toggle('dvdjs-debug-hitboxes', enabled);
+    const menu = (this as any)._dvdjsActiveMenu as HTMLElement | null;
     if (enabled) {
-      applyDebugHitboxLabels((this as any)._dvdjsActiveMenu);
+      applyDebugHitboxLabels(menu);
+      // Re-stamp selection: Solid class= can drop .selected; data-selected is authoritative.
+      const sprm = (window as any).sprm;
+      const btnIndex =
+        Math.floor(((sprm && sprm.HL_BTNN) || 0x0400) / 0x0400) - 1;
+      highlightMenuButton(menu, btnIndex);
     } else {
-      const menu = (this as any)._dvdjsActiveMenu as HTMLElement | null;
       menu?.querySelectorAll('input.btn').forEach((btn) => {
         (btn as HTMLInputElement).value = '';
       });

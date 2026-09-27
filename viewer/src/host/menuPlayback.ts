@@ -166,10 +166,13 @@ export function highlightMenuButton(
   }
   const buttons = menu.querySelectorAll('input.btn');
   for (let i = 0; i < buttons.length; i++) {
+    const el = buttons[i] as HTMLElement;
     if (i === buttonIndex) {
-      buttons[i].classList.add('selected');
+      el.classList.add('selected');
+      el.dataset.selected = '1';
     } else {
-      buttons[i].classList.remove('selected');
+      el.classList.remove('selected');
+      delete el.dataset.selected;
     }
   }
 

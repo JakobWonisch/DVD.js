@@ -301,8 +301,7 @@ footer {
 
 /* Debug: force visible hitboxes even when btn-spu hides them. */
 x-video.dvdjs-debug-hitboxes input[type='button'].btn,
-x-video.dvdjs-debug-hitboxes input[type='button'].btn.btn-spu,
-x-video.dvdjs-debug-hitboxes input[type='button'].btn.btn-spu.selected {
+x-video.dvdjs-debug-hitboxes input[type='button'].btn.btn-spu {
   opacity: 1 !important;
   border: 2px solid #00e676 !important;
   box-shadow: none !important;
@@ -317,10 +316,19 @@ x-video.dvdjs-debug-hitboxes input[type='button'].btn.btn-spu.selected {
   padding: 2px 4px !important;
 }
 
-x-video.dvdjs-debug-hitboxes input[type='button'].btn.selected {
+/*
+ * Current D-pad / HL_BTNN selection.
+ * Prefer [data-selected] (set by host) — Solid's class= binding can wipe .selected.
+ */
+x-video.dvdjs-debug-hitboxes input[type='button'].btn[data-selected='1'],
+x-video.dvdjs-debug-hitboxes input[type='button'].btn.btn-spu[data-selected='1'],
+x-video.dvdjs-debug-hitboxes input[type='button'].btn.selected,
+x-video.dvdjs-debug-hitboxes input[type='button'].btn.btn-spu.selected {
   border-color: #ffea00 !important;
-  background: rgba(255, 234, 0, 0.2) !important;
+  background: rgba(255, 234, 0, 0.28) !important;
   color: #ffea00 !important;
+  box-shadow: 0 0 0 2px rgba(255, 234, 0, 0.55) !important;
+  z-index: 7;
 }
 
 x-video {
