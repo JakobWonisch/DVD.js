@@ -17,7 +17,7 @@ Architecture: **converter** (this checkout). Do not revive an on-the-fly/full-IS
 - No client full-ISO load
 - Featurettes not required; menu interaction is
 - Default convert is **menus only** (`VIDEO_TS.VOB` / `VTS_*_0.VOB`); `--full` encodes title VOBs too
-- Title JumpTT / play on a menu-only rip must show a clear “not included” message (not a broken player)
+- Title JumpTT / play on a menu-only rip must show a clear “not included” message (not a broken player). Menu-button JumpTT is guarded before leaving the cell (`dvd.guardTitleJump`); OK restores the exact prior menu/VM snapshot (existing archives without the guard still snapshot-at-button and restore on dismiss — never jump to VMGM Title)
 - Catalogue thumbnail is one `cover.jpg` from the best VMGM menu still — **no menu gallery** (stored as `<discId>.cover.jpg` sidecar beside the archive)
 - Converted discs are stored **compressed at rest** (`webFolder/<discId>.tar.gz`); the HTTP server decompresses on first play. Set `evictDiscCache: true` in config to drop decompressed folders after **1 hour** idle (default off for local/dev — extract once, keep around)
 - Ideal UX: insert an optical disc (CSS-encrypted OK) → convert → playable web package; ship as Linux-first standalone CLI (Windows/macOS later)
@@ -161,6 +161,21 @@ dvdjs-convert /dev/sr0       # convert using tools.json paths
 
 ~~Older two-pass libvpx wrote `ffmpeg2pass*` under the DVD root (fails on optical / readonly mounts).~~ Fixed: `encodeVideo` is **single-pass**; stills use `os.tmpdir()`. Convert must keep **all** writes under `webFolder` or tmp — never beside source VOBs.
 
+### WebM encode / no NVIDIA GPU acceleration
+
+Menu and title video stay **WebM + libvpx (VP8) + Vorbis** (`encodeVideo`). That keeps a royalty-free progressive `<video>` package for Chromium/Firefox and matches the convert → serve → viewer contract (paths, menu segment concat, metadata).
+
+**NVIDIA NVENC does not encode VP8/VP9**, so convert cannot “just use the GPU” for the current codec. Encode is CPU-only today. Realistic GPU paths would need a deliberate format change:
+
+| Approach | Notes |
+|----------|--------|
+| Keep WebM + libvpx | Status quo; no NVENC |
+| WebM + `av1_nvenc` | Possible on Ada / 40-series+; needs NVENC-capable ffmpeg + viewer acceptance |
+| NVDEC decode only (`mpeg2_cuvid` / `-hwaccel cuda`) | May speed demux of MPEG-2; encode still libvpx |
+| MP4 + `h264_nvenc` | Fastest common GPU path; breaks WebM package / Safari-unrelated assumptions |
+
+Prefer documenting this over inventing a silent HW path. Menus-only converts are usually short; GPU matters most for `--full`. Do not switch away from WebM without an explicit product decision.
+
 ## Engineering standards
 
 - **Node ≥ 24**, **pnpm 12**, **TypeScript 7**, **Vitest 5**
@@ -168,7 +183,7 @@ dvdjs-convert /dev/sr0       # convert using tools.json paths
 - Dynamic JSON: `loadJsonFile` (`src/server/utils/loadJson.ts`)
 - Globs: Node `fs.glob` via `globFiles` (`src/server/utils/globFiles.ts`)
 - CLI: `node:util.parseArgs` (convert entry)
-- Config: `src/loadAppConfig.ts` loads `config/app.json` (from `config/app.example.json`)
+- Config: `src/loadAppConfig.ts` — `config/app.json` and/or env (`DVDJS_*`); Docker Compose uses env + volume for `webFolder`
 - **pnpm settings** live in `pnpm-workspace.yaml` (`allowBuilds`, `minimumReleaseAgeExclude`) — not `package.json#pnpm`
 - **Nix**: `flake.nix` `devShell` stays reproducible (`nodejs_24`, `pnpm`, **`ffmpeg-full`** with libdvdread/libdvdnav, `libdvdcss`, `libdvdread`, `libdvdnav`, `dvdbackup`). Plain `ffmpeg` disables DVD CSS demux — do not switch back.
 - **TDD for the VM** — fixture-driven tests under `tests/` before/with VM op implementations
@@ -183,10 +198,11 @@ dvdjs-convert /dev/sr0       # convert using tools.json paths
 | Area | Path |
 |------|------|
 | Rip pipeline | `src/server/convert/*` |
-| Disc archive / cache | `src/server/discCache.ts` (pack `.tar.gz`, ensure/extract; optional 1h TTL via `evictDiscCache`) |
+| Disc archive / cache | `src/server/discCache.ts` (pack `.tar.gz`, ensure/extract; reextract when archive mtime is newer than `.dvdjs-archive-mtime`; optional 1h TTL via `evictDiscCache`) |
 | Rip / decrypt stub | `src/server/convert/ripDisc.ts` |
 | Upload stub | `src/server/convert/upload.ts` |
-| App config | `src/loadAppConfig.ts`, `config/app.example.json` |
+| App config | `src/loadAppConfig.ts`, `config/app.example.json`, `.env.example` |
+| Docker (HTTP) | `Dockerfile`, `compose.yaml` — serve-only; convert on host |
 | VM → JS | `src/vm/recompile.ts` |
 | Player host | `viewer/src/host/*` (native `x-video` / `x-menu`) |
 | Solid viewer | `viewer/` |
@@ -200,21 +216,41 @@ Solid custom elements: set `data-*` with `attr:data-*={...}` (property binding d
 
 Menu button CSS and SPU frame height use `resolveMenuFrameHeight` (`menuFrameHeight.ts`): IFO **menu** `video_format` (VMGM/VTSM → PAL 576 / NTSC 480), never title `vts_video_attr` (can disagree). Falls back to PCI button `y_end` when menu attrs are missing.
 
-Menu stills (`generateMenuCellTable`): seek to the highlight VOBU (`btn_ns` / `hli_s_ptm` from NAV) and grab a short window there — do **not** scan the first 1–3s for the largest PNG (that latches onto wipe/transition frames and misaligns hitboxes). No-HLI cells fall back to mid-cell.
+Menu stills (`generateMenuCellTable`): seek to the highlight VOBU (`btn_ns` / `hli_s_ptm` from NAV) and grab a short window there — do **not** scan the first 1–3s for the largest PNG (that latches onto wipe/transition frames and misaligns hitboxes). No-HLI cells fall back to mid-cell. When extraction fails (or the cell is tiny), write a **gray placeholder PNG** labeled with `domain-cell-vob` via `writeStillPlaceholder` so the viewer never 404s on `menu-*.png`. **Clip the cell byte range to a temp VOB before ffmpeg** — short cells that sit against the next VOB (Harry Potter last scene page → Special Features) otherwise bleed and pick the wrong still.
+
+Menu WebM encode (`encodeVideo`): do **not** rely on browser mid-file seeks against sparse keyframes. Encode each menu cell as an exact `[startSec, endSec)` segment (`-skip_initial_bytes` at the cell sector + hard `-t` duration), concat, then mux audio. Timeline stays aligned with `menuCell` / `vm.js`; falls back to whole-VOB encode with `force_key_frames` at cell starts if segment encode fails.
+
+Viewer motion→still handoff: after a transition clip, `play()` may resolve late and set still `opacity:0` on the *next* cell. Only hide the still while that motion segment is still the active `_dvdjsFinishMenuSegment`. Menu WebMs must not loop (`loop=false`). Finish motion ~150ms before `endSec` and **pause without seeking** (`freezeMenuVideoAtEnd`) — seeking to end on sparse-keyframe WebMs snaps to the cell-start keyframe (wipe open / “start frame” flash). If `ended` already reset to 0, hide the video instead of reseeking. On motion entry, keep the previous cell still as a seek cover (`stillCoverUrlFromMenu` from dataset), hide the WebM until `currentTime` is inside the segment, then reveal. Do not call `video.load()` while preloading menu assets (resets buffer / multi-second stalls — Harry Potter B4/PGC9). After a motion segment, hold forever only when `still_time === 255`; **buttons + `still_time` 0 must still run `onPost`** so cellCmds/PGC post can replay the segment (Harry Potter main menu loop). Convert skips still extraction for pure transitions (no buttons + `still_time` 0) via `cellNeedsStillPng`.
+
+Viewer menu click: `loadVm` calls `init()` once and sets `_dvdjsVmInited`; `startVm` must not call `init()` again — older vm.js stacked click listeners, so after host/`btnCmd` rebuilt the menu the next handler hit `target.parentNode === null` (Harry Potter Special Features B0). Host `bindMenuKeys` click stops immediate propagation after a successful activate; generated click handler null-checks `parentNode`.
+
+`window.dvd` binding: vm.js uses bare `dvd`. Never `delete window.dvd` on dispose — that makes later `init` / leaked `keydown` throw `ReferenceError: dvd is not defined` after a prior disc (hard refresh / revisit). Dispose swaps in a stub and removes `_dvdjsKeyHandler`; `loadVm` binds `window.dvd` before appending the script and cache-busts `vm.js`.
+
+Menu `pgN` / `cellN`: flattened menu cells use the same 1-based index. `playCurrentMenuCell` onPost (transition → still) and `LinkNextC` must keep `pgN = cellN`. Otherwise `LinkNextPG` (`pgN += 1; cellN = pgN`) needs two presses to leave Special Features (Harry Potter Cast & Crew). Viewer patches older vm.js via `patchPlayCurrentMenuCellPgN`.
+
+Menu cell commands: run from `playCurrentMenuCell` onPost via `cellCmds[cell_cmd_nr - 1]` (DVD `play_Cell_post`), **not** at PGC `run()` start. Calling `cell()` immediately after `playCurrentMenuCell()` skips shared transition clips (Harry Potter Scene Selection / Languages flash black; Special Features only worked because its `pre()` returned early). Emit `cell_cmd_nr` on each cell and `cellCmds` as a per-entry function array. `LinkTailPGC` must `return 1` after `post()` so onPost does not also auto-advance.
 
 Menu convert pitfalls (LOTR-class discs):
 - Iterate `menu_c_adt.cell_adr_table.length`, not `nr_of_vobs` — `nr_of_vobs` counts unique VOB IDs; multi-cell VOBs make the table longer and trailing cells (buttons/SPU/stills) get skipped otherwise.
 - Emit `MPGCIUT` entries even when `command_tbl` is null — interactive menus often have only PCI button cmds; skipping them makes `linkPGC` after a transition clip a dead end.
 - Cell `startSec`/`endSec` for the menu WebM must follow **C_ADT sector order** (`buildMenuCellTimingMap`), not per-PGC relative times (single-cell PGCs would all look like `startSec: 0`).
+- Index `btnCmd`/`btnNav` as `[domain][vob_id][cell_id][btn]` — never vob-only. Harry Potter reuses one `vob_id` across cells with different button counts/commands; a later cell would wipe Main Menu (`linkPGC`) on Special Features.
+
+VM recompile pitfalls (Harry-Potter-class title pre):
+- Printable 16-bit immediates (ISO-639 `0x6465` = `"de"`) must emit as `0x6465 /* "de" */` — never `0x6465 ("de")` (JS call → `25701 is not a function`).
+- SPRM 16/18 (`AUD_LANG` / `SPU_LANG`) need non-empty abbr keys and runtime init (packed `0x656E` for `"en"`); empty `sprm[""]` breaks language preference compares in title `pre`.
+
+Copyright / FBI warning cells (Avatar-class): often a short VMGM cell with `still_time` 1–5s whose **post JumpTTs into title VOBs** (not the next menu still). Menus-only rips must auto-skip missing titles via PGC `post()`, with **cycle detection** (PGC9 ↔ missing title loops) falling back to the **VMGM Title** menu (`MENU_TYPES[0][lang][2]`, domain forced to 0) — not the current VTS Root (Avatar domain-5 Root is an empty stub that JumpTTs straight back into PGC9). Latch the break so further missing titles do not `post()` again. Motion cells must honor `still_time` **after** the segment ends (DVD: play, then hold last frame, then post) — do not ignore timed stills on the motion path. Tiny copyright cells (~12KB) must still attempt still extraction (`MIN_CELL_BYTES` is low enough); do not request `-spu.png` when a cell has no buttons.
 ## Common commands
 
 ```bash
 nix develop                 # optional; node, pnpm, ffmpeg, dvdbackup/libdvdcss
 pnpm install                # or: npx pnpm@12.6.0 install
 pnpm build                  # tsc → dist/ + Solid viewer → dist/viewer/
-pnpm dev:viewer             # Vite HMR (proxies disc assets to :3000)
+pnpm start                  # http://localhost:3000/ + rebuild viewer on change
+pnpm start:server           # HTTP only (no viewer watch)
+pnpm dev:viewer             # Vite HMR on :5173 (proxies disc assets; run with start:server)
 pnpm test
-pnpm start                  # http://localhost:3000/
 pnpm convert --                        # sole optical drive (errors if 0 or many)
 pnpm convert -- path/to/DVD/root          # menus only (default)
 pnpm convert -- --full path/to/DVD/root   # menus + titles
@@ -222,6 +258,8 @@ pnpm convert -- --vm-only --web discName  # regenerate vm.js only
 ```
 
 Copy `config/app.example.json` → `config/app.json` and set `webFolder` before convert/start.
+
+Docker host: `docker compose up -d --build` serves `dist/viewer` + mounted `webFolder` (`DVDJS_WEB_VOLUME`). Convert remains a host/CLI concern (ffmpeg); do not put optical/CSS decrypt in the browser image.
 
 Convert writes `extractMode: "menus" | "full"` into per-title metadata entries. Menu-only archives keep Jump* in `vm.js`; the viewer host (`viewer/src/host`) surfaces a message when title media is absent.
 

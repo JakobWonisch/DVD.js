@@ -54,7 +54,9 @@ pnpm convert -- /path/to/YourDisc
 pnpm convert -- --full /path/to/YourDisc
 ```
 
-Reencoding video is slow (especially `--full`). When finished:
+Reencoding video is slow (especially `--full`). Encode is **CPU-only** (`libvpx` → WebM): NVIDIA NVENC does not support VP8/VP9, so a GPU does not accelerate the current pipeline. See `AGENTS.md` (“WebM encode / no NVIDIA GPU acceleration”) for why we stick to WebM and what a future HW path would imply.
+
+When finished:
 
 ```bash
 pnpm start
@@ -68,8 +70,24 @@ Open [http://localhost:3000/](http://localhost:3000/).
 |-----|---------|
 | `webFolder` | Directory of converted DVD assets (served by the static server) |
 | `staticServerPort` | HTTP port (default `3000`) |
+| `evictDiscCache` | Drop decompressed disc folders after 1h idle (default `false`) |
+| `mdns` | Advertise on LAN via mDNS (default `true`; off in Docker) |
 
 `config/app.json` is gitignored; keep `config/app.example.json` as the template.
+
+Precedence: environment → JSON file → defaults. Useful env vars: `DVDJS_CONFIG` (path to JSON), `DVDJS_WEB_FOLDER`, `DVDJS_PORT`, `DVDJS_EVICT_DISC_CACHE`, `DVDJS_MDNS`.
+
+### Docker (server host)
+
+The image runs the HTTP server only (`pnpm start:server`). Convert discs on a machine with ffmpeg (`pnpm convert`), then mount the folder that holds `<discId>.tar.gz` archives.
+
+```bash
+cp .env.example .env          # optional: set DVDJS_WEB_VOLUME / host port
+docker compose up -d --build
+# → http://localhost:3000/
+```
+
+`DVDJS_EVICT_DISC_CACHE` defaults to `true` in Compose (good for servers). To use a mounted JSON file instead of env, set `DVDJS_CONFIG=/config/app.json` and uncomment the config volume in `compose.yaml`.
 
 ## Scripts
 
@@ -77,9 +95,11 @@ Open [http://localhost:3000/](http://localhost:3000/).
 |---------|---------|
 | `pnpm build` | Compile TypeScript (`tsc`) → `dist/` and Solid viewer → `dist/viewer/` |
 | `pnpm build:viewer` | Vite build of `viewer/` only |
-| `pnpm dev:viewer` | Vite HMR for the viewer (proxy disc assets from `:3000`) |
+| `pnpm watch:viewer` | Rebuild Solid viewer into `dist/viewer/` on change |
+| `pnpm dev:viewer` | Vite HMR for the viewer on `:5173` (proxy disc assets from `:3000`) |
 | `pnpm watch` | Rebuild server/convert on change |
-| `pnpm start` | Serve `dist/viewer/` + `public/` + `webFolder` |
+| `pnpm start` | Serve `dist/viewer/` + `public/` + `webFolder`, and rebuild the viewer on change |
+| `pnpm start:server` | HTTP server only (no viewer watch) |
 | `pnpm convert -- <dvd-root>` | Rip menus into `webFolder` (default) |
 | `pnpm convert -- --full <dvd-root>` | Rip menus + title video |
 | `pnpm convert -- --vm-only --web <disc>` | Regenerate `vm.js` from existing web JSON only |
