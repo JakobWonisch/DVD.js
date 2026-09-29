@@ -15,6 +15,7 @@ import type { DiscMetadata } from '../types/metadata.js';
 type PlayerHost = HTMLElement & {
   setDebugHitboxes?: (enabled: boolean) => void;
   skipToEnd?: () => boolean;
+  goToMainMenu?: () => boolean;
 };
 
 type EnsureStatus = 'ready' | 'decompressing' | 'missing';
@@ -237,6 +238,14 @@ export const PlayDisc: Component = () => {
               onClick={() => hostEl()?.skipToEnd?.()}
             >
               Skip to end
+            </button>
+            <button
+              type="button"
+              class="player-toolbar__menu"
+              title="Jump to title/root menu (M)"
+              onClick={() => hostEl()?.goToMainMenu?.()}
+            >
+              Main menu
             </button>
             <button
               type="button"

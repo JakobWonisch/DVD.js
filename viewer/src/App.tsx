@@ -8,21 +8,31 @@ const Shell: Component<ParentProps> = (props) => (
     <header class="topbar">
       <A href="/" class="brand">
         <img src="/img/dvd.js.svg" alt="" width="18" height="18" />
-        DVD.js
+        DVD Menu Archive
       </A>
       <nav>
         <A href="/" end>
-          Play DVD
+          Archive
         </A>
-        <a href="/test.html">Test your browser</a>
-        <a href="/parse-ifo.html">Parse IFO files</a>
       </nav>
     </header>
     <main>{props.children}</main>
     <footer>
-      <p>
-        © 2018 Guillaume Marty (
-        <a href="https://github.com/gmarty">https://github.com/gmarty</a>)
+      <p class="footer-credits">
+        <span>
+          © 2026 Jakob Wonisch (
+          <a href="https://github.com/JakobWonisch">
+            https://github.com/JakobWonisch
+          </a>
+          )
+        </span>
+        <span class="footer-credits__sep" aria-hidden="true">
+          ·
+        </span>
+        <span>
+          Based on DVD.js © 2018 Guillaume Marty (
+          <a href="https://github.com/gmarty">https://github.com/gmarty</a>)
+        </span>
       </p>
     </footer>
   </div>

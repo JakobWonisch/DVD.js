@@ -44,21 +44,12 @@ export function skipPlaybackToEnd(host: SkipToEndHost): boolean {
       menuVideo &&
       typeof segmentEnd === 'number' &&
       Number.isFinite(segmentEnd) &&
-      menuVideo.currentTime >= segmentEnd - 0.05
+      menuVideo.currentTime >= segmentEnd - 0.15
     ) {
       return false;
     }
-    if (
-      menuVideo &&
-      typeof segmentEnd === 'number' &&
-      Number.isFinite(segmentEnd)
-    ) {
-      try {
-        menuVideo.currentTime = Math.max(0, segmentEnd - 0.05);
-      } catch {
-        // ignore seek errors; finish still advances VM / holds last frame
-      }
-    }
+    // Do not seek to segmentEnd — sparse WebM keyframes snap to cell start.
+    // finish() pauses in place (or hides if already ended) and advances the VM.
     finish();
     return true;
   }

@@ -4,10 +4,18 @@
  * neighbor is missing or points at the current button.
  */
 
+import {
+  beginUserButtonNav,
+  isTitleUnavailableOpen,
+} from './titleUnavailable.js';
+
 export type MenuKeyHost = HTMLElement & {
   _dvdjsActiveMenu?: HTMLElement | null;
   _dvdjsFromButton?: boolean;
+  _dvdjsMenuResume?: unknown;
+  beginUserButtonNav?: () => void;
   skipToEnd?: () => boolean;
+  goToMainMenu?: () => boolean;
   setMenuHighlight?: (menu: Element | null, buttonIndex: number) => void;
   flashMenuActivate?: (menu: Element | null, buttonIndex: number) => void;
 };
@@ -113,24 +121,46 @@ export function findSpatialNeighbor(
   return best;
 }
 
-function activateButton(host: MenuKeyHost, menu: HTMLElement, idx: number) {
+/** btnCmd is indexed [domain][vobId][cellId][buttonIndex]. */
+export function lookupBtnCmd(
+  btnCmd: unknown,
+  domain: string,
+  vob: string,
+  cell: string,
+  idx: number,
+): (() => void) | undefined {
+  const byDomain = (btnCmd as any)?.[domain];
+  const byVob = byDomain?.[vob];
+  const byCell = byVob?.[cell];
+  const cmd = byCell?.[idx];
+  return typeof cmd === 'function' ? cmd : undefined;
+}
+
+/** @returns true if a btnCmd ran (caller may stop key propagation). */
+export function activateButton(
+  host: MenuKeyHost,
+  menu: HTMLElement,
+  idx: number,
+): boolean {
   const domain = menu.dataset.domain;
   const vob = menu.dataset.vob;
-  if (domain == null || vob == null) {
-    return;
+  const cell = menu.dataset.cell;
+  if (domain == null || vob == null || cell == null) {
+    return false;
+  }
+  const cmd = lookupBtnCmd((window as any).btnCmd, domain, vob, cell, idx);
+  if (!cmd) {
+    return false;
   }
   host.setMenuHighlight?.(menu, idx);
   host.flashMenuActivate?.(menu, idx);
-  const btnCmd = (window as any).btnCmd;
-  const cmd =
-    btnCmd &&
-    btnCmd[domain] &&
-    btnCmd[domain][vob] &&
-    btnCmd[domain][vob][idx];
-  if (typeof cmd === 'function') {
-    host._dvdjsFromButton = true;
-    cmd();
+  if (typeof host.beginUserButtonNav === 'function') {
+    host.beginUserButtonNav();
+  } else {
+    beginUserButtonNav(host as any);
   }
+  cmd();
+  return true;
 }
 
 /**
@@ -140,6 +170,11 @@ export function handleMenuKeyDown(
   host: MenuKeyHost,
   event: KeyboardEvent,
 ): boolean {
+  // Sticky missing-title dialog owns the keyboard until OK / Escape.
+  if (isTitleUnavailableOpen(host as any)) {
+    return false;
+  }
+
   // Don't steal keys from real form fields / contenteditable.
   const t = event.target;
   if (
@@ -158,6 +193,13 @@ export function handleMenuKeyDown(
   const key = event.key;
   if (key === 'n' || key === 'N' || event.code === 'KeyN') {
     if (typeof host.skipToEnd === 'function' && host.skipToEnd()) {
+      event.preventDefault();
+      return true;
+    }
+    return false;
+  }
+  if (key === 'm' || key === 'M' || event.code === 'KeyM') {
+    if (typeof host.goToMainMenu === 'function' && host.goToMainMenu()) {
       event.preventDefault();
       return true;
     }
@@ -186,8 +228,12 @@ export function handleMenuKeyDown(
   const idx = currentIndex(buttons);
 
   if (key === 'Enter' || event.code === 'Enter') {
+    // Only claim the event when btnCmd runs. A failed host lookup must not
+    // stopImmediatePropagation — generated vm.js still handles Enter with cell.
+    if (!activateButton(host, menu, idx)) {
+      return false;
+    }
     event.preventDefault();
-    activateButton(host, menu, idx);
     return true;
   }
 
@@ -275,7 +321,13 @@ export function bindMenuKeys(host: MenuKeyHost): () => void {
     }
     event.preventDefault();
     selectButton(host, hit.menu, hit.idx);
-    activateButton(host, hit.menu, hit.idx);
+    if (!activateButton(host, hit.menu, hit.idx)) {
+      // Let generated vm.js try (e.g. older archives / lookup miss).
+      return;
+    }
+    // After btnCmd the hitbox is often detached — a second handler would
+    // read parentNode.dataset and throw (HP Special Features B0).
+    event.stopImmediatePropagation();
   };
   // Capture so we win over generated vm.js keydown (and avoid double-steps).
   document.addEventListener('keydown', onKey, true);

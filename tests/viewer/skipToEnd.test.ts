@@ -26,7 +26,8 @@ describe('skipPlaybackToEnd', () => {
     });
 
     expect(skipPlaybackToEnd(host)).toBe(true);
-    expect(menuVideo.currentTime).toBeCloseTo(4.95, 5);
+    // Must not seek — sparse WebM keyframes would flash the segment start.
+    expect(menuVideo.currentTime).toBeCloseTo(1.2, 5);
     expect(finish).toHaveBeenCalledOnce();
   });
 

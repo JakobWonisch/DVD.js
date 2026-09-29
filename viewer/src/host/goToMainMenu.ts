@@ -1,0 +1,81 @@
+/**
+ * Escape broken / stuck menus by jumping to the VMGM Title menu.
+ * Cancels pending still waits and motion-segment finish without advancing the VM.
+ * Forces domain 0 so onmenu does not re-enter a VTS Root stub (Avatar domain 5).
+ */
+
+import {
+  clearUserButtonNav,
+  escapeToVmgmTitleMenu,
+  hideTitleUnavailableOverlay,
+} from './titleUnavailable.js';
+
+export type GoToMainMenuHost = {
+  onmenu?: ((event: object) => void) | null;
+  querySelector: (selectors: string) => Element | null;
+  closest?: (selectors: string) => Element | null;
+  _dvdjsFromButton?: boolean;
+  _dvdjsMenuResume?: unknown;
+  _dvdjsStillTimer?: ReturnType<typeof setTimeout> | null;
+  _dvdjsHighlightTimer?: ReturnType<typeof setTimeout> | null;
+  _dvdjsMotionWatchdog?: ReturnType<typeof setTimeout> | null;
+  _dvdjsMenuPost?: (() => void) | null;
+  _dvdjsFinishMenuSegment?: (() => void) | null;
+  _dvdjsMenuSegmentEnd?: number | null;
+  _dvdjsMenuTimeUpdate?: ((this: HTMLVideoElement, ev: Event) => void) | null;
+  _dvdjsActiveMenu?: HTMLElement | null;
+  _dvdjsTitleUnavailableDismiss?: (() => void) | null;
+  _dvdjsTitleUnavailableKeyHandler?: ((ev: KeyboardEvent) => void) | null;
+};
+
+function cancelPendingMenuAdvance(host: GoToMainMenuHost): void {
+  if (host._dvdjsStillTimer) {
+    clearTimeout(host._dvdjsStillTimer);
+    host._dvdjsStillTimer = null;
+  }
+  if (host._dvdjsHighlightTimer) {
+    clearTimeout(host._dvdjsHighlightTimer);
+    host._dvdjsHighlightTimer = null;
+  }
+  if (host._dvdjsMotionWatchdog) {
+    clearTimeout(host._dvdjsMotionWatchdog);
+    host._dvdjsMotionWatchdog = null;
+  }
+  // Drop post/finish without running them — caller wants escape, not advance.
+  host._dvdjsMenuPost = null;
+  host._dvdjsFinishMenuSegment = null;
+  host._dvdjsMenuSegmentEnd = null;
+
+  const menu = host._dvdjsActiveMenu;
+  const domain = menu?.dataset?.domain;
+  if (domain != null && domain !== '' && host._dvdjsMenuTimeUpdate) {
+    const menuVideo = host.querySelector(
+      `#menu-video-${String(domain)}`,
+    ) as HTMLVideoElement | null;
+    if (menuVideo) {
+      menuVideo.removeEventListener('timeupdate', host._dvdjsMenuTimeUpdate);
+    }
+    host._dvdjsMenuTimeUpdate = null;
+  }
+}
+
+/**
+ * Jump to the disc VMGM Title menu. Returns true if a menu run was invoked.
+ */
+export function goToMainMenu(host: GoToMainMenuHost): boolean {
+  cancelPendingMenuAdvance(host);
+  hideTitleUnavailableOverlay(host);
+  clearUserButtonNav(host);
+  try {
+    const g =
+      typeof globalThis !== 'undefined' && (globalThis as any).window
+        ? (globalThis as any).window
+        : typeof globalThis !== 'undefined'
+          ? (globalThis as any)
+          : {};
+    return escapeToVmgmTitleMenu(host, g);
+  } catch (e) {
+    console.warn('DVD.js goToMainMenu failed', e);
+    return false;
+  }
+}

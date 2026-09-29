@@ -7,7 +7,7 @@ import * as utils from '../utils.js';
 
 /** User-facing copy when title WebMs were omitted (menu-only archive). */
 export const TITLE_UNAVAILABLE_MESSAGE =
-  'Title video was not included in this archive.';
+  'This title was intentionally left out of this archive. Only menus were converted.';
 
 class Player {
   private screen: HTMLVideoElement;

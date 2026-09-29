@@ -5,7 +5,7 @@ import {
 } from './autoplay.js';
 
 export const TITLE_UNAVAILABLE_MESSAGE =
-  'Title video was not included in this archive.';
+  'This title was intentionally left out of this archive. Only menus were converted.';
 
 export interface PlayMenuCellOpts {
   menuId?: string;
@@ -299,6 +299,8 @@ export function updateMenuCellVisuals(
   }
   if (stillSrc && still) {
     still.setAttribute('src', stillSrc);
+    still.style.display = '';
+    still.style.opacity = '';
   }
 
   let baseDir: string | null = null;
@@ -379,11 +381,11 @@ export function updateMenuCellVisuals(
     }
   }
 
+  const existing = menu.querySelectorAll('input.btn');
+  for (let i = 0; i < existing.length; i++) {
+    existing[i].parentNode?.removeChild(existing[i]);
+  }
   if (opts.buttons && opts.buttons.length) {
-    const existing = menu.querySelectorAll('input.btn');
-    for (let i = 0; i < existing.length; i++) {
-      existing[i].parentNode?.removeChild(existing[i]);
-    }
     const hasSpuHighlight =
       (opts.spuSelect && opts.spuSelect.length > 0) ||
       !!menu.querySelector('img.menu-spu-sel');
@@ -453,6 +455,9 @@ export function playMenuMotionSegment(
     menuVideo.addEventListener('timeupdate', onTimeUpdate);
     void playWithAutoplayFallback(menuVideo, host as AutoplayHost).then(
       (ok) => {
+        if (host._dvdjsMenuTimeUpdate !== onTimeUpdate) {
+          return;
+        }
         if (ok) {
           if (still) {
             still.style.opacity = '0';

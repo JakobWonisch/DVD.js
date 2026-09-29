@@ -101,6 +101,18 @@ footer {
   border-top: 1px solid var(--border);
 }
 
+.footer-credits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  margin: 0;
+}
+
+.footer-credits__sep {
+  color: var(--muted);
+}
+
 .muted {
   color: var(--muted);
 }
@@ -271,7 +283,8 @@ footer {
 }
 
 .player-toolbar__fs,
-.player-toolbar__skip {
+.player-toolbar__skip,
+.player-toolbar__menu {
   appearance: none;
   border: 1px solid #ccc;
   background: #f7f7f7;
@@ -283,19 +296,22 @@ footer {
 }
 
 .player-toolbar__fs:hover,
-.player-toolbar__skip:hover {
+.player-toolbar__skip:hover,
+.player-toolbar__menu:hover {
   background: #eee;
 }
 
 .player-stage:fullscreen .player-toolbar__fs,
-.player-stage:fullscreen .player-toolbar__skip {
+.player-stage:fullscreen .player-toolbar__skip,
+.player-stage:fullscreen .player-toolbar__menu {
   border-color: #666;
   background: #2a2a2a;
   color: #eee;
 }
 
 .player-stage:fullscreen .player-toolbar__fs:hover,
-.player-stage:fullscreen .player-toolbar__skip:hover {
+.player-stage:fullscreen .player-toolbar__skip:hover,
+.player-stage:fullscreen .player-toolbar__menu:hover {
   background: #3a3a3a;
 }
 
@@ -431,17 +447,60 @@ input[type='button'].btn.btn-spu.selected {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.82);
   color: #fff;
-  font: 16px/1.4 sans-serif;
+  font: 16px/1.45 'Helvetica Neue', Helvetica, Arial, sans-serif;
   text-align: center;
   padding: 1.5rem;
-  z-index: 20;
+  /* Above menus (1) and toolbar (30) so it works in fullscreen. */
+  z-index: 40;
   box-sizing: border-box;
 }
 
 .dvdjs-title-unavailable[hidden] {
   display: none !important;
+}
+
+.dvdjs-title-unavailable__card {
+  max-width: 22rem;
+  padding: 1.35rem 1.5rem 1.25rem;
+  background: rgba(18, 18, 18, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.dvdjs-title-unavailable__heading {
+  margin: 0 0 0.55rem;
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.dvdjs-title-unavailable__body {
+  margin: 0 0 1.1rem;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.dvdjs-title-unavailable__btn {
+  appearance: none;
+  border: 1px solid #ddd;
+  background: #f5f5f5;
+  color: #222;
+  font: 600 0.95rem/1.2 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  padding: 0.55rem 1.25rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dvdjs-title-unavailable__btn:hover {
+  background: #fff;
+}
+
+.dvdjs-title-unavailable__btn:focus-visible {
+  outline: 2px solid #fc0;
+  outline-offset: 2px;
 }
 
 .dvdjs-start-overlay {

@@ -169,7 +169,8 @@ const DomainVideos: Component<{ domain: DomainMetadata; id: number }> = (
           id={`menu-video-${props.id}`}
           class="dvdjs-menu-video"
           src={menuSrc()}
-          preload="metadata"
+          preload="auto"
+          loop={false}
           hidden
         />
       </Show>
