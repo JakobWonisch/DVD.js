@@ -93,7 +93,7 @@ function buildTag(metadata) {
     if (!videos || !Array.isArray(videos.index) || !videos.index.length) {
       return ``;
     }
-    return `<video id="menu-video-${id}" class="dvdjs-menu-video" src="${videos.index[0]}" preload="metadata" hidden></video>`;
+    return `<video id="menu-video-${id}" class="dvdjs-menu-video" src="${videos.index[0]}" preload="auto" loop="false" hidden></video>`;
   }
 
   function buildVideoTag(videos, id) {

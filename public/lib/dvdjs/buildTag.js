@@ -160,7 +160,7 @@ function buildTag(metadata) {
       id +
       '" class="dvdjs-menu-video" src="' +
       videos.index[0] +
-      '" preload="metadata" hidden></video>'
+      '" preload="auto" loop="false" hidden></video>'
     );
   }
 

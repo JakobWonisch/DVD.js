@@ -118,6 +118,24 @@ export function pickHighlightNav(
 }
 
 /**
+ * Whether convert should write a still PNG for this cell.
+ * Pure motion transitions (no buttons, still_time 0) get mid-wipe frames that
+ * the viewer must not flash — skip those. Timed stills (copyright) and
+ * interactive menus still need a PNG.
+ */
+export function cellNeedsStillPng(opts: {
+  highlight?: HighlightNavHit | null;
+  still_time?: number | null;
+}): boolean {
+  const stillTime = opts.still_time != null ? opts.still_time : 0;
+  if (stillTime > 0) {
+    return true;
+  }
+  const hit = opts.highlight;
+  return !!(hit && btnNs(hit.nav) > 0);
+}
+
+/**
  * Compute ffmpeg seek for a menu cell still.
  */
 export function resolveMenuStillSeek(opts: {
@@ -177,6 +195,28 @@ export function resolveMenuStillSeek(opts: {
     ...window,
     reason: 'start',
   };
+}
+
+/**
+ * Byte offset into a cell-clipped VOB slice for ffmpeg `-skip_initial_bytes`.
+ * Clipping the cell before decode prevents bleeding into the next cell
+ * (Harry Potter: last scene page sits against Special Features).
+ */
+export function cellRelativeSkipBytes(
+  absoluteSkipBytes: number,
+  cellStartBytes: number,
+  cellEndBytes: number,
+): number {
+  if (!(cellEndBytes > cellStartBytes)) {
+    return 0;
+  }
+  const rel = absoluteSkipBytes - cellStartBytes;
+  if (!Number.isFinite(rel) || rel <= 0) {
+    return 0;
+  }
+  // Leave at least one pack so ffmpeg has something to demux.
+  const maxSkip = Math.max(0, cellEndBytes - cellStartBytes - DVD_VIDEO_LB_LEN);
+  return Math.min(rel, maxSkip);
 }
 
 /**

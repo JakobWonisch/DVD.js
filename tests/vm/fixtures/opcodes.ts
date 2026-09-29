@@ -126,9 +126,11 @@ function linkSubFixtures(): OpcodeFixture[] {
         linkNibble: 1,
         linkSub: 13,
         fields: linkSub(13),
-        expect: '{ var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); } }',
+        expect:
+          '{ var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); } return 1; }',
         status: 'ok',
         refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
+        notes: 'Transfer to PGC post; return 1 so onPost does not also auto-advance.',
       };
     }
     if (sub === 0) {
@@ -253,7 +255,8 @@ export const opcodeFixtures: OpcodeFixture[] = [
     ifVersion: 2,
     cmpOp: 0,
     fields: jumpCmd(2, [{ start: 22, count: 7, value: 1 }]),
-    expect: '{ var vtt = VTT_TABLE[1]; PGCIUT[vtt.domain][vtt.pgc].run(); return 1; }',
+    expect:
+      '{ var vtt = VTT_TABLE[1]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + vtt.domain)) { return 1; } PGCIUT[vtt.domain][vtt.pgc].run(); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_DVDNAV],
     notes: 'if_version_2 with cmp op 0 (no predicate) on JumpTT.',
@@ -358,7 +361,8 @@ export const opcodeFixtures: OpcodeFixture[] = [
     group: 1,
     fields: jumpCmd(2, [{ start: 22, count: 7, value: 1 }]),
     bytes: [48, 2, 0, 0, 0, 1, 0, 0],
-    expect: '{ var vtt = VTT_TABLE[1]; PGCIUT[vtt.domain][vtt.pgc].run(); return 1; }',
+    expect:
+      '{ var vtt = VTT_TABLE[1]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + vtt.domain)) { return 1; } PGCIUT[vtt.domain][vtt.pgc].run(); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
   },
@@ -367,7 +371,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
     group: 1,
     fields: jumpCmd(3, [{ start: 22, count: 7, value: 2 }]),
     expect:
-      '{ var vtt = PTT_TABLE[domain][2][0]; PGCIUT[vtt.domain][vtt.pgc].run(); dvd.playChapter(vtt.chapter - 1); return 1; }',
+      '{ var vtt = PTT_TABLE[domain][2][0]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + vtt.domain)) { return 1; } PGCIUT[vtt.domain][vtt.pgc].run(); dvd.playChapter(vtt.chapter - 1); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
   },
@@ -379,7 +383,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 41, count: 10, value: 3 },
     ]),
     expect:
-      '{ var ptt = PTT_TABLE[domain][1][2]; PGCIUT[ptt.domain][ptt.pgc].run(); dvd.playChapter(ptt.chapter - 1); return 1; }',
+      '{ var ptt = PTT_TABLE[domain][1][2]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + ptt.domain)) { return 1; } PGCIUT[ptt.domain][ptt.pgc].run(); dvd.playChapter(ptt.chapter - 1); return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_WIKI, REF_DVDNAV],
     notes: 'recompile indexes ptt as getbits(41,10)-1.',
@@ -704,6 +708,30 @@ export const opcodeFixtures: OpcodeFixture[] = [
     refs: [REF_MPU, REF_DVDNAV],
   },
   {
+    id: 'Set_mov_imm_printable_lang',
+    group: 3,
+    setOp: 1,
+    setImmediate: true,
+    fields: setGprm(1, 3, true, 0x6465),
+    expect: '{ gprm[0x03] = 0x6465 /* "de" */; }',
+    status: 'ok',
+    refs: [REF_MPU, REF_DVDNAV],
+    notes:
+      'Printable 16-bit immediates (ISO-639) must be JS comments, not ("de") call syntax.',
+  },
+  {
+    id: 'Set_mov_from_SPU_LANG',
+    group: 3,
+    setOp: 1,
+    setImmediate: false,
+    fields: setGprm(1, 3, false, 0x80 | 18),
+    expect:
+      '{ gprm[0x03] = sprm["SPU_LANG"] /*Initial Language Code for Sub-picture (SRPM:18)*/; }',
+    status: 'ok',
+    refs: [REF_MPU, REF_DVDNAV],
+    notes: 'SPRM 18 must use a non-empty abbr key (Harry Potter title pre).',
+  },
+  {
     id: 'Set_swap_bug',
     group: 3,
     setOp: 2,
@@ -891,7 +919,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 7, count: 8, value: 13 },
     ],
     expect:
-      'if (gprm[0x00] === 0x00) { gprm[0x00] = gprm[0x00]; var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); } }',
+      'if (gprm[0x00] === 0x00) { gprm[0x00] = gprm[0x00]; var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); } return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_DVDNAV, REF_NONGOAL],
     notes: 'CSetCLnk: if { set; linksub }. set_immediate=0 branch of if_version_5.',
@@ -916,7 +944,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 7, count: 8, value: 13 },
     ],
     expect:
-      'if (gprm[0x00] === gprm[0x01]) { gprm[0x00] = 0x01; var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); } }',
+      'if (gprm[0x00] === gprm[0x01]) { gprm[0x00] = 0x01; var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); } return 1; }',
     status: 'ok',
     refs: [REF_MPU, REF_DVDNAV, REF_NONGOAL],
     notes: 'set_immediate=1 alternate compare layout in if_version_5 (gprm vs gprm).',
@@ -942,7 +970,7 @@ export const opcodeFixtures: OpcodeFixture[] = [
       { start: 7, count: 8, value: 13 },
     ],
     expect:
-      'if (gprm[0x00] === 0x00) { gprm[0x00] = gprm[0x00]; } var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); }',
+      'if (gprm[0x00] === 0x00) { gprm[0x00] = gprm[0x00]; } var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); } return 1;',
     status: 'ok',
     refs: [REF_MPU, REF_DVDNAV, REF_NONGOAL],
     notes: 'CSetLnk: if { set } then linksub always outside if (mpucoder group 6).',

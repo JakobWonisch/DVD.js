@@ -13,8 +13,12 @@ import * as serverUtils from '../../server/utils/index.js';
 import { mergeMenuCellMaps } from './mergeMenuCellMaps.js';
 import { menuCellAdrCount } from './menuCellAdrCount.js';
 import { buildMenuCellTimingMap } from './buildMenuCellTimingMap.js';
+import { menuFrameHeightFromIfo } from './menuFrameHeight.js';
+import { writeStillPlaceholder } from './writeStillPlaceholder.js';
 import {
   DVD_VIDEO_LB_LEN,
+  cellNeedsStillPng,
+  cellRelativeSkipBytes,
   listNavSectorsForBasename,
   pickHighlightNav,
   resolveMenuStillSeek,
@@ -23,8 +27,9 @@ import {
 
 var spawn = child_process.spawn;
 
-/** Skip cells that are only a few packs (no usable video). */
-var MIN_CELL_BYTES = 64 * 1024;
+/** Skip cells that are only a few packs (no usable video).
+ * Copyright / FBI warnings are often ~6–20 sectors (~12–40KB) — still extract. */
+var MIN_CELL_BYTES = 8 * 1024;
 
 /** PNGs smaller than this are treated as failed/gray stills. */
 var MIN_STILL_BYTES = 8 * 1024;
@@ -40,7 +45,7 @@ export default extractMenu;
 function extractMenu(dvdPath: string, callback) {
   process.stdout.write('\nExtracting menu cell table:\n');
 
-  var dvdName = dvdPath.split(path.sep).pop();
+  var dvdName = serverUtils.getDiscId(dvdPath);
   var webPath = serverUtils.getWebPath(dvdPath);
 
   var ifoPath = getWebName('metadata');
@@ -127,21 +132,46 @@ function extractMenu(dvdPath: string, callback) {
         entry.playback_mode = timing.playback_mode;
       }
 
-      if (cellBytes < MIN_CELL_BYTES) {
-        console.warn(
-          'Skipping tiny menu cell',
-          path.basename(imgFile),
-          '(' + cellBytes + ' bytes)'
-        );
-        finishCell();
-        return;
-      }
-
+      var stillUrl =
+        '/' + dvdName + '/menu-' + pointer + '-' + cellID + '-' + vobID + '.png';
+      var stillLabel = pointer + '-' + cellID + '-' + vobID;
+      var stillHeight = menuFrameHeightFromIfo(json);
       var highlight = pickHighlightNav(
         vob.start_sector,
         vob.last_sector,
         navBySector,
       );
+      var stillTime = timing && timing.still_time != null ? timing.still_time : 0;
+
+      // Pure wipe/transition cells: mid-cell stills look like the previous menu
+      // or a half-wipe. Viewer holds the last WebM frame instead.
+      if (
+        !cellNeedsStillPng({ highlight: highlight, still_time: stillTime })
+      ) {
+        try {
+          if (fs.existsSync(imgFile)) {
+            fs.unlinkSync(imgFile);
+          }
+        } catch (e) {
+          // ignore
+        }
+        delete entry.still;
+        finishCell();
+        return;
+      }
+
+      if (cellBytes < MIN_CELL_BYTES) {
+        console.warn(
+          'Tiny menu cell — placeholder still',
+          path.basename(imgFile),
+          '(' + cellBytes + ' bytes)'
+        );
+        writeStillPlaceholder(imgFile, stillLabel, 720, stillHeight);
+        entry.still = stillUrl;
+        finishCell();
+        return;
+      }
+
       var seek = resolveMenuStillSeek({
         cellStartSector: vob.start_sector,
         cellLastSector: vob.last_sector,
@@ -149,26 +179,23 @@ function extractMenu(dvdPath: string, callback) {
         timing: timing,
       });
 
-      extractBestStillPng(inputFile, seek, imgFile, function (ok) {
+      extractBestStillPng(inputFile, seek, imgFile, start, end, function (ok) {
         if (ok) {
-          entry.still =
-            '/' +
-            dvdName +
-            '/menu-' +
-            pointer +
-            '-' +
-            cellID +
-            '-' +
-            vobID +
-            '.png';
+          entry.still = stillUrl;
           process.stdout.write('.');
         } else {
-          console.warn('No usable still for', path.basename(imgFile));
+          console.warn(
+            'No usable still for',
+            path.basename(imgFile),
+            '— writing placeholder',
+          );
           try {
             fs.unlinkSync(imgFile);
           } catch (e) {
             // ignore
           }
+          writeStillPlaceholder(imgFile, stillLabel, 720, stillHeight);
+          entry.still = stillUrl;
         }
         finishCell();
       });
@@ -211,11 +238,44 @@ function extractMenu(dvdPath: string, callback) {
 
   /**
    * Decode a short window at the resolved seek (HLI / mid-cell) and keep the
-   * largest usable PNG. Avoids long early scans that latch onto wipe frames.
+   * largest usable PNG. The cell is clipped to a temp VOB first so ffmpeg
+   * cannot bleed into the next cell (HP last scene page → Special Features).
    */
-  function extractBestStillPng(vobFile, seek, imgFile, done) {
+  function extractBestStillPng(
+    vobFile,
+    seek,
+    imgFile,
+    cellStartBytes,
+    cellEndBytes,
+    done,
+  ) {
     var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-still-'));
     var pattern = path.join(tmpDir, 'f_%03d.png');
+    var cellFile = path.join(tmpDir, 'cell.vob');
+    var inputFile = vobFile;
+    var skipBytes = seek.skipBytes;
+
+    try {
+      var length = cellEndBytes - cellStartBytes;
+      if (length > 0 && Number.isFinite(cellStartBytes)) {
+        var fd = fs.openSync(vobFile, 'r');
+        var buf = Buffer.alloc(length);
+        fs.readSync(fd, buf, 0, length, cellStartBytes);
+        fs.closeSync(fd);
+        fs.writeFileSync(cellFile, buf);
+        inputFile = cellFile;
+        skipBytes = cellRelativeSkipBytes(
+          seek.skipBytes,
+          cellStartBytes,
+          cellEndBytes,
+        );
+      }
+    } catch (e) {
+      console.error(e);
+      cleanupDir(tmpDir);
+      done(false);
+      return;
+    }
 
     var cmd = [
       '-hide_banner',
@@ -230,9 +290,9 @@ function extractMenu(dvdPath: string, callback) {
       '-err_detect',
       'ignore_err',
       '-skip_initial_bytes',
-      String(seek.skipBytes),
+      String(skipBytes),
       '-i',
-      vobFile,
+      inputFile,
       '-ss',
       String(seek.ssSec || 0),
       '-map',

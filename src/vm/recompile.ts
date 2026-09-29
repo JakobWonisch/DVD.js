@@ -198,8 +198,9 @@ function getbits(instruction: string, start: number, count: number): number {
 function compile_system_reg(reg) {
   var code = '';
   if (reg < VM.system_reg_abbr_table.length && VM.system_reg_table[reg] !== '') {
+    var abbr = VM.system_reg_abbr_table[reg] || ('SPRM' + reg);
     code += sprintf('sprm["%s"] /*%s (SRPM:%d)*/',
-      VM.system_reg_abbr_table[reg], VM.system_reg_table[reg], reg);
+      abbr, VM.system_reg_table[reg], reg);
   } else {
     console.error('jsdvdnav: Unknown system register (reg=%d)', reg);
   }
@@ -274,8 +275,9 @@ function compile_reg_or_data(command, immediate: boolean, start) {
     var i = getbits(command, start, 16);
 
     code += sprintf('%s', utils.toHex(i));
+    // Must be a JS comment — `0x6465 ("de")` is a call and throws at runtime.
     if (utils.isprint(i & 0xFF) && utils.isprint((i >> 8) & 0xFF)) {
-      code += sprintf(' ("%s")', utils.bit2str(i));
+      code += sprintf(' /* "%s" */', utils.bit2str(i));
     }
   } else {
     code += compile_reg(getbits(command, start - 8, 8));
@@ -302,7 +304,7 @@ function compile_reg_or_data_3(command, immediate: boolean, start) {
 
     code += sprintf('%s', utils.toHex(i));
     if (utils.isprint(i & 0xFF) && utils.isprint((i >> 8) & 0xFF)) {
-      code += sprintf(' ("%s")', utils.bit2str(i));
+      code += sprintf(' /* "%s" */', utils.bit2str(i));
     }
   } else {
     code += compile_reg(getbits(command, start, 8));
@@ -488,8 +490,10 @@ function compile_linksub_instruction(command) {
         break;
       case 13:
         // LinkTailPGC
-        // Link to post-command section of current PGC.
-        code += highlight + 'var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); }';
+        // Link to post-command section of current PGC (short-circuit further steps).
+        code +=
+          highlight +
+          'var _cur = currentPgcObject(); if (_cur && _cur.post) { _cur.post(); } return 1;';
         break;
       case 16:
         // RSM — restore CallSS resume state (saveRSM / resumeRSM).
@@ -579,15 +583,17 @@ function compile_jump_instruction(command) {
     case 2:
       // JumpTT x
       // Jump to a video title.
-      // @todo We need to set the video current time here.
-      code += sprintf('var vtt = VTT_TABLE[%s]; PGCIUT[vtt.domain][vtt.pgc].run(); return 1;',
+      // Guard missing title WebMs from menu buttons before leaving the menu.
+      code += sprintf(
+        'var vtt = VTT_TABLE[%s]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + vtt.domain)) { return 1; } PGCIUT[vtt.domain][vtt.pgc].run(); return 1;',
         getbits(command, 22, 7)
       );
       break;
     case 3:
       // JumpVTS_TT x
       // Jump to a video title in the current VTS.
-      code += sprintf('var vtt = PTT_TABLE[domain][%s][0]; PGCIUT[vtt.domain][vtt.pgc].run(); dvd.playChapter(vtt.chapter - 1); return 1;',
+      code += sprintf(
+        'var vtt = PTT_TABLE[domain][%s][0]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + vtt.domain)) { return 1; } PGCIUT[vtt.domain][vtt.pgc].run(); dvd.playChapter(vtt.chapter - 1); return 1;',
         getbits(command, 22, 7)
       );
       break;
@@ -596,7 +602,8 @@ function compile_jump_instruction(command) {
       // Jump to a PTT in a specified VTS.
       // @todo Use a table here
       //code += sprintf('console.log(\'JumpVTS_PTT %s:%s\'); return 1;',
-      code += sprintf('var ptt = PTT_TABLE[domain][%s][%s]; PGCIUT[ptt.domain][ptt.pgc].run(); dvd.playChapter(ptt.chapter - 1); return 1;',
+      code += sprintf(
+        'var ptt = PTT_TABLE[domain][%s][%s]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + ptt.domain)) { return 1; } PGCIUT[ptt.domain][ptt.pgc].run(); dvd.playChapter(ptt.chapter - 1); return 1;',
         getbits(command, 22, 7),
           getbits(command, 41, 10) - 1
       );

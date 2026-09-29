@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   DVD_VIDEO_LB_LEN,
+  cellNeedsStillPng,
+  cellRelativeSkipBytes,
   hliOffsetSecFromNav,
   listNavSectorsForBasename,
   pickHighlightNav,
@@ -99,6 +101,26 @@ describe('resolveMenuStillSeek', () => {
   });
 });
 
+describe('cellRelativeSkipBytes', () => {
+  it('converts absolute VOB skips into cell-local offsets', () => {
+    const start = 100 * DVD_VIDEO_LB_LEN;
+    const end = 200 * DVD_VIDEO_LB_LEN;
+    expect(cellRelativeSkipBytes(start, start, end)).toBe(0);
+    expect(cellRelativeSkipBytes(start + 10 * DVD_VIDEO_LB_LEN, start, end)).toBe(
+      10 * DVD_VIDEO_LB_LEN,
+    );
+  });
+
+  it('clamps so the skip cannot leave an empty cell slice', () => {
+    const start = 39586 * DVD_VIDEO_LB_LEN;
+    const end = 39642 * DVD_VIDEO_LB_LEN; // next cell (Special Features) starts here
+    const pastEnd = end + 10 * DVD_VIDEO_LB_LEN;
+    const rel = cellRelativeSkipBytes(pastEnd, start, end);
+    expect(rel).toBeLessThan(end - start);
+    expect(rel).toBe(end - start - DVD_VIDEO_LB_LEN);
+  });
+});
+
 describe('listNavSectorsForBasename', () => {
   it('indexes NAV sidecars by sector', () => {
     const map = listNavSectorsForBasename(
@@ -107,5 +129,28 @@ describe('listNavSectorsForBasename', () => {
     );
     expect([...map.keys()].sort((a, b) => a - b)).toEqual([10, 16]);
     expect(map.get(16)).toBe('VTS_01_0-0x10.json');
+  });
+});
+
+describe('cellNeedsStillPng', () => {
+  it('skips pure motion transitions (no buttons, still_time 0)', () => {
+    expect(cellNeedsStillPng({ highlight: null, still_time: 0 })).toBe(false);
+    expect(
+      cellNeedsStillPng({
+        highlight: { sector: 1, nav: navWith({ btn_ns: 0 }) },
+        still_time: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps interactive and timed-still cells', () => {
+    expect(
+      cellNeedsStillPng({
+        highlight: { sector: 1, nav: navWith({ btn_ns: 3 }) },
+        still_time: 0,
+      }),
+    ).toBe(true);
+    expect(cellNeedsStillPng({ highlight: null, still_time: 3 })).toBe(true);
+    expect(cellNeedsStillPng({ highlight: null, still_time: 255 })).toBe(true);
   });
 });

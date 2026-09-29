@@ -2873,7 +2873,7 @@ class VM {
   ];
 
   public static system_reg_abbr_table = [
-    '',
+    'MENU_LANG',
     'ASTN',
     'SPSTN',
     'AGLN',
@@ -2887,16 +2887,16 @@ class VM {
     'AMXMD',
     'CC_PLT',
     'PLT',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    ''
+    'VIDEO_CFG',
+    'AUDIO_CFG',
+    'AUD_LANG',
+    'AUD_EXT',
+    'SPU_LANG',
+    'SPU_EXT',
+    'PREF_REG',
+    'SPRM21',
+    'SPRM22',
+    'SPRM23'
   ];
 
   private print_system_reg(reg) {

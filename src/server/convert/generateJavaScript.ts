@@ -48,7 +48,8 @@ function generateJavaScript(dvdPath: string, callback) {
     'var rsm_vtsN = 0;',
     'var rsm_pgcN = 0;',
     'var rsm_regs = [0, 0, 0, 0, 0];',
-    'var sprm = {ASTN: 15, SPSTN: 62, AGLN: 1, TTN: 1, VTS_TTN: 1, TT_PGCN: 0, PTTN: 1, HL_BTNN: 1 * 0x400, NVTMR: 0, NV_PGCN: 0, AMXMD: 0, CC_PLT: 0, PLT: 15};',
+    // AUD_LANG / SPU_LANG are ISO-639 packed 16-bit codes (e.g. 0x656E = "en").
+    'var sprm = {ASTN: 15, SPSTN: 62, AGLN: 1, TTN: 1, VTS_TTN: 1, TT_PGCN: 0, PTTN: 1, HL_BTNN: 1 * 0x400, NVTMR: 0, NV_PGCN: 0, AMXMD: 0, CC_PLT: 0, PLT: 15, MENU_LANG: 0x656E, VIDEO_CFG: 0, AUDIO_CFG: 0, AUD_LANG: 0x656E, AUD_EXT: 0, SPU_LANG: 0x656E, SPU_EXT: 0, PREF_REG: 0};',
     'var PGCIUT = [];',
     'var MPGCIUT = [];',
     'var btnCmd = [];',
@@ -79,6 +80,7 @@ function generateJavaScript(dvdPath: string, callback) {
     '    return 1;',
     '  }',
     '  cellN = rsm_cell || 1;',
+    '  pgN = cellN;',
     '  domain = rsm_vtsN;',
     '  pgc = rsm_pgcN;',
     '  if (rsm_regs && rsm_regs.length === 5) {',
@@ -143,14 +145,19 @@ function generateJavaScript(dvdPath: string, callback) {
     '',
     'function playCurrentMenuCell() {',
     '  pgcSpace = "menu";',
+    '  // Menu cells are addressed as a flat 1-based list; LinkNextPG/PrevPG use',
+    '  // pgN then copy to cellN. Keep them aligned when onPost (or LinkNextC)',
+    '  // advances cellN alone — else the first LinkNextPG replays the same cell',
+    '  // (Harry Potter Special Features → Cast & Crew).',
+    '  pgN = cellN || 1;',
     '  var menu = MPGCIUT[domain] && MPGCIUT[domain][lang] && MPGCIUT[domain][lang][pgc];',
     '  if (!menu) { return; }',
     '  var cells = menu.cells || [];',
     '  var idx = cells.length ? Math.max(0, Math.min((cellN || 1) - 1, cells.length - 1)) : 0;',
     '  var cell = cells[idx] || {};',
     '  var menuId = "menu-" + lang + "-" + domain + "-" + pgc;',
-    '  if (typeof dvd === "undefined" || !dvd.playMenuCell) {',
-    '    if (dvd && dvd.playMenuByID) { dvd.playMenuByID(menuId); }',
+    '  if (typeof dvd === "undefined" || !dvd || !dvd.playMenuCell) {',
+    '    if (typeof dvd !== "undefined" && dvd && dvd.playMenuByID) { dvd.playMenuByID(menuId); }',
     '    return;',
     '  }',
     '  dvd.playMenuCell({',
@@ -166,8 +173,14 @@ function generateJavaScript(dvdPath: string, callback) {
     '    spuSelect: cell.spuSelect || [],',
     '    spuActivate: cell.spuActivate || [],',
     '    onPost: function() {',
+    '      // DVD cell commands run after the cell finishes (play_Cell_post), not at PGC start.',
+    '      var cmdNr = cell.cell_cmd_nr || 0;',
+    '      if (cmdNr && menu.cellCmds && typeof menu.cellCmds[cmdNr - 1] === "function") {',
+    '        if (menu.cellCmds[cmdNr - 1]()) { return; }',
+    '      }',
     '      if ((cellN || 1) < cells.length) {',
     '        cellN = (cellN || 1) + 1;',
+    '        pgN = cellN;',
     '        playCurrentMenuCell();',
     '        return;',
     '      }',
@@ -234,6 +247,22 @@ function generateJavaScript(dvdPath: string, callback) {
       });
     }
 
+    /** Compile each PGC cell_cmds entry to its own function (indexed by cell_cmd_nr). */
+    function compileCellCmds(cellCmds) {
+      if (!cellCmds || !cellCmds.length) {
+        return '[]';
+      }
+      return (
+        '[' +
+        cellCmds
+          .map(function (cmd) {
+            return 'function() {' + recompile([cmd]) + '}';
+          })
+          .join(',') +
+        ']'
+      );
+    }
+
     function first_play_pgc(json, code) {
       if (!json.first_play_pgc || !json.first_play_pgc.command_tbl.nr_of_pre) {
         console.log('No First Play PGC present');
@@ -277,10 +306,9 @@ function generateJavaScript(dvdPath: string, callback) {
             '  pgcSpace = "title";',
             '  domain = ' + index + ';',
             '  pgc = ' + pgcIndex + ';',
-            '  console.log(domain, lang, pgc); // DEBUG',
+            '  console.debug("Run: Domain:", domain, "Lang:", lang, "PGC:", pgc);',
             '  if(this.pre()){return;}',
             '  dvd.playByID("video-' + index + '");',
-            '  if(this.cell()){return;}',
             '},',
             'pre: function() {' +
               recompile(titleCmds && titleCmds.pre_cmds) +
@@ -288,9 +316,7 @@ function generateJavaScript(dvdPath: string, callback) {
             'post: function() {' +
               recompile(titleCmds && titleCmds.post_cmds) +
               '},',
-            'cell: function() {' +
-              recompile(titleCmds && titleCmds.cell_cmds) +
-              '}',
+            'cellCmds: ' + compileCellCmds(titleCmds && titleCmds.cell_cmds),
             '};',
           ]);
         }
@@ -334,10 +360,10 @@ function generateJavaScript(dvdPath: string, callback) {
               '  pgc = ' + pgcIndex + ';',
               '  lang = pickLang(' + index + ') || lang;',
               '  cellN = 1;',
-              '  console.log(domain, lang, pgc); // DEBUG',
+              '  pgN = 1;',
+              '  console.debug("Run: Domain:", domain, "Lang:", lang, "PGC:", pgc);',
               '  if(this.pre()){return;}',
               '  playCurrentMenuCell();',
-              '  if(this.cell()){return;}',
               '},',
               'next_pgc: ' + (pgci_srp.pgc.next_pgc_nr || 0) + ',',
               'prev_pgc: ' + (pgci_srp.pgc.prev_pgc_nr || 0) + ',',
@@ -350,9 +376,7 @@ function generateJavaScript(dvdPath: string, callback) {
               'post: function() {' +
                 recompile(menuCmds && menuCmds.post_cmds) +
                 '},',
-              'cell: function() {' +
-                recompile(menuCmds && menuCmds.cell_cmds) +
-                '}',
+              'cellCmds: ' + compileCellCmds(menuCmds && menuCmds.cell_cmds),
               '};',
             ]);
           }
@@ -394,10 +418,11 @@ function generateJavaScript(dvdPath: string, callback) {
           }
         }
 
-        return source.map(function (cell) {
+        return source.map(function (cell, cIdx) {
           var menuCell =
             menuCellTable[String(cell.cellID)] &&
             menuCellTable[String(cell.cellID)][String(cell.vobID)];
+          var playback = pgc.cell_playback && pgc.cell_playback[cIdx];
           return {
             cellID: cell.cellID,
             vobID: cell.vobID,
@@ -415,6 +440,7 @@ function generateJavaScript(dvdPath: string, callback) {
                 ? menuCell.endSec
                 : cell.endSec,
             hli_s_ptm: menuCell && menuCell.hli_s_ptm,
+            cell_cmd_nr: playback ? playback.cell_cmd_nr || 0 : 0,
             buttons: (menuCell && menuCell.buttons) || [],
             spuSelect: (menuCell && menuCell.spuSelect) || [],
             spuActivate: (menuCell && menuCell.spuActivate) || [],
@@ -434,6 +460,7 @@ function generateJavaScript(dvdPath: string, callback) {
 
       for (var i = 0; i < cellCount; i++) {
         var vobPointer = json.menu_c_adt.cell_adr_table[i].vob_id;
+        var cellId = json.menu_c_adt.cell_adr_table[i].cell_id;
         var vob = json.menu_c_adt.cell_adr_table[i];
         var start = vob.start_sector;
 
@@ -445,14 +472,41 @@ function generateJavaScript(dvdPath: string, callback) {
         var btnNs =
           pci && pci.hli && pci.hli.hl_gi ? pci.hli.hl_gi.btn_ns || 0 : 0;
 
-        // Do not wipe a richer btnNav/btnCmd from an earlier cell that shares
-        // this vob_id (common on VMGM: empty lead-in then real menu cell).
+        // Skip empty-HLI cells (VMGM lead-in). Index by vob_id AND cell_id —
+        // Harry Potter (and similar) reuse one vob_id across cells with
+        // different button sets; a vob-only key overwrites Main Menu etc.
         if (!btnNs) {
           continue;
         }
 
-        code.push('btnCmd[' + pointer + '][' + vobPointer + '] = [];');
-        code.push('btnNav[' + pointer + '][' + vobPointer + '] = [];');
+        code.push(
+          'btnCmd[' +
+            pointer +
+            '][' +
+            vobPointer +
+            '] = btnCmd[' +
+            pointer +
+            '][' +
+            vobPointer +
+            '] || [];'
+        );
+        code.push(
+          'btnNav[' +
+            pointer +
+            '][' +
+            vobPointer +
+            '] = btnNav[' +
+            pointer +
+            '][' +
+            vobPointer +
+            '] || [];'
+        );
+        code.push(
+          'btnCmd[' + pointer + '][' + vobPointer + '][' + cellId + '] = [];'
+        );
+        code.push(
+          'btnNav[' + pointer + '][' + vobPointer + '][' + cellId + '] = [];'
+        );
         for (var j = 0; j < btnNs; j++) {
           var cmd = pci.hli.btnit[j].cmd;
           var btn = pci.hli.btnit[j];
@@ -461,6 +515,8 @@ function generateJavaScript(dvdPath: string, callback) {
               pointer +
               '][' +
               vobPointer +
+              '][' +
+              cellId +
               '][' +
               j +
               '] = function() {domain = ' +
@@ -474,6 +530,8 @@ function generateJavaScript(dvdPath: string, callback) {
               pointer +
               '][' +
               vobPointer +
+              '][' +
+              cellId +
               '][' +
               j +
               '] = ' +
@@ -642,36 +700,51 @@ function generateJavaScript(dvdPath: string, callback) {
 
     function addEventListener(json, code) {
       code = code.concat([
+        // Idempotent: loadVm + startVm both used to call init(); stacking
+        // click handlers made the second see a detached button (parentNode
+        // null) after the first already ran btnCmd and rebuilt the menu.
+        // Guard typeof dvd — dispose must not delete window.dvd (ReferenceError).
         'function init() {',
         '  lang = pickLang(0) || lang;',
+        '  if (typeof dvd === "undefined" || !dvd) {',
+        '    console.error("DVD.js init: window.dvd is not bound");',
+        '    return;',
+        '  }',
+        '  if (dvd._dvdjsVmInited) { return; }',
+        '  dvd._dvdjsVmInited = true;',
         '',
         '  dvd.addEventListener(\'click\', function(event) {',
         '    event.stopImmediatePropagation();',
         '    var target = event.target;',
-        '    var domain = target.parentNode.dataset.domain;',
-        '    var vob = target.parentNode.dataset.vob;',
-        '    var id = target.dataset.id;',
+        '    var menu = target && target.parentNode;',
+        '    if (!menu || !menu.dataset) { return; }',
+        '    var domain = menu.dataset.domain;',
+        '    var vob = menu.dataset.vob;',
+        '    var cell = menu.dataset.cell;',
+        '    var id = target.dataset && target.dataset.id;',
         '',
         '    sprm["HL_BTNN"] = (parseInt(id, 10) + 1) * 0x0400;',
         '',
-        '    if (target.tagName !== \'INPUT\' || domain === undefined || vob === undefined || id === undefined) {',
+        '    if (target.tagName !== \'INPUT\' || domain === undefined || vob === undefined || cell === undefined || id === undefined) {',
         '      return;',
         '    }',
         '',
-        '    if (dvd.setMenuHighlight) { dvd.setMenuHighlight(target.parentNode, parseInt(id, 10)); }',
-        '    if (dvd.flashMenuActivate) { dvd.flashMenuActivate(target.parentNode, parseInt(id, 10)); }',
+        '    if (dvd.setMenuHighlight) { dvd.setMenuHighlight(menu, parseInt(id, 10)); }',
+        '    if (dvd.flashMenuActivate) { dvd.flashMenuActivate(menu, parseInt(id, 10)); }',
         '',
-        '    if (!btnCmd[domain] || !btnCmd[domain][vob] || !btnCmd[domain][vob][id]) {',
-        '      console.error(\'Missing button command for\', domain, vob, id);',
+        '    var cmd = btnCmd[domain] && btnCmd[domain][vob] && btnCmd[domain][vob][cell] && btnCmd[domain][vob][cell][id];',
+        '    if (!cmd) {',
+        '      console.error(\'Missing button command for\', domain, vob, cell, id);',
         '      return;',
         '    }',
         '',
-        '    console.log(domain, vob, id, btnCmd[domain][vob][id]);',
-        '    dvd._dvdjsFromButton = true;',
-        '    btnCmd[domain][vob][id]();',
+        '    console.debug("Button: Domain:", domain, "Vob:", vob, "Cell:", cell, "Id:", id, "Cmd:", cmd);',
+        '    if (dvd.beginUserButtonNav) { dvd.beginUserButtonNav(); } else { dvd._dvdjsFromButton = true; }',
+        '    cmd();',
         '  });',
         '',
-        '  document.addEventListener(\'keydown\', function(event) {',
+        '  function onDvdKeyDown(event) {',
+        '    if (typeof dvd === "undefined" || !dvd) { return; }',
         '    var menu = dvd._dvdjsActiveMenu || null;',
         '    if (!menu || menu.hidden || (menu.style && menu.style.display === \'none\')) {',
         '      menu = null;',
@@ -689,8 +762,9 @@ function generateJavaScript(dvdPath: string, callback) {
         '    if (!menu) { return; }',
         '    var domain = menu.dataset.domain;',
         '    var vob = menu.dataset.vob;',
-        '    if (domain === undefined || vob === undefined) { return; }',
-        '    var nav = btnNav[domain] && btnNav[domain][vob];',
+        '    var cell = menu.dataset.cell;',
+        '    if (domain === undefined || vob === undefined || cell === undefined) { return; }',
+        '    var nav = btnNav[domain] && btnNav[domain][vob] && btnNav[domain][vob][cell];',
         '    if (!nav || !nav.length) { return; }',
         '',
         '    var current = Math.floor((sprm["HL_BTNN"] || 0x0400) / 0x0400);',
@@ -709,9 +783,9 @@ function generateJavaScript(dvdPath: string, callback) {
         '      event.preventDefault();',
         '      if (dvd.setMenuHighlight) { dvd.setMenuHighlight(menu, idx); }',
         '      if (dvd.flashMenuActivate) { dvd.flashMenuActivate(menu, idx); }',
-        '      if (btnCmd[domain] && btnCmd[domain][vob] && btnCmd[domain][vob][idx]) {',
-        '        dvd._dvdjsFromButton = true;',
-        '        btnCmd[domain][vob][idx]();',
+        '      if (btnCmd[domain] && btnCmd[domain][vob] && btnCmd[domain][vob][cell] && btnCmd[domain][vob][cell][idx]) {',
+        '        if (dvd.beginUserButtonNav) { dvd.beginUserButtonNav(); } else { dvd._dvdjsFromButton = true; }',
+        '        btnCmd[domain][vob][cell][idx]();',
         '      }',
         '      return;',
         '    } else { return; }',
@@ -721,21 +795,31 @@ function generateJavaScript(dvdPath: string, callback) {
         '    sprm["HL_BTNN"] = nextId * 0x0400;',
         '    if (dvd.setMenuHighlight) { dvd.setMenuHighlight(menu, nextId - 1); }',
         '    var nextEntry = nav[nextId - 1];',
-        '    if (nextEntry && nextEntry.auto_action_mode && btnCmd[domain][vob][nextId - 1]) {',
-        '      dvd._dvdjsFromButton = true;',
-        '      btnCmd[domain][vob][nextId - 1]();',
+        '    if (nextEntry && nextEntry.auto_action_mode && btnCmd[domain] && btnCmd[domain][vob] && btnCmd[domain][vob][cell] && btnCmd[domain][vob][cell][nextId - 1]) {',
+        '      if (dvd.beginUserButtonNav) { dvd.beginUserButtonNav(); } else { dvd._dvdjsFromButton = true; }',
+        '      btnCmd[domain][vob][cell][nextId - 1]();',
         '    }',
-        '  });',
+        '  }',
+        '  dvd._dvdjsKeyHandler = onDvdKeyDown;',
+        '  document.addEventListener(\'keydown\', onDvdKeyDown);',
         '',
         '  dvd.onmenu = function(event) {',
         '    lang = pickLang(domain) || pickLang(0) || lang;',
         '    var menu = null;',
         '    var domainMenus = MENU_TYPES[domain] && MENU_TYPES[domain][lang];',
         '    var vmgmMenus = MENU_TYPES[0] && MENU_TYPES[0][lang];',
-        '    if (domainMenus && domainMenus[3 /* Root */]) {',
+        '    function isStub(m) {',
+        '      if (!m || !MPGCIUT[m.domain] || !MPGCIUT[m.domain][m.lang]) { return true; }',
+        '      var p = MPGCIUT[m.domain][m.lang][m.pgc];',
+        '      return !p || !p.cells || !p.cells.length;',
+        '    }',
+        '    // Prefer a non-stub VTS Root; Avatar domain-5 Root JumpTTs into missing titles.',
+        '    if (domainMenus && domainMenus[3 /* Root */] && !isStub(domainMenus[3])) {',
         '      menu = domainMenus[3 /* Root */];',
         '    } else if (vmgmMenus && vmgmMenus[2 /* Title */]) {',
         '      menu = vmgmMenus[2 /* Title */];',
+        '    } else if (domainMenus && domainMenus[3 /* Root */]) {',
+        '      menu = domainMenus[3 /* Root */];',
         '    }',
         '',
         '    if (menu) {',
