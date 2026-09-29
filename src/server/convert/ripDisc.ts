@@ -15,6 +15,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as child_process from 'node:child_process';
 
+import { sanitizeDiscId } from '../discCache.js';
+
 /** Options for a decrypting rip. */
 export type RipOptions = {
   /** Optical device, ISO path, or mount point / VIDEO_TS parent. */
@@ -299,15 +301,9 @@ export function resolveRipInput(source: string): {
   return { input: source, titleName: null };
 }
 
-/** dvdbackup -n: letters, digits, underscore; max ~32 is safe. */
+/** dvdbackup -n: same charset/length rules as disc archive ids. */
 export function sanitizeTitleName(name: string): string {
-  var cleaned = name
-    .replace(/[^A-Za-z0-9._-]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  if (!cleaned) {
-    cleaned = 'DVD';
-  }
-  return cleaned.slice(0, 32);
+  return sanitizeDiscId(name);
 }
 
 /**

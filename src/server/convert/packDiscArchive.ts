@@ -4,7 +4,7 @@
 
 import * as path from 'node:path';
 
-import { packDiscArchive } from '../discCache.js';
+import { migrateLegacyDiscDir, packDiscArchive } from '../discCache.js';
 import * as serverUtils from '../utils/index.js';
 
 export default packConvertedDisc;
@@ -18,6 +18,17 @@ function packConvertedDisc(dvdPath: string, callback: () => void): void {
   var webFolder = path.dirname(webPath);
 
   process.stdout.write('\nPacking disc archive:\n');
+
+  try {
+    var migrated = migrateLegacyDiscDir(webFolder, dvdPath);
+    if (migrated) {
+      process.stdout.write('  Migrated legacy folder → "' + migrated + '"\n');
+    }
+  } catch (err) {
+    console.error(err);
+    callback();
+    return;
+  }
 
   packDiscArchive(webFolder, discId)
     .then(function () {

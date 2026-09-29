@@ -36,7 +36,7 @@ export default extractSpu;
 function extractSpu(dvdPath: string, callback) {
   process.stdout.write('\nExtracting menu SPU overlays:\n');
 
-  var dvdName = dvdPath.split(path.sep).pop();
+  var dvdName = serverUtils.getDiscId(dvdPath);
   var webPath = serverUtils.getWebPath(dvdPath);
   var ifoPath = getWebName('metadata');
   var filesList = loadJsonFile(ifoPath);

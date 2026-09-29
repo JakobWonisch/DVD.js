@@ -32,7 +32,7 @@ export default convertIfo;
 function convertIfo(dvdPath: string, callback) {
   process.stdout.write('\nConverting IFO files:\n');
 
-  var dvdName = dvdPath.split(path.sep).pop();
+  var dvdName = serverUtils.getDiscId(dvdPath);
   var webPath = serverUtils.getWebPath(dvdPath);
 
   var ifoPath = path.join(dvdPath, 'VIDEO_TS', '*.IFO');

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as child_process from 'node:child_process';
+import { promisify } from 'node:util';
 
 import {
   CACHE_TTL_MS,
@@ -11,9 +13,14 @@ import {
   evictExpiredDiscCache,
   hasArchive,
   isDiscReady,
+  isSafeDiscId,
+  migrateLegacyDiscDir,
   packDiscArchive,
+  sanitizeDiscId,
   waitUntilDiscReady,
 } from '../../src/server/discCache.js';
+
+const execFile = promisify(child_process.execFile);
 
 function makeTempWebFolder(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-cache-'));
@@ -71,6 +78,58 @@ describe('ensureDiscReady', () => {
     fs.rmSync(webFolder, { recursive: true, force: true });
   });
 
+  it('reextracts when the archive is newer than the last extract', async () => {
+    var webFolder = makeTempWebFolder();
+    var discId = 'Reconvert';
+    seedDisc(webFolder, discId);
+    await packDiscArchive(webFolder, discId);
+    await waitUntilDiscReady(webFolder, discId);
+    expect(fs.readFileSync(path.join(webFolder, discId, 'vm.js'), 'utf8')).toBe(
+      '// vm\n',
+    );
+
+    // Replace .tar.gz with a newer archive while the extracted folder remains.
+    var rebuildRoot = path.join(webFolder, '_rebuild');
+    seedDisc(rebuildRoot, discId);
+    fs.writeFileSync(path.join(rebuildRoot, discId, 'vm.js'), '// reconverted\n');
+    var archive = archivePath(webFolder, discId);
+    var previousMtime = fs.statSync(archive).mtimeMs;
+    await execFile('tar', ['-czf', archive, '-C', rebuildRoot, discId]);
+    fs.rmSync(rebuildRoot, { recursive: true, force: true });
+    // Ensure mtime is strictly newer than the recorded extract mtime.
+    var newer = Math.max(Date.now(), previousMtime + 1000) / 1000;
+    fs.utimesSync(archive, newer, newer);
+
+    expect(ensureDiscReady(webFolder, discId)).toBe('decompressing');
+    expect(await waitUntilDiscReady(webFolder, discId)).toBe('ready');
+    expect(fs.readFileSync(path.join(webFolder, discId, 'vm.js'), 'utf8')).toBe(
+      '// reconverted\n',
+    );
+    // Stable after reextract.
+    expect(ensureDiscReady(webFolder, discId)).toBe('ready');
+
+    fs.rmSync(webFolder, { recursive: true, force: true });
+  });
+
+  it('adopts archive mtime for legacy extracts without a marker', async () => {
+    var webFolder = makeTempWebFolder();
+    var discId = 'LegacyExtract';
+    seedDisc(webFolder, discId);
+    await packDiscArchive(webFolder, discId);
+    await waitUntilDiscReady(webFolder, discId);
+    fs.unlinkSync(path.join(webFolder, discId, '.dvdjs-archive-mtime'));
+
+    expect(ensureDiscReady(webFolder, discId)).toBe('ready');
+    expect(
+      fs.existsSync(path.join(webFolder, discId, '.dvdjs-archive-mtime')),
+    ).toBe(true);
+    expect(fs.readFileSync(path.join(webFolder, discId, 'vm.js'), 'utf8')).toBe(
+      '// vm\n',
+    );
+
+    fs.rmSync(webFolder, { recursive: true, force: true });
+  });
+
   it('returns missing when neither folder nor archive exists', () => {
     var webFolder = makeTempWebFolder();
     expect(ensureDiscReady(webFolder, 'Nope')).toBe('missing');
@@ -106,6 +165,54 @@ describe('evictExpiredDiscCache', () => {
 
     expect(evictExpiredDiscCache(webFolder)).toEqual([]);
     expect(isDiscReady(webFolder, discId)).toBe(true);
+
+    fs.rmSync(webFolder, { recursive: true, force: true });
+  });
+});
+
+describe('sanitizeDiscId', () => {
+  it('replaces spaces and rejects unsafe ids until sanitized', () => {
+    expect(sanitizeDiscId('Harry Potter Philosophers Ston')).toBe(
+      'Harry_Potter_Philosophers_Ston',
+    );
+    expect(isSafeDiscId('Harry Potter Philosophers Ston')).toBe(false);
+    expect(isSafeDiscId(sanitizeDiscId('Harry Potter Philosophers Ston'))).toBe(
+      true,
+    );
+    expect(sanitizeDiscId('My Disc Name!!')).toBe('My_Disc_Name');
+    expect(sanitizeDiscId('a'.repeat(40)).length).toBe(32);
+  });
+});
+
+describe('migrateLegacyDiscDir', () => {
+  it('renames spaced folders and rewrites path prefixes', () => {
+    var webFolder = makeTempWebFolder();
+    var rawName = 'Harry Potter Philosophers Ston';
+    var discId = 'Harry_Potter_Philosophers_Ston';
+    var rawDir = path.join(webFolder, rawName);
+    fs.mkdirSync(rawDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(rawDir, 'metadata.json'),
+      JSON.stringify([{ ifo: '/' + rawName + '/VIDEO_TS.json' }]) + '\n',
+    );
+    fs.writeFileSync(
+      path.join(rawDir, 'vm.js'),
+      'spuSelect:["/' + rawName + '/menu.png"]\n',
+    );
+
+    expect(migrateLegacyDiscDir(webFolder, path.join('/dvds', rawName))).toBe(
+      discId,
+    );
+    expect(fs.existsSync(path.join(webFolder, rawName))).toBe(false);
+    expect(fs.existsSync(path.join(webFolder, discId, 'metadata.json'))).toBe(
+      true,
+    );
+    expect(
+      fs.readFileSync(path.join(webFolder, discId, 'metadata.json'), 'utf8'),
+    ).toContain('/' + discId + '/VIDEO_TS.json');
+    expect(
+      fs.readFileSync(path.join(webFolder, discId, 'vm.js'), 'utf8'),
+    ).toContain('/' + discId + '/menu.png');
 
     fs.rmSync(webFolder, { recursive: true, force: true });
   });

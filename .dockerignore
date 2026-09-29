@@ -1,0 +1,18 @@
+# Build context exclusions for the DVD.js HTTP server image.
+node_modules
+dist
+.git
+.github
+.direnv
+.idea
+dvds
+web
+outputs
+result
+result-*
+*.tsbuildinfo
+config/app.json
+.env
+agent-transcripts
+**/*.ffmpeg2pass*
+ffmpeg2pass*

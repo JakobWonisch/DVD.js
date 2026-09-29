@@ -1,5 +1,6 @@
 {
   "webFolder": "/home/user/dvd/web",
   "staticServerPort": 3000,
-  "evictDiscCache": false
+  "evictDiscCache": false,
+  "mdns": true
 }

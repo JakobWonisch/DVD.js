@@ -5,6 +5,7 @@ dist/
 public/js/
 public/bower_components/
 config/app.json
+.env
 *.tsbuildinfo
 .direnv/
 result

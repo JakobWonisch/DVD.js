@@ -3,6 +3,8 @@
  *
  * At rest: webFolder/<discId>.tar.gz (+ optional <discId>.cover.jpg).
  * On first access: extract to webFolder/<discId>/.
+ * If the archive is replaced (mtime newer than the mtime recorded at extract),
+ * the next ensureDiscReady reextracts over the stale folder.
  * Optional production eviction (config.evictDiscCache): remove the folder after
  * CACHE_TTL_MS idle, leaving only the archive.
  */
@@ -19,18 +21,82 @@ const execFile = promisify(child_process.execFile);
 /** How long a decompressed disc stays on disk after last access. */
 export const CACHE_TTL_MS = 60 * 60 * 1000;
 
-/** Marker file written inside a decompressed disc folder. */
+/** Marker file written inside a decompressed disc folder (last access). */
 const ACCESS_MARKER = '.dvdjs-accessed';
 
-/** Safe disc folder / archive stem (no path separators). */
+/**
+ * Marker written at extract time: archive mtimeMs when this folder was unpacked.
+ * Used to detect reconverted / replaced .tar.gz files.
+ */
+const ARCHIVE_MTIME_MARKER = '.dvdjs-archive-mtime';
+
+/** Safe disc folder / archive stem (no path separators or spaces). */
 const DISC_ID_RE = /^[A-Za-z0-9._-]+$/;
+
+/** Max length for archive stems / dvdbackup `-n` titles. */
+const DISC_ID_MAX_LEN = 32;
 
 const inflight = new Map<string, Promise<void>>();
 
 export type DiscReadyStatus = 'ready' | 'decompressing' | 'missing';
 
+/**
+ * Turn a source folder / volume name into a safe disc id
+ * (`[A-Za-z0-9._-]`, max 32). Spaces and other punctuation become `_`.
+ */
+export function sanitizeDiscId(name: string): string {
+  var cleaned = String(name || '')
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (!cleaned) {
+    cleaned = 'DVD';
+  }
+  return cleaned.slice(0, DISC_ID_MAX_LEN);
+}
+
 export function isSafeDiscId(discId: string): boolean {
   return DISC_ID_RE.test(discId);
+}
+
+/**
+ * Rename webFolder/<raw name with spaces>/ → <sanitized id>/ and rewrite
+ * `/raw/` path prefixes inside metadata.json / vm.js. No-op when already safe
+ * or the legacy folder is missing.
+ */
+export function migrateLegacyDiscDir(
+  webFolder: string,
+  dvdPath: string,
+): string | null {
+  var rawName = path.basename(String(dvdPath || '').replace(/[/\\]+$/, ''));
+  var discId = sanitizeDiscId(rawName);
+  if (!rawName || rawName === discId) {
+    return null;
+  }
+
+  var rawPath = path.join(webFolder, rawName);
+  var safePath = path.join(webFolder, discId);
+  if (!fs.existsSync(rawPath) || fs.existsSync(safePath)) {
+    return null;
+  }
+  if (!fs.existsSync(path.join(rawPath, 'metadata.json'))) {
+    return null;
+  }
+
+  var fromPrefix = '/' + rawName + '/';
+  var toPrefix = '/' + discId + '/';
+  for (var file of ['metadata.json', 'vm.js']) {
+    var filePath = path.join(rawPath, file);
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+    var text = fs.readFileSync(filePath, 'utf8');
+    if (text.includes(fromPrefix)) {
+      fs.writeFileSync(filePath, text.split(fromPrefix).join(toPrefix));
+    }
+  }
+
+  fs.renameSync(rawPath, safePath);
+  return discId;
 }
 
 export function archivePath(webFolder: string, discId: string): string {
@@ -49,8 +115,72 @@ function accessMarkerPath(webFolder: string, discId: string): string {
   return path.join(discDirPath(webFolder, discId), ACCESS_MARKER);
 }
 
+function archiveMtimeMarkerPath(webFolder: string, discId: string): string {
+  return path.join(discDirPath(webFolder, discId), ARCHIVE_MTIME_MARKER);
+}
+
 function stagingPath(webFolder: string, discId: string): string {
   return path.join(webFolder, '.' + discId + '.extracting');
+}
+
+function archiveMtimeMs(webFolder: string, discId: string): number {
+  try {
+    return fs.statSync(archivePath(webFolder, discId)).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+function recordedArchiveMtimeMs(
+  webFolder: string,
+  discId: string,
+): number | null {
+  try {
+    var raw = fs.readFileSync(archiveMtimeMarkerPath(webFolder, discId), 'utf8').trim();
+    var n = Number(raw);
+    if (Number.isFinite(n) && n > 0) {
+      return n;
+    }
+  } catch {
+    // missing or unreadable
+  }
+  return null;
+}
+
+function writeArchiveMtimeMarker(
+  webFolder: string,
+  discId: string,
+  mtimeMs: number,
+): void {
+  var dir = discDirPath(webFolder, discId);
+  if (!fs.existsSync(dir)) {
+    return;
+  }
+  fs.writeFileSync(
+    archiveMtimeMarkerPath(webFolder, discId),
+    String(mtimeMs) + '\n',
+  );
+}
+
+/**
+ * True when a .tar.gz exists and is newer than the archive we last extracted.
+ * Folders extracted before this marker existed adopt the current archive mtime
+ * (no forced reextract) so first access after upgrade stays fast.
+ */
+function isExtractStale(webFolder: string, discId: string): boolean {
+  if (!hasArchive(webFolder, discId)) {
+    return false;
+  }
+  var current = archiveMtimeMs(webFolder, discId);
+  if (!(current > 0)) {
+    return false;
+  }
+  var recorded = recordedArchiveMtimeMs(webFolder, discId);
+  if (recorded === null) {
+    writeArchiveMtimeMarker(webFolder, discId, current);
+    return false;
+  }
+  return current > recorded;
 }
 
 export function hasArchive(webFolder: string, discId: string): boolean {
@@ -113,11 +243,13 @@ export async function packDiscArchive(
     await fs.promises.copyFile(coverSrc, coverDst);
   }
 
-  // Drop access marker so it is not archived.
-  try {
-    await fs.promises.unlink(accessMarkerPath(webFolder, discId));
-  } catch {
-    // ignore
+  // Drop cache markers so they are not archived.
+  for (var marker of [ACCESS_MARKER, ARCHIVE_MTIME_MARKER]) {
+    try {
+      await fs.promises.unlink(path.join(dir, marker));
+    } catch {
+      // ignore
+    }
   }
 
   var outArchive = archivePath(webFolder, discId);
@@ -141,6 +273,8 @@ async function extractArchive(webFolder: string, discId: string): Promise<void> 
   var archive = archivePath(webFolder, discId);
   var staging = stagingPath(webFolder, discId);
   var dest = discDirPath(webFolder, discId);
+  // Capture before extract; rename/touch must not race a mid-flight replace.
+  var sourceMtime = archiveMtimeMs(webFolder, discId);
 
   await fs.promises.rm(staging, { recursive: true, force: true });
   await fs.promises.mkdir(staging, { recursive: true });
@@ -159,12 +293,14 @@ async function extractArchive(webFolder: string, discId: string): Promise<void> 
     await fs.promises.rm(staging, { recursive: true, force: true });
   }
 
+  writeArchiveMtimeMarker(webFolder, discId, sourceMtime);
   touchAccess(webFolder, discId);
 }
 
 /**
  * Ensure the disc folder is available. Starts extraction in the background when
- * only the archive exists; concurrent callers share one in-flight job.
+ * only the archive exists, or when the archive is newer than the last extract.
+ * Concurrent callers share one in-flight job.
  */
 export function ensureDiscReady(
   webFolder: string,
@@ -174,12 +310,17 @@ export function ensureDiscReady(
     return 'missing';
   }
 
-  if (isDiscReady(webFolder, discId)) {
+  if (isDiscReady(webFolder, discId) && !isExtractStale(webFolder, discId)) {
     touchAccess(webFolder, discId);
     return 'ready';
   }
 
   if (!hasArchive(webFolder, discId)) {
+    // Unpacked-only, or archive vanished mid-check: serve the folder if present.
+    if (isDiscReady(webFolder, discId)) {
+      touchAccess(webFolder, discId);
+      return 'ready';
+    }
     return 'missing';
   }
 

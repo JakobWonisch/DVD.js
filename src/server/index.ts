@@ -101,14 +101,23 @@ function startServer() {
 }
 
 /**
- * Advertise the service.
+ * Advertise the service on the LAN (skipped when mdns is disabled).
  */
 function advertiseService() {
-  var service = mdns.createAdvertisement(mdns.tcp('_http'), 9876, {
-    name: '_dvd_server',
-  });
-
-  service.start();
+  if (!appConfig.mdns) {
+    return;
+  }
+  try {
+    var service = mdns.createAdvertisement(mdns.tcp('_http'), 9876, {
+      name: '_dvd_server',
+    });
+    service.start();
+  } catch (err) {
+    console.warn(
+      'mDNS advertise failed (set DVDJS_MDNS=0 to silence):',
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 startServer();

@@ -6,6 +6,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { migrateLegacyDiscDir } from '../discCache.js';
 import * as serverUtils from '../../server/utils/index.js';
 
 export default createDir;
@@ -20,6 +21,11 @@ function createDir(dvdPath, callback) {
   process.stdout.write('\nCreating the `web` folder:\n');
 
   var webPath = serverUtils.getWebPath(dvdPath);
+  try {
+    migrateLegacyDiscDir(path.dirname(webPath), dvdPath);
+  } catch (err) {
+    console.error(err);
+  }
 
   fs.mkdir(webPath, function(err) {
     if (err && err.code === 'EEXIST') {

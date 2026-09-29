@@ -4,6 +4,7 @@
 import * as path from 'node:path';
 
 import appConfig from '../../loadAppConfig.js';
+import { sanitizeDiscId } from '../discCache.js';
 
 /**
  * Given a DVD file name, returns the index following this model:
@@ -66,14 +67,23 @@ function getFilePortion(name: string, index: number): number {
 }
 
 /**
+ * Safe disc id derived from a DVD root path (basename, sanitized).
+ * Used for webFolder/<discId>/ and asset URL prefixes.
+ */
+export function getDiscId(dvdPath: string): string {
+  var base = path.basename(String(dvdPath || '').replace(/[/\\]+$/, ''));
+  return sanitizeDiscId(base);
+}
+
+/**
  * Return the path to the web folder given a DVD disc name and a config object:
  *  * /home/user/path/to/disc/DSTD06151 => /home/user/dvd/web/DSTD06151
+ *  * ".../Harry Potter Philosophers Ston" => webFolder/Harry_Potter_Philosophers_Ston
  *
  * @param {string} dvdPath
  */
 export function getWebPath(dvdPath: string): string {
-  var dvdFolderName = dvdPath.split(path.sep).pop();
-  return path.join(appConfig.webFolder, dvdFolderName);
+  return path.join(appConfig.webFolder, getDiscId(dvdPath));
 }
 
 /**
@@ -85,9 +95,10 @@ export function getWebPath(dvdPath: string): string {
  * @return {string} A formatted title.
  */
 export function convertVobPath(dvdPath: string): string {
-  var fileName = dvdPath.split(path.sep).pop().replace(/\.VOB$/i, '.webm');
+  var fileName = path.basename(dvdPath).replace(/\.VOB$/i, '.webm');
   // Extract DVD folder name: /path/to/DVDNAME/VIDEO_TS/VIDEO_TS.VOB => DVDNAME
-  var dvdFolderName = dvdPath.split(path.sep).reverse()[2];
+  var parts = dvdPath.split(path.sep);
+  var dvdFolderName = sanitizeDiscId(parts[parts.length - 3] || '');
 
   return path.join(appConfig.webFolder, dvdFolderName, fileName);
 }
