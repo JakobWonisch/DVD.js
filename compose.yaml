@@ -6,11 +6,13 @@
 #   cp .env.example .env   # optional tweaks
 #   docker compose up -d --build
 
+name: dvd-menu-archive
+
 services:
-  dvdjs:
+  dvd-menu-archive:
     build: .
-    image: dvdjs:local
-    container_name: dvdjs
+    image: dvd-menu-archive:local
+    container_name: dvd-menu-archive
     restart: unless-stopped
     ports:
       - "${DVDJS_HOST_PORT:-3000}:3000"
@@ -25,6 +27,8 @@ services:
       - "${DVDJS_WEB_VOLUME:-./web}:/data/web"
       # Optional mounted JSON (uncomment + set DVDJS_CONFIG above):
       # - ${DVDJS_CONFIG_FILE:-./config/app.json}:/config/app.json:ro
+    networks:
+      - proxy
     healthcheck:
       test:
         [
@@ -37,3 +41,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+networks:
+  proxy:
+    external: true
