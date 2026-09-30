@@ -190,6 +190,38 @@ describe('tryAutoSkipMissingTitle', () => {
     }
   });
 
+  it('picks VTS menu lang (not VMGM default) before missing-title post', async () => {
+    vi.useFakeTimers();
+    const rootRun = vi.fn();
+    const g: any = {
+      domain: 1,
+      pgc: 2,
+      lang: 'default',
+      PGCIUT: { 1: { 2: { post: null as any } } },
+      MPGCIUT: {
+        0: { default: { 1: { run: vi.fn() } } },
+        1: { en: { 1: { run: rootRun } } },
+      },
+      MENU_TYPES: [
+        { default: [] },
+        { en: [null, null, null, { domain: 1, lang: 'en', pgc: 1 }] },
+      ],
+    };
+    const post = vi.fn(() => {
+      // Harry Potter-style CallSS Root: MENU_TYPES[domain][lang][3]
+      const menu = g.MENU_TYPES[g.domain][g.lang][3];
+      g.MPGCIUT[menu.domain][menu.lang][menu.pgc].run();
+    });
+    g.PGCIUT[1][2].post = post;
+    const host: any = {};
+    expect(tryAutoSkipMissingTitle(host, g, false)).toBe(true);
+    await vi.runAllTimersAsync();
+    expect(post).toHaveBeenCalledOnce();
+    expect(g.lang).toBe('en');
+    expect(rootRun).toHaveBeenCalledOnce();
+    expect(host._dvdjsMissingTitleBroken).toBeFalsy();
+  });
+
   it('clearMissingTitleSkip resets the visited set', () => {
     const host: { _dvdjsMissingTitleSkip?: Set<string> } = {
       _dvdjsMissingTitleSkip: new Set(['4:2']),

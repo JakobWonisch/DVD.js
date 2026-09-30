@@ -63,7 +63,7 @@ export type VmNavGlobals = {
   gprm?: number[];
 };
 
-import { menuLangKeys, pickMenuLang } from './menuLanguage.js';
+import { domainMenuLangs, menuLangKeys, pickMenuLang } from './menuLanguage.js';
 export { menuLangKeys, pickMenuLang };
 
 /** Clear the menu-button latch once the user is back in a real menu. */
@@ -318,22 +318,33 @@ export function tryAutoSkipMissingTitle(
   visited.add(key);
 
   setTimeout(() => {
-    // Align global lang with VMGM before post JumpSS (avoids
-    // MPGCIUT[0][lang] undefined when a VTS overwrote lang).
-    g.lang = pickMenuLang(g, 0);
+    // post() looks up MENU_TYPES[domain][lang] with the *current* title
+    // domain still set (Harry Potter: CallSS Root via MENU_TYPES[1][lang][3]).
+    // Prefer a lang that exists on that domain — NOT VMGM's "default"/ÿÿ LU,
+    // which MENU_TYPES[1] does not have (en/de/nl only) and used to throw:
+    // "can't access property 3, MENU_TYPES[domain][lang] is undefined".
+    const langDomain = typeof domain === 'number' ? domain : 0;
+    g.lang = pickMenuLang(g, langDomain);
+    // If this domain has no menu LUs (title-only VTS), fall back to VMGM so
+    // Avatar-style JumpSS into MPGCIUT[0][lang] still resolves.
+    if (!domainMenuLangs(g, langDomain).length) {
+      g.lang = pickMenuLang(g, 0);
+    }
     try {
       pgcObj.post();
     } catch (e) {
       console.warn('DVD.js missing-title post failed', e);
       host._dvdjsMissingTitleBroken = true;
-      // Always surface the dialog — escape alone can "succeed" via onmenu
-      // without the user ever seeing why Play did nothing.
-      showTitleUnavailableOverlay(host as TitleUnavailableMountHost, {
-        onDismiss: () => {
-          clearUserButtonNav(host);
-          escapeToVmgmTitleMenu(host, g);
-        },
-      });
+      // FP auto-skip: land on a real menu when possible. Dialog only if escape
+      // cannot find one (so the user is not stuck on a black intro cell).
+      if (!escapeToVmgmTitleMenu(host, g)) {
+        showTitleUnavailableOverlay(host as TitleUnavailableMountHost, {
+          onDismiss: () => {
+            clearUserButtonNav(host);
+            escapeToVmgmTitleMenu(host, g);
+          },
+        });
+      }
     }
   }, 0);
   return true;

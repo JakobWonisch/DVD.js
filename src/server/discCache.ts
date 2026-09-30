@@ -156,10 +156,21 @@ function writeArchiveMtimeMarker(
   if (!fs.existsSync(dir)) {
     return;
   }
-  fs.writeFileSync(
-    archiveMtimeMarkerPath(webFolder, discId),
-    String(mtimeMs) + '\n',
-  );
+  try {
+    fs.writeFileSync(
+      archiveMtimeMarkerPath(webFolder, discId),
+      String(mtimeMs) + '\n',
+    );
+  } catch (err) {
+    // Read-only bind mounts (Docker uid mismatch) must still serve the disc.
+    var code =
+      err && typeof err === 'object' && 'code' in err
+        ? String((err as { code?: string }).code)
+        : '';
+    if (code !== 'EACCES' && code !== 'EROFS' && code !== 'EPERM') {
+      throw err;
+    }
+  }
 }
 
 /**
@@ -200,7 +211,18 @@ export function touchAccess(webFolder: string, discId: string): void {
   if (!fs.existsSync(dir)) {
     return;
   }
-  fs.writeFileSync(marker, String(Date.now()) + '\n');
+  try {
+    fs.writeFileSync(marker, String(Date.now()) + '\n');
+  } catch (err) {
+    // Ignore read-only volumes so ensure/static serve still works.
+    var code =
+      err && typeof err === 'object' && 'code' in err
+        ? String((err as { code?: string }).code)
+        : '';
+    if (code !== 'EACCES' && code !== 'EROFS' && code !== 'EPERM') {
+      throw err;
+    }
+  }
 }
 
 function lastAccessMs(webFolder: string, discId: string): number {
@@ -324,14 +346,53 @@ export function ensureDiscReady(
     return 'missing';
   }
 
+  if (!isWebFolderWritable(webFolder)) {
+    warnIfWebFolderNotWritable(webFolder);
+    return 'missing';
+  }
+
   if (!inflight.has(discId)) {
-    var job = extractArchive(webFolder, discId).finally(function () {
-      inflight.delete(discId);
-    });
+    var job = extractArchive(webFolder, discId)
+      .catch(function (err) {
+        console.error(
+          'Failed to extract ' + discId + ' into ' + webFolder + ':',
+          err instanceof Error ? err.message : err,
+        );
+      })
+      .finally(function () {
+        inflight.delete(discId);
+      });
     inflight.set(discId, job);
   }
 
   return 'decompressing';
+}
+
+/**
+ * True when the process can create files under webFolder (needed to extract
+ * archives and write cache markers). Logs a warning once when false.
+ */
+var webFolderWritableLogged = false;
+
+export function isWebFolderWritable(webFolder: string): boolean {
+  try {
+    fs.accessSync(webFolder, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function warnIfWebFolderNotWritable(webFolder: string): void {
+  if (webFolderWritableLogged || isWebFolderWritable(webFolder)) {
+    return;
+  }
+  webFolderWritableLogged = true;
+  console.warn(
+    'webFolder is not writable (' +
+      webFolder +
+      '). Archives cannot be extracted. In Docker, set DVDJS_UID/DVDJS_GID to the host owner of the volume (id -u / id -g).',
+  );
 }
 
 /** Await a ready disc (used by convert --vm-only). */

@@ -82,10 +82,12 @@ Precedence: environment → JSON file → defaults. Useful env vars: `DVDJS_CONF
 The image runs the HTTP server only (`pnpm start:server`). Convert discs on a machine with ffmpeg (`pnpm convert`), then mount the folder that holds `<discId>.tar.gz` archives.
 
 ```bash
-cp .env.example .env          # optional: set DVDJS_WEB_VOLUME / host port
+cp .env.example .env          # set DVDJS_WEB_VOLUME + DVDJS_UID/GID (id -u / id -g)
 docker compose up -d --build
 # → http://localhost:3000/
 ```
+
+The container must run as the **host owner** of the web volume (`DVDJS_UID` / `DVDJS_GID`). The image default user (`10001`) cannot write a typical bind mount, so `/api/disc/.../ensure` cannot extract `.tar.gz` archives.
 
 `DVDJS_EVICT_DISC_CACHE` defaults to `true` in Compose (good for servers). To use a mounted JSON file instead of env, set `DVDJS_CONFIG=/config/app.json` and uncomment the config volume in `compose.yaml`.
 

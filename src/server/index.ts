@@ -16,6 +16,7 @@ import {
   startDiscCacheEviction,
   touchAccess,
   isDiscReady,
+  warnIfWebFolderNotWritable,
 } from './discCache.js';
 
 /**
@@ -41,11 +42,25 @@ function discEnsureMiddleware(
     return;
   }
 
-  var status = ensureDiscReady(appConfig.webFolder, discId);
-  res.statusCode = status === 'missing' ? 404 : 200;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store');
-  res.end(JSON.stringify({ status: status, discId: discId }));
+  try {
+    var status = ensureDiscReady(appConfig.webFolder, discId);
+    res.statusCode = status === 'missing' ? 404 : 200;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(JSON.stringify({ status: status, discId: discId }));
+  } catch (err) {
+    console.error('ensureDiscReady failed for ' + discId, err);
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(
+      JSON.stringify({
+        status: 'missing',
+        discId: discId,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
 }
 
 /**
@@ -83,6 +98,8 @@ function discAccessTouchMiddleware(
  * Start the server.
  */
 function startServer() {
+  warnIfWebFolderNotWritable(appConfig.webFolder);
+
   if (appConfig.evictDiscCache) {
     startDiscCacheEviction(appConfig.webFolder);
   }
@@ -98,6 +115,7 @@ function startServer() {
   http.createServer(app).listen(appConfig.staticServerPort);
 
   console.log('Server running at http://localhost:%d/', appConfig.staticServerPort);
+  console.log('webFolder: %s', appConfig.webFolder);
 }
 
 /**

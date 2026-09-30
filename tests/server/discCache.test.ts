@@ -135,6 +135,25 @@ describe('ensureDiscReady', () => {
     expect(ensureDiscReady(webFolder, 'Nope')).toBe('missing');
     fs.rmSync(webFolder, { recursive: true, force: true });
   });
+
+  it('still reports ready when access markers cannot be written', async () => {
+    var webFolder = makeTempWebFolder();
+    var discId = 'ReadOnlyReady';
+    seedDisc(webFolder, discId);
+    await packDiscArchive(webFolder, discId);
+    await waitUntilDiscReady(webFolder, discId);
+
+    // Drop write bits on the extracted folder (owner still readable).
+    var dir = path.join(webFolder, discId);
+    fs.unlinkSync(path.join(dir, '.dvdjs-accessed'));
+    fs.chmodSync(dir, 0o555);
+
+    expect(ensureDiscReady(webFolder, discId)).toBe('ready');
+    expect(isDiscReady(webFolder, discId)).toBe(true);
+
+    fs.chmodSync(dir, 0o755);
+    fs.rmSync(webFolder, { recursive: true, force: true });
+  });
 });
 
 describe('evictExpiredDiscCache', () => {
