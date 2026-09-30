@@ -1,4 +1,4 @@
-// Generate catalogue cover.jpg from the best menu still.
+// Generate catalogue cover.jpg from the main-menu still.
 
 'use strict';
 
@@ -7,16 +7,21 @@ import * as path from 'node:path';
 import * as child_process from 'node:child_process';
 
 import * as serverUtils from '../../server/utils/index.js';
+import { loadJsonFile } from '../utils/loadJson.js';
+import {
+  parseMenuStillName,
+  pickCoverStill,
+  type CoverDomainMeta,
+  type CoverStillFile,
+} from './pickCoverStill.js';
 
 var spawn = child_process.spawn;
-
-/** Ignore tiny/gray failed stills when choosing a cover. */
-var MIN_STILL_BYTES = 32 * 1024;
 
 export default generateCover;
 
 /**
- * Pick the best menu-*.png (prefer VMGM / domain 0) and write cover.jpg.
+ * Prefer the VMGM Title / Root menu still for cover.jpg; fall back to the
+ * largest usable VMGM still when metadata has no main-menu match.
  *
  * @param {string} dvdPath
  * @param {function} callback
@@ -26,14 +31,12 @@ function generateCover(dvdPath: string, callback) {
 
   var webPath = serverUtils.getWebPath(dvdPath);
   var coverPath = path.join(webPath, 'cover.jpg');
+  var metaPath = path.join(webPath, 'metadata.json');
 
-  var stills;
+  var stills: CoverStillFile[] = [];
   try {
     stills = fs
       .readdirSync(webPath)
-      .filter(function (name) {
-        return /^menu-\d+-\d+-\d+\.png$/i.test(name);
-      })
       .map(function (name) {
         var full = path.join(webPath, name);
         var size = 0;
@@ -42,12 +45,10 @@ function generateCover(dvdPath: string, callback) {
         } catch (e) {
           size = 0;
         }
-        var m = name.match(/^menu-(\d+)-/i);
-        var domain = m ? parseInt(m[1], 10) : 99;
-        return { name: name, full: full, size: size, domain: domain };
+        return parseMenuStillName(name, full, size);
       })
-      .filter(function (s) {
-        return s.size >= MIN_STILL_BYTES;
+      .filter(function (s): s is CoverStillFile {
+        return !!s;
       });
   } catch (e) {
     console.error(e);
@@ -55,22 +56,30 @@ function generateCover(dvdPath: string, callback) {
     return;
   }
 
-  if (!stills.length) {
+  var metadata: CoverDomainMeta[] | null = null;
+  try {
+    if (fs.existsSync(metaPath)) {
+      metadata = loadJsonFile(metaPath);
+    }
+  } catch (e) {
+    console.warn('Could not read metadata.json for cover selection:', e);
+    metadata = null;
+  }
+
+  var source = pickCoverStill({ stills: stills, metadata: metadata });
+  if (!source) {
     console.warn('No usable menu stills for cover.jpg');
     callback();
     return;
   }
 
-  // Prefer VMGM (domain 0) art, then largest file as a quality proxy.
-  stills.sort(function (a, b) {
-    if (a.domain !== b.domain) {
-      return a.domain - b.domain;
-    }
-    return b.size - a.size;
-  });
-
-  var source = stills[0];
-  console.log('Cover source:', source.name, '(' + source.size + ' bytes)');
+  console.log(
+    'Cover source:',
+    source.name,
+    '(' + source.size + ' bytes)',
+    '—',
+    source.reason,
+  );
 
   var cmd = [
     '-hide_banner',

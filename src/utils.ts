@@ -339,6 +339,25 @@ export function bit2str(bit: number): string {
   return String.fromCharCode((bit >> 8) & 0xFF) + String.fromCharCode(bit & 0xFF);
 }
 
+/**
+ * Menu LU lang_code → JS/metadata key. DVD 0xFFFF (unspecified) becomes
+ * "default" instead of bit2str's "ÿÿ".
+ */
+export function ifoMenuLangCode(langCode: number): string {
+  if (langCode === 0xffff) {
+    return 'default';
+  }
+  const s = bit2str(langCode);
+  if (
+    s.length === 2 &&
+    isalpha(s.charCodeAt(0)) &&
+    isalpha(s.charCodeAt(1))
+  ) {
+    return s.toLowerCase();
+  }
+  return 'default';
+}
+
 
 /**
  * @param {number} ptr (passed as reference).

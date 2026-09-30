@@ -55,7 +55,7 @@ function extractMenu(dvdPath: string, callback) {
 
       for (var i = 0; i < json.pgci_ut.nr_of_lus; i++) {
         var lu = json.pgci_ut.lu[i];
-        var lang = utils.bit2str(lu.lang_code);
+        var lang = utils.ifoMenuLangCode(lu.lang_code);
         menu[pointer].menu[lang] = [];
         for (var j = 0; j < lu.pgcit.nr_of_pgci_srp; j++) {
           var pgci_srp = lu.pgcit.pgci_srp[j];

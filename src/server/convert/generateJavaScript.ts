@@ -12,6 +12,10 @@ import * as serverUtils from '../../server/utils/index.js';
 import * as utils from '../../utils.js';
 import { dvdTimeToSeconds } from '../../server/utils/dvdTime.js';
 import { menuCellAdrCount } from './menuCellAdrCount.js';
+import {
+  loadNavBySectorForBasename,
+  pickHighlightNav,
+} from './menuStillSeek.js';
 
 var toHex = utils.toHex;
 
@@ -103,8 +107,12 @@ function generateJavaScript(dvdPath: string, callback) {
     '  if (!obj) { return lang; }',
     '  var keys = Object.keys(obj).filter(function(k) { return obj[k] && typeof obj[k] === "object"; });',
     '  if (!keys.length) { return lang; }',
-    '  var pref = (typeof navigator !== "undefined" && navigator.language) ? navigator.language.slice(0, 2).toLowerCase() : "en";',
-    '  if (keys.indexOf(pref) >= 0) { return pref; }',
+    '  var stored = null;',
+    '  try {',
+    '    stored = (typeof localStorage !== "undefined") ? localStorage.getItem("dvdjs.menuLang") : null;',
+    '  } catch (e) {}',
+    '  if (stored) { stored = String(stored).trim().toLowerCase(); }',
+    '  if (stored && keys.indexOf(stored) >= 0) { return stored; }',
     '  if (keys.indexOf("en") >= 0) { return "en"; }',
     '  return keys[0];',
     '}',
@@ -336,7 +344,7 @@ function generateJavaScript(dvdPath: string, callback) {
 
       for (var i = 0; i < json.pgci_ut.nr_of_lus; i++) {
         var lu = json.pgci_ut.lu[i];
-        var langCode = utils.bit2str(lu.lang_code);
+        var langCode = utils.ifoMenuLangCode(lu.lang_code);
         code.push('MPGCIUT[' + index + '].' + langCode + ' = {};');
         for (var j = 0; j < lu.pgcit.nr_of_pgci_srp; j++) {
           var pgci_srp = lu.pgcit.pgci_srp[j];
@@ -358,7 +366,11 @@ function generateJavaScript(dvdPath: string, callback) {
               '  pgcSpace = "menu";',
               '  domain = ' + index + ';',
               '  pgc = ' + pgcIndex + ';',
-              '  lang = pickLang(' + index + ') || lang;',
+              // Keep an explicit/session lang when this domain has that LU;
+              // only re-pick when missing (init / cross-domain fallback).
+              '  if (!(MPGCIUT[' + index + '] && MPGCIUT[' + index + '][lang])) {',
+              '    lang = pickLang(' + index + ') || lang;',
+              '  }',
               '  cellN = 1;',
               '  pgN = 1;',
               '  console.debug("Run: Domain:", domain, "Lang:", lang, "PGC:", pgc);',
@@ -455,6 +467,8 @@ function generateJavaScript(dvdPath: string, callback) {
         return code;
       }
 
+      var navBySector = loadNavBySectorForBasename(webPath, basename);
+
       code.push('btnCmd[' + pointer + '] = [];');
       code.push('btnNav[' + pointer + '] = [];');
 
@@ -462,20 +476,20 @@ function generateJavaScript(dvdPath: string, callback) {
         var vobPointer = json.menu_c_adt.cell_adr_table[i].vob_id;
         var cellId = json.menu_c_adt.cell_adr_table[i].cell_id;
         var vob = json.menu_c_adt.cell_adr_table[i];
-        var start = vob.start_sector;
 
-        var navFile = path.join(
-          webPath,
-          basename + '-' + toHex(start) + '.json'
+        var highlight = pickHighlightNav(
+          vob.start_sector,
+          vob.last_sector,
+          navBySector,
         );
-        var pci = loadJsonFile(navFile).pci;
+        var pci = highlight && highlight.nav && highlight.nav.pci;
         var btnNs =
           pci && pci.hli && pci.hli.hl_gi ? pci.hli.hl_gi.btn_ns || 0 : 0;
 
         // Skip empty-HLI cells (VMGM lead-in). Index by vob_id AND cell_id —
         // Harry Potter (and similar) reuse one vob_id across cells with
         // different button sets; a vob-only key overwrites Main Menu etc.
-        if (!btnNs) {
+        if (!btnNs || !pci || !pci.hli || !pci.hli.btnit) {
           continue;
         }
 
@@ -508,8 +522,14 @@ function generateJavaScript(dvdPath: string, callback) {
           'btnNav[' + pointer + '][' + vobPointer + '][' + cellId + '] = [];'
         );
         for (var j = 0; j < btnNs; j++) {
-          var cmd = pci.hli.btnit[j].cmd;
-          var btn = pci.hli.btnit[j];
+          var cmd = (pci.hli.btnit[j] as { cmd: number[] | object }).cmd;
+          var btn = pci.hli.btnit[j] as {
+            up?: number;
+            down?: number;
+            left?: number;
+            right?: number;
+            auto_action_mode?: number;
+          };
           code.push(
             'btnCmd[' +
               pointer +
@@ -522,7 +542,7 @@ function generateJavaScript(dvdPath: string, callback) {
               '] = function() {domain = ' +
               pointer +
               ';' +
-              recompile([cmd]) +
+              recompile([cmd as any]) +
               '};'
           );
           code.push(
@@ -640,7 +660,7 @@ function generateJavaScript(dvdPath: string, callback) {
 
       for (var i = 0; i < json.pgci_ut.nr_of_lus; i++) {
         var lu = json.pgci_ut.lu[i];
-        var langCode = utils.bit2str(lu.lang_code);
+        var langCode = utils.ifoMenuLangCode(lu.lang_code);
         code.push('MENU_TYPES[' + domainIndex + '].' + langCode + ' = [];');
 
         for (var j = 0; j < lu.pgcit.nr_of_pgci_srp; j++) {

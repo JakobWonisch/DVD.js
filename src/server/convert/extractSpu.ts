@@ -9,7 +9,6 @@ import * as path from 'node:path';
 
 import * as serverUtils from '../../server/utils/index.js';
 import editMetadataFile from '../../server/utils/editMetadataFile.js';
-import * as utils from '../../utils.js';
 import { pickMenuSpu } from '../spu/demux.js';
 import { decodeSpu } from '../spu/decode.js';
 import {
@@ -19,11 +18,11 @@ import {
 } from '../spu/render.js';
 import { resolveMenuFrameHeight } from './menuFrameHeight.js';
 import { menuCellAdrCount } from './menuCellAdrCount.js';
-
-var toHex = utils.toHex;
-
-/** DVD logical block size. */
-var DVD_VIDEO_LB_LEN = 2048;
+import {
+  DVD_VIDEO_LB_LEN,
+  loadNavBySectorForBasename,
+  pickHighlightNav,
+} from './menuStillSeek.js';
 
 export default extractSpu;
 
@@ -74,6 +73,7 @@ function extractSpu(dvdPath: string, callback) {
 
     var vobData = fs.readFileSync(vobPath);
     var vobPointer = 0;
+    var navBySector = loadNavBySectorForBasename(webPath, basename);
 
     processCell();
 
@@ -89,13 +89,8 @@ function extractSpu(dvdPath: string, callback) {
       var start = vob.start_sector;
       var end = vob.last_sector;
 
-      var navFile = path.join(webPath, basename + '-' + toHex(start) + '.json');
-      var nav = null;
-      try {
-        nav = loadJsonFile(navFile);
-      } catch (e) {
-        nav = null;
-      }
+      var highlight = pickHighlightNav(start, end, navBySector);
+      var nav = highlight ? highlight.nav : null;
 
       var btnNs =
         nav &&
@@ -110,12 +105,23 @@ function extractSpu(dvdPath: string, callback) {
         (end + 1) * DVD_VIDEO_LB_LEN
       );
 
-      // Only scan the first few VOBUs for a display set (menus put SPU early).
-      var scanBytes = cellBytes.subarray(
-        0,
-        Math.min(cellBytes.length, DVD_VIDEO_LB_LEN * 128)
-      );
-      var spuPacket = pickMenuSpu(scanBytes);
+      // Prefer SPU near the highlight VOBU (menus often place the display set
+      // with HLI, not at cell start). Fall back to cell start.
+      var spuPacket = null;
+      var scanPacks = DVD_VIDEO_LB_LEN * 256;
+      if (highlight && highlight.sector > start) {
+        var rel = (highlight.sector - start) * DVD_VIDEO_LB_LEN;
+        var fromHli = cellBytes.subarray(
+          Math.max(0, rel - DVD_VIDEO_LB_LEN * 8),
+          Math.min(cellBytes.length, rel + scanPacks),
+        );
+        spuPacket = pickMenuSpu(fromHli);
+      }
+      if (!spuPacket) {
+        spuPacket = pickMenuSpu(
+          cellBytes.subarray(0, Math.min(cellBytes.length, scanPacks)),
+        );
+      }
 
       if (!spuPacket) {
         vobPointer++;
@@ -154,11 +160,17 @@ function extractSpu(dvdPath: string, callback) {
         nav.pci &&
         nav.pci.hli &&
         nav.pci.hli.btn_colit &&
-        nav.pci.hli.btn_colit.btn_coli;
+        (nav.pci.hli.btn_colit as { btn_coli?: unknown }).btn_coli;
 
-      if (btnNs > 0 && Array.isArray(btnColi)) {
+      if (btnNs > 0 && Array.isArray(btnColi) && nav?.pci?.hli?.btnit) {
         for (var i = 0; i < btnNs; i++) {
-          var btn = nav.pci.hli.btnit[i];
+          var btn = nav.pci.hli.btnit[i] as {
+            x_start: number;
+            y_start: number;
+            x_end: number;
+            y_end: number;
+            btn_coln?: number;
+          };
           var rect = {
             x_start: btn.x_start,
             y_start: btn.y_start,

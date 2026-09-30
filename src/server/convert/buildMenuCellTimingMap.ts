@@ -104,7 +104,18 @@ export function buildMenuCellTimingMap(json: IfoLike): Record<string, MenuCellTi
         still_time: 0,
         playback_mode: 0,
       };
-      const duration = info.duration;
+      // IFO playback_time can be 0 for still-only cells; encode still needs a
+      // positive window. Use one PAL frame as a minimum when the cell has packs.
+      let duration = info.duration;
+      const sectorSpan =
+        cell.last_sector != null &&
+        cell.start_sector != null &&
+        cell.last_sector >= cell.start_sector
+          ? cell.last_sector - cell.start_sector + 1
+          : 0;
+      if (!(duration > 0) && sectorSpan > 0) {
+        duration = 1 / 25;
+      }
       map[key] = {
         startSec: t,
         endSec: t + duration,

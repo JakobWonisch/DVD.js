@@ -9,11 +9,12 @@ import * as path from 'node:path';
 
 import * as serverUtils from '../../server/utils/index.js';
 import editMetadataFile from '../../server/utils/editMetadataFile.js';
-import * as utils from '../../utils.js';
 import { resolveMenuFrameHeight } from './menuFrameHeight.js';
 import { menuCellAdrCount } from './menuCellAdrCount.js';
-
-var toHex = utils.toHex;
+import {
+  loadNavBySectorForBasename,
+  pickHighlightNav,
+} from './menuStillSeek.js';
 
 export default generateButtons;
 
@@ -49,6 +50,7 @@ function generateButtons(dvdPath: string, callback) {
     var ifoJson = loadJsonFile(ifoFile);
 
     var vobPointer = 0;
+    var navBySector = loadNavBySectorForBasename(webPath, basename);
 
     generateButtonsCss();
 
@@ -59,13 +61,17 @@ function generateButtons(dvdPath: string, callback) {
       }
 
       var vob = ifoJson.menu_c_adt.cell_adr_table[vobPointer];
-      var start = vob.start_sector;
-
       var cellID = vob.cell_id;
       var vobID = vob.vob_id;
 
-      var navFile = path.join(webPath, basename + '-' + toHex(start) + '.json');
-      var json = loadJsonFile(navFile);
+      // Same HLI VOBU as stills — buttons often appear after a wipe, not at
+      // cell start (Harry Potter / Avatar).
+      var highlight = pickHighlightNav(
+        vob.start_sector,
+        vob.last_sector,
+        navBySector,
+      );
+      var json = highlight ? highlight.nav : null;
 
       var cssContent = [];
       var buttons = [];
@@ -73,10 +79,11 @@ function generateButtons(dvdPath: string, callback) {
       var hli_e_ptm = null;
 
       if (
+        json &&
         json.pci &&
         json.pci.hli &&
         json.pci.hli.hl_gi &&
-        json.pci.hli.hl_gi.btn_ns !== undefined
+        json.pci.hli.hl_gi.btn_ns
       ) {
         hli_s_ptm = json.pci.hli.hl_gi.hli_s_ptm;
         hli_e_ptm = json.pci.hli.hl_gi.hli_e_ptm;
@@ -90,10 +97,23 @@ function generateButtons(dvdPath: string, callback) {
         );
 
         for (var i = 0; i < json.pci.hli.hl_gi.btn_ns; i++) {
-          var btn = json.pci.hli.btnit[i];
+          var btn = json.pci.hli.btnit[i] as {
+            x_start: number;
+            y_start: number;
+            x_end: number;
+            y_end: number;
+            up?: number;
+            down?: number;
+            left?: number;
+            right?: number;
+            auto_action_mode?: number;
+          };
+          // Inline geometry on each button — viewer applies as style so hitboxes
+          // survive data-cell/data-vob drift (multi-cell PGCs / attr resets).
+          var geom = buttonToCss(btn, i, frameHeight);
           cssContent.push(
             `[data-domain="${pointer}"][data-cell="${cellID}"][data-vob="${vobID}"] .btn[data-id="${i}"]{` +
-              buttonToCss(btn, i, frameHeight) +
+              geom +
               '}'
           );
 
@@ -104,6 +124,7 @@ function generateButtons(dvdPath: string, callback) {
             left: btn.left || 0,
             right: btn.right || 0,
             auto_action_mode: btn.auto_action_mode || 0,
+            css: geom,
           });
 
           if (!css[pointer]) {
@@ -118,9 +139,7 @@ function generateButtons(dvdPath: string, callback) {
           if (!css[pointer].css[cellID - 1][vobID - 1]) {
             css[pointer].css[cellID - 1][vobID - 1] = [];
           }
-          css[pointer].css[cellID - 1][vobID - 1].push(
-            buttonToCss(btn, i, frameHeight)
-          );
+          css[pointer].css[cellID - 1][vobID - 1].push(geom);
         }
 
         saveCSSFile(cssContent, json.pci.hli.hl_gi.btn_ns, buttons);

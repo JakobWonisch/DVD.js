@@ -59,4 +59,21 @@ describe('mergeMenuCellMaps', () => {
     expect(merged['1']['1'].css).toBe('/a.css');
     expect(merged['2']['1'].still).toBe('/b.png');
   });
+
+  it('preserves still when incoming omits it', () => {
+    const merged = mergeMenuCellMaps(
+      { '1': { '1': { still: '/old.png', startSec: 0 } } },
+      { '1': { '1': { startSec: 0, endSec: 1, start_sector: 0 } } },
+    );
+    expect(merged['1']['1'].still).toBe('/old.png');
+  });
+
+  it('clears still when incoming sets still to null (transition)', () => {
+    const merged = mergeMenuCellMaps(
+      { '1': { '1': { still: '/old.png', css: '/a.css' } } },
+      { '1': { '1': { still: null, startSec: 0, endSec: 2 } } },
+    );
+    expect(merged['1']['1'].still).toBeUndefined();
+    expect(merged['1']['1'].css).toBe('/a.css');
+  });
 });

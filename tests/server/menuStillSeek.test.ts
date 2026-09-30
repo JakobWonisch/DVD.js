@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   DVD_VIDEO_LB_LEN,
+  SRI_END_OF_CELL,
   cellNeedsStillPng,
   cellRelativeSkipBytes,
   hliOffsetSecFromNav,
   listNavSectorsForBasename,
+  nextVobuSectorFromNav,
   pickHighlightNav,
   resolveMenuStillSeek,
   type NavPtsLike,
@@ -14,6 +16,8 @@ function navWith(opts: {
   btn_ns?: number;
   hli_s_ptm?: number;
   vobu_s_ptm?: number;
+  next_vobu?: number;
+  vobu_ea?: number;
 }): NavPtsLike {
   return {
     pci: {
@@ -23,6 +27,13 @@ function navWith(opts: {
           btn_ns: opts.btn_ns ?? 0,
           hli_s_ptm: opts.hli_s_ptm ?? 0,
         },
+      },
+    },
+    dsi: {
+      dsi_gi: { vobu_ea: opts.vobu_ea ?? 10 },
+      vobu_sri: {
+        next_vobu:
+          opts.next_vobu != null ? opts.next_vobu : ((opts.vobu_ea ?? 10) + 1) | 0x80000000,
       },
     },
   };
@@ -67,7 +78,7 @@ describe('pickHighlightNav', () => {
 });
 
 describe('resolveMenuStillSeek', () => {
-  it('seeks to the HLI VOBU with a short window', () => {
+  it('seeks to the HLI VOBU with an exact single frame', () => {
     const seek = resolveMenuStillSeek({
       cellStartSector: 100,
       cellLastSector: 500,
@@ -81,12 +92,12 @@ describe('resolveMenuStillSeek', () => {
       skipBytes: 120 * DVD_VIDEO_LB_LEN,
       ssSec: 0,
       reason: 'hli',
+      frameCount: 1,
     });
-    expect(seek.durationSec).toBeLessThanOrEqual(1);
-    expect(seek.frameCount).toBeLessThanOrEqual(16);
+    expect(seek.durationSec).toBeGreaterThanOrEqual(1);
   });
 
-  it('uses mid-cell time when there is no highlight', () => {
+  it('uses cell start (not mid) when there is no highlight', () => {
     const seek = resolveMenuStillSeek({
       cellStartSector: 0,
       cellLastSector: 100,
@@ -95,9 +106,44 @@ describe('resolveMenuStillSeek', () => {
     });
     expect(seek).toMatchObject({
       skipBytes: 0,
-      ssSec: 4,
-      reason: 'mid',
+      ssSec: 0,
+      reason: 'start',
+      frameCount: 1,
     });
+  });
+
+  it('uses cell start for short timed stills without HLI', () => {
+    const seek = resolveMenuStillSeek({
+      cellStartSector: 1245,
+      cellLastSector: 1290,
+      highlight: null,
+      timing: { startSec: 12, endSec: 12.48 },
+    });
+    expect(seek).toMatchObject({
+      skipBytes: 1245 * DVD_VIDEO_LB_LEN,
+      ssSec: 0,
+      reason: 'start',
+    });
+  });
+});
+
+describe('nextVobuSectorFromNav', () => {
+  it('follows SRI next_vobu from the file sector', () => {
+    expect(
+      nextVobuSectorFromNav(
+        100,
+        navWith({ next_vobu: 0x8000000b, vobu_ea: 10 }),
+      ),
+    ).toBe(111);
+  });
+
+  it('returns null at end of cell', () => {
+    expect(
+      nextVobuSectorFromNav(
+        100,
+        navWith({ next_vobu: SRI_END_OF_CELL | 0x80000000 }),
+      ),
+    ).toBeNull();
   });
 });
 

@@ -1,29 +1,53 @@
 /**
  * Resolve where to grab a menu still from a cell VOB.
  *
- * Prefer the highlight-active VOBU (HLI / btn_ns) so stills match button + SPU
- * layout. Avoid scanning a long early window and picking the largest PNG —
- * that often lands on transition/wipe frames.
+ * Prefer the authored highlight frame (HLI / btn_ns): skip to that VOBU (I-frame)
+ * and decode to hli_s_ptm. No-HLI timed stills use the first frame of the cell —
+ * mid-cell seeks land on padding and produce black / empty stills.
  */
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+import { loadJsonFile } from '../utils/loadJson.js';
 
 export const DVD_VIDEO_LB_LEN = 2048;
 
-/** Frames to decode around the seek point (quality filter for gray/corrupt). */
-export const STILL_SEEK_FRAME_CANDIDATES = 8;
+/** End-of-cell marker in DSI VOBU_SRI (libdvdnav). */
+export const SRI_END_OF_CELL = 0x3fffffff;
 
-/** Seconds of video to allow while collecting those frames. */
-export const STILL_SEEK_WINDOW_SEC = 0.5;
+/**
+ * Exact authored frame: one output frame at the resolved timestamp.
+ * Decode window must cover -ss so MPEG-2 can reach that frame from the VOBU I-frame.
+ */
+export const STILL_SEEK_FRAME_CANDIDATES = 1;
+
+/** Minimum decode window after VOBU skip (seconds). */
+export const STILL_SEEK_WINDOW_SEC = 1;
 
 export type NavPtsLike = {
   pci?: {
     pci_gi?: {
       vobu_s_ptm?: number;
+      vobu_e_ptm?: number;
     };
     hli?: {
       hl_gi?: {
         btn_ns?: number;
         hli_s_ptm?: number;
+        hli_e_ptm?: number;
       };
+      btnit?: unknown[];
+      btn_colit?: unknown;
+    };
+  };
+  dsi?: {
+    dsi_gi?: {
+      nv_pck_lbn?: number;
+      vobu_ea?: number;
+    };
+    vobu_sri?: {
+      next_vobu?: number;
     };
   };
 };
@@ -31,11 +55,11 @@ export type NavPtsLike = {
 export type MenuStillSeek = {
   /** Byte offset into the menu VOB for ffmpeg -skip_initial_bytes. */
   skipBytes: number;
-  /** Decode seek after the skip (seconds). */
+  /** Decode seek after the skip (seconds) — HLI offset within the VOBU. */
   ssSec: number;
   frameCount: number;
   durationSec: number;
-  reason: 'hli' | 'mid' | 'start';
+  reason: 'hli' | 'start';
 };
 
 export type HighlightNavHit = {
@@ -70,7 +94,7 @@ export function hliOffsetSecFromNav(nav: NavPtsLike): number {
 }
 
 /**
- * Pick the best NAV for stills: first in [start, last] with buttons,
+ * Pick the best NAV for stills/buttons: first in [start, last] with buttons,
  * preferring the earliest sector at/after HLI when possible.
  */
 export function pickHighlightNav(
@@ -136,7 +160,11 @@ export function cellNeedsStillPng(opts: {
 }
 
 /**
- * Compute ffmpeg seek for a menu cell still.
+ * Compute ffmpeg seek for the authored still frame.
+ *
+ * Interactive: VOBU that carries HLI + -ss to hli_s_ptm within that VOBU.
+ * No-HLI timed still: first frame of the cell (never mid-sector — that is often
+ * padding and yields 0 frames / black).
  */
 export function resolveMenuStillSeek(opts: {
   cellStartSector: number;
@@ -145,54 +173,27 @@ export function resolveMenuStillSeek(opts: {
   timing?: { startSec?: number; endSec?: number } | null;
 }): MenuStillSeek {
   const start = opts.cellStartSector;
-  const last = opts.cellLastSector;
   const cellStartBytes = start * DVD_VIDEO_LB_LEN;
-  const window = {
-    frameCount: STILL_SEEK_FRAME_CANDIDATES,
-    durationSec: STILL_SEEK_WINDOW_SEC,
-  };
-
   const hit = opts.highlight;
+
   if (hit && btnNs(hit.nav) > 0) {
     const ssSec = hliOffsetSecFromNav(hit.nav);
+    // Decode past the HLI offset so MPEG-2 can emit the target frame.
+    const durationSec = Math.max(STILL_SEEK_WINDOW_SEC, ssSec + 0.25);
     return {
       skipBytes: hit.sector * DVD_VIDEO_LB_LEN,
       ssSec,
-      ...window,
+      frameCount: STILL_SEEK_FRAME_CANDIDATES,
+      durationSec,
       reason: 'hli',
-    };
-  }
-
-  const duration =
-    opts.timing?.endSec != null &&
-    opts.timing?.startSec != null &&
-    opts.timing.endSec > opts.timing.startSec
-      ? opts.timing.endSec - opts.timing.startSec
-      : 0;
-
-  if (duration > 1) {
-    return {
-      skipBytes: cellStartBytes,
-      ssSec: duration / 2,
-      ...window,
-      reason: 'mid',
-    };
-  }
-
-  if (last > start) {
-    const midSector = start + Math.floor((last - start) / 2);
-    return {
-      skipBytes: midSector * DVD_VIDEO_LB_LEN,
-      ssSec: 0,
-      ...window,
-      reason: 'mid',
     };
   }
 
   return {
     skipBytes: cellStartBytes,
     ssSec: 0,
-    ...window,
+    frameCount: STILL_SEEK_FRAME_CANDIDATES,
+    durationSec: STILL_SEEK_WINDOW_SEC,
     reason: 'start',
   };
 }
@@ -239,4 +240,97 @@ export function listNavSectorsForBasename(
     out.set(parseInt(hex, 16), name);
   }
   return out;
+}
+
+/**
+ * Load all NAV sidecars for a menu VOB basename into a sector → nav map.
+ */
+export function loadNavBySectorForBasename(
+  webPath: string,
+  basename: string,
+): Map<number, NavPtsLike> {
+  const navBySector = new Map<number, NavPtsLike>();
+  let names: string[] = [];
+  try {
+    names = fs.existsSync(webPath) ? fs.readdirSync(webPath) : [];
+  } catch {
+    return navBySector;
+  }
+  const index = listNavSectorsForBasename(names, basename);
+  for (const [sector, fileName] of index) {
+    try {
+      navBySector.set(
+        sector,
+        loadJsonFile(path.join(webPath, fileName)) as NavPtsLike,
+      );
+    } catch {
+      // ignore unreadable NAV sidecars
+    }
+  }
+  return navBySector;
+}
+
+/**
+ * Highlight NAV for a cell (shared by stills, buttons, SPU, btnCmd).
+ */
+export function resolveCellHighlightNav(
+  webPath: string,
+  basename: string,
+  cellStartSector: number,
+  cellLastSector: number,
+  navBySector?: Map<number, NavPtsLike>,
+): HighlightNavHit | null {
+  const map =
+    navBySector || loadNavBySectorForBasename(webPath, basename);
+  return pickHighlightNav(cellStartSector, cellLastSector, map);
+}
+
+/**
+ * True if a PNG buffer looks like a real image (signature + more than a header).
+ */
+export function isUsableStillPng(filePath: string): boolean {
+  try {
+    const st = fs.statSync(filePath);
+    if (st.size < 33) {
+      return false;
+    }
+    const fd = fs.openSync(filePath, 'r');
+    const magic = Buffer.alloc(8);
+    fs.readSync(fd, magic, 0, 8, 0);
+    fs.closeSync(fd);
+    return (
+      magic[0] === 0x89 &&
+      magic[1] === 0x50 &&
+      magic[2] === 0x4e &&
+      magic[3] === 0x47
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Next VOBU file sector from DSI, using the sector we actually read as base
+ * (matches libdvdnav: nv_pck_lbn + (next_vobu & 0x3FFFFFFF)).
+ * Returns null at end-of-cell or when the chain cannot advance.
+ */
+export function nextVobuSectorFromNav(
+  fileSector: number,
+  nav: NavPtsLike,
+): number | null {
+  const sri = nav.dsi?.vobu_sri?.next_vobu;
+  if (sri != null) {
+    const offset = sri & SRI_END_OF_CELL;
+    if (offset === SRI_END_OF_CELL) {
+      return null;
+    }
+    if (offset > 0) {
+      return fileSector + offset;
+    }
+  }
+  const ea = nav.dsi?.dsi_gi?.vobu_ea;
+  if (ea != null && ea >= 0) {
+    return fileSector + ea + 1;
+  }
+  return null;
 }

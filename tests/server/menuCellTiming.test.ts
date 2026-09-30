@@ -106,4 +106,41 @@ describe('buildMenuCellTimingMap', () => {
       still_time: 255,
     });
   });
+
+  it('gives zero-duration cells a one-frame encode window', () => {
+    const map = buildMenuCellTimingMap({
+      menu_c_adt: {
+        cell_adr_table: [
+          { vob_id: 1, cell_id: 1, start_sector: 0, last_sector: 4 },
+        ],
+      },
+      pgci_ut: {
+        lu: [
+          {
+            pgcit: {
+              pgci_srp: [
+                {
+                  pgc: {
+                    cell_position: [{ cell_nr: 1, vob_id_nr: 1 }],
+                    cell_playback: [
+                      {
+                        playback_time: {
+                          hour: 0,
+                          minute: 0,
+                          second: 0,
+                          frame_u: 0,
+                        },
+                        still_time: 255,
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(map['1:1'].endSec - map['1:1'].startSec).toBeCloseTo(1 / 25, 5);
+  });
 });

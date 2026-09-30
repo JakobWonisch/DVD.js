@@ -19,6 +19,11 @@ export type MenuCellMap = Record<string, Record<string, MenuCellEntry>>;
 /**
  * Merge still-table entries into existing menuCell metadata, preserving
  * button/CSS/SPU fields from prior convert steps.
+ *
+ * `still` handling:
+ * - incoming omits `still` → keep previous URL
+ * - incoming `still: null` → clear (pure transition cell)
+ * - incoming `still: "/…"` → use new URL
  */
 export function mergeMenuCellMaps(
   existing: MenuCellMap | null | undefined,
@@ -54,12 +59,24 @@ function mergeMenuCellEntry(
   }
   const out: MenuCellEntry = { ...next };
   if (!prev) {
+    if (out.still == null) {
+      delete out.still;
+    }
     return out;
   }
   for (const key of MENU_CELL_PRESERVE_KEYS) {
     if (out[key] == null && prev[key] != null) {
       out[key] = prev[key];
     }
+  }
+  if (Object.prototype.hasOwnProperty.call(next, 'still')) {
+    if (next.still == null || next.still === '') {
+      delete out.still;
+    } else {
+      out.still = next.still;
+    }
+  } else if (prev.still != null) {
+    out.still = prev.still;
   }
   return out;
 }

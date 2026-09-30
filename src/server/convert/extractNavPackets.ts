@@ -2,7 +2,6 @@
 
 'use strict';
 
-
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import jDataView from 'jdataview';
@@ -13,18 +12,24 @@ import * as navRead from '../../dvdread/nav_read.js';
 import * as serverUtils from '../../server/utils/index.js';
 import * as utils from '../../utils.js';
 import { globFiles } from '../../server/utils/globFiles.js';
-
-/**
- * The length of one Logical Block of a DVD.
- * From dvdread/index.ts.
- * @const
- */
-var DVD_VIDEO_LB_LEN = 2048;
+import { loadJsonFile } from '../utils/loadJson.js';
+import {
+  DVD_VIDEO_LB_LEN,
+  nextVobuSectorFromNav,
+  type NavPtsLike,
+} from './menuStillSeek.js';
 
 export default extractNav;
 
+/** Max packs to scan forward when a predicted next sector is not a NAV. */
+var NAV_SCAN_FORWARD = 64;
+
 /**
  * Extract NAV packets from the VOB files located in a folder.
+ *
+ * Walk like libdvdnav: follow VOBU_SRI next_vobu; at end-of-cell or a broken
+ * link, resume at the next uncovered menu_c_adt cell start (do not abandon the
+ * rest of the VOB).
  *
  * @param {string} dvdPath
  * @param {function} callback
@@ -35,7 +40,7 @@ function extractNav(dvdPath: string, callback) {
   var webPath = serverUtils.getWebPath(dvdPath);
 
   var vobPath = path.join(dvdPath, 'VIDEO_TS', '*.VOB');
-  globFiles(vobPath, function(err, vobFiles) {
+  globFiles(vobPath, function (err, vobFiles) {
     if (err) {
       console.error(err);
     }
@@ -53,21 +58,24 @@ function extractNav(dvdPath: string, callback) {
 
     next(vobFiles[pointer]);
 
-    // There are better ways to do async...
     function next(vobFile: string) {
       var name = path.basename(vobFile);
 
-      fs.readFile(vobFile, function(err, data) {
+      fs.readFile(vobFile, function (err, data) {
         if (err) {
           console.error(err);
-          if (err.code === 'EIO' || err.code === 'EACCES' || err.code === 'EPERM') {
+          if (
+            err.code === 'EIO' ||
+            err.code === 'EACCES' ||
+            err.code === 'EPERM'
+          ) {
             console.error(
               'Aborting NAV extract: cannot read ' +
                 name +
                 ' (' +
                 err.code +
                 '). CSS-protected discs need --rip (dvdbackup), e.g.:\n' +
-                '  pnpm convert -- --rip --work-dir ~/dvd/work <source>'
+                '  pnpm convert -- --rip --work-dir ~/dvd/work <source>',
             );
             process.exit(1);
           }
@@ -80,7 +88,7 @@ function extractNav(dvdPath: string, callback) {
           console.warn(
             'Skipping empty/invalid menu VOB:',
             name,
-            '(' + (data ? data.length : 0) + ' bytes)'
+            '(' + (data ? data.length : 0) + ' bytes)',
           );
           advanceFile();
           return;
@@ -88,12 +96,20 @@ function extractNav(dvdPath: string, callback) {
 
         var p = new Stream(data);
         var lastSector = Math.floor(data.length / DVD_VIDEO_LB_LEN);
+        var cellStarts = loadMenuCellStarts(webPath, name);
+        var visited = new Set<number>();
+        var resumeQueue = cellStarts.slice();
 
         extractFromSector(0x00);
 
-        function extractFromSector(sector) {
+        function extractFromSector(sector: number) {
           if (sector < 0 || sector >= lastSector) {
-            advanceFile();
+            resumeNextCell();
+            return;
+          }
+
+          if (visited.has(sector)) {
+            resumeNextCell();
             return;
           }
 
@@ -102,20 +118,29 @@ function extractNav(dvdPath: string, callback) {
             var navPackets = decodePacket(p);
 
             if (!navPackets.pci || !navPackets.dsi) {
+              var scanned = scanForwardForNav(sector);
+              if (scanned != null) {
+                extractFromSector(scanned);
+                return;
+              }
               console.warn(
                 'No NAV packet at sector',
                 utils.toHex(sector),
                 'in',
                 name,
-                '— stopping this VOB'
+                '— resuming at next cell',
               );
-              advanceFile();
+              resumeNextCell();
               return;
             }
 
             var json = {
-              pci: navRead.parsePCI(new jDataView(navPackets.pci, undefined, undefined, false)),
-              dsi: navRead.parseDSI(new jDataView(navPackets.dsi, undefined, undefined, false))
+              pci: navRead.parsePCI(
+                new jDataView(navPackets.pci, undefined, undefined, false),
+              ),
+              dsi: navRead.parseDSI(
+                new jDataView(navPackets.dsi, undefined, undefined, false),
+              ),
             };
 
             if (
@@ -124,32 +149,47 @@ function extractNav(dvdPath: string, callback) {
               json.dsi.dsi_gi.nv_pck_lbn == null ||
               json.dsi.dsi_gi.vobu_ea == null
             ) {
-              console.warn('Incomplete DSI at sector', utils.toHex(sector), 'in', name);
-              advanceFile();
+              console.warn(
+                'Incomplete DSI at sector',
+                utils.toHex(sector),
+                'in',
+                name,
+                '— resuming at next cell',
+              );
+              resumeNextCell();
               return;
             }
 
+            visited.add(sector);
+            // Drop this sector from the resume queue if it was a cell start.
+            resumeQueue = resumeQueue.filter(function (s) {
+              return s !== sector;
+            });
+
             var jsonPath = getNavFilename(name, sector);
-            fs.writeFile(jsonPath, JSON.stringify(json), function(writeErr) {
+            fs.writeFile(jsonPath, JSON.stringify(json), function (writeErr) {
               if (writeErr) {
                 console.error(writeErr);
               }
 
               process.stdout.write('.');
 
-              // Extract the next NAV packets recursively.
-              var nextSector =
-                json.dsi.dsi_gi.nv_pck_lbn + json.dsi.dsi_gi.vobu_ea + 1;
+              var nextSector = nextVobuSectorFromNav(
+                sector,
+                json as NavPtsLike,
+              );
 
               if (
+                nextSector != null &&
                 nextSector > sector &&
-                nextSector < lastSector
+                nextSector < lastSector &&
+                !visited.has(nextSector)
               ) {
-                setTimeout(function() {
+                setTimeout(function () {
                   extractFromSector(nextSector);
                 }, 0);
               } else {
-                advanceFile();
+                resumeNextCell();
               }
             });
           } catch (parseErr) {
@@ -160,10 +200,51 @@ function extractNav(dvdPath: string, callback) {
               name + ':',
               parseErr && (parseErr as Error).message
                 ? (parseErr as Error).message
-                : parseErr
+                : parseErr,
             );
-            advanceFile();
+            resumeNextCell();
           }
+        }
+
+        function scanForwardForNav(fromSector: number): number | null {
+          var limit = Math.min(
+            lastSector,
+            fromSector + NAV_SCAN_FORWARD,
+          );
+          for (var s = fromSector + 1; s < limit; s++) {
+            if (visited.has(s)) {
+              continue;
+            }
+            try {
+              p.seek(s * DVD_VIDEO_LB_LEN);
+              var packs = decodePacket(p);
+              if (packs.pci && packs.dsi) {
+                return s;
+              }
+            } catch (e) {
+              // keep scanning
+            }
+          }
+          return null;
+        }
+
+        function resumeNextCell() {
+          while (resumeQueue.length) {
+            var start = resumeQueue.shift();
+            if (
+              start == null ||
+              start < 0 ||
+              start >= lastSector ||
+              visited.has(start)
+            ) {
+              continue;
+            }
+            setTimeout(function () {
+              extractFromSector(start);
+            }, 0);
+            return;
+          }
+          advanceFile();
         }
       });
     }
@@ -171,7 +252,7 @@ function extractNav(dvdPath: string, callback) {
     function advanceFile() {
       pointer++;
       if (pointer < vobFiles.length) {
-        setTimeout(function() {
+        setTimeout(function () {
           next(vobFiles[pointer]);
         }, 0);
       } else {
@@ -179,6 +260,39 @@ function extractNav(dvdPath: string, callback) {
       }
     }
   });
+
+  /**
+   * Cell start sectors from converted IFO JSON (menu_c_adt), sorted.
+   */
+  function loadMenuCellStarts(webDir: string, vobName: string): number[] {
+    var basename = vobName.replace(/\.VOB$/i, '');
+    var ifoJsonPath = path.join(webDir, basename + '.json');
+    try {
+      if (!fs.existsSync(ifoJsonPath)) {
+        return [];
+      }
+      var ifo = loadJsonFile(ifoJsonPath);
+      var table = ifo && ifo.menu_c_adt && ifo.menu_c_adt.cell_adr_table;
+      if (!Array.isArray(table)) {
+        return [];
+      }
+      var starts: number[] = [];
+      var seen = new Set<number>();
+      for (var i = 0; i < table.length; i++) {
+        var s = table[i] && table[i].start_sector;
+        if (typeof s === 'number' && s >= 0 && !seen.has(s)) {
+          seen.add(s);
+          starts.push(s);
+        }
+      }
+      starts.sort(function (a, b) {
+        return a - b;
+      });
+      return starts;
+    } catch (e) {
+      return [];
+    }
+  }
 
   /**
    * Return the file path for the web given a file.
