@@ -1,4 +1,5 @@
 import {
+  For,
   createEffect,
   createResource,
   createSignal,
@@ -8,14 +9,25 @@ import {
 } from 'solid-js';
 import { useParams } from '@solidjs/router';
 import { DvdDisc } from './DvdDisc.js';
+import { VirtualRemote } from './VirtualRemote.js';
 import { AUTOPLAY_BLOCKED_EVENT, pageHasUserGesture, unlockDvdAudio } from '../host/autoplay.js';
 import { loadVm, startVm } from '../vm/loadVm.js';
 import type { DiscMetadata } from '../types/metadata.js';
+import {
+  currentOrDefaultMenuLang,
+  listDiscMenuLanguages,
+  menuLangLabel,
+  normalizeMenuLangCode,
+  packMenuLangSprm,
+  setDiscMenuLanguage,
+  setStoredMenuLang,
+} from '../host/menuLanguage.js';
 
 type PlayerHost = HTMLElement & {
   setDebugHitboxes?: (enabled: boolean) => void;
   skipToEnd?: () => boolean;
   goToMainMenu?: () => boolean;
+  setMenuLanguage?: (lang: string) => boolean;
 };
 
 type EnsureStatus = 'ready' | 'decompressing' | 'missing';
@@ -85,7 +97,12 @@ export const PlayDisc: Component = () => {
   // Hard refresh: no gesture yet → Start overlay. Catalogue click: skip overlay.
   const [needsStart, setNeedsStart] = createSignal(!pageHasUserGesture());
   const [debugHitboxes, setDebugHitboxes] = createSignal(false);
+  const [showRemote, setShowRemote] = createSignal(
+    typeof localStorage !== 'undefined' &&
+      localStorage.getItem('dvdjs-virtual-remote') === '1',
+  );
   const [isFullscreen, setIsFullscreen] = createSignal(false);
+  const [menuLang, setMenuLang] = createSignal('en');
 
   createEffect(() => {
     const id = params.dvdId;
@@ -143,6 +160,14 @@ export const PlayDisc: Component = () => {
   });
 
   createEffect(() => {
+    const meta = metadata();
+    if (!meta) return;
+    // Re-resolve when VM becomes ready so g.lang wins after init.
+    void vmReady();
+    setMenuLang(currentOrDefaultMenuLang(meta));
+  });
+
+  createEffect(() => {
     const stage = stageEl();
     if (!stage) {
       return;
@@ -178,6 +203,35 @@ export const PlayDisc: Component = () => {
     unlockDvdAudio(host);
     setNeedsStart(false);
     startVm(host);
+  };
+
+  const menuLanguages = () => {
+    const meta = metadata();
+    return meta ? listDiscMenuLanguages(meta) : [];
+  };
+
+  const onLanguageChange = (lang: string) => {
+    const host = hostEl();
+    const code = normalizeMenuLangCode(lang.trim().toLowerCase());
+    if (!code) return;
+    setMenuLang(code);
+    setStoredMenuLang(code);
+    const g = window as any;
+    if (g && typeof g === 'object') {
+      g.lang = code;
+      if (g.sprm && typeof g.sprm === 'object') {
+        g.sprm.MENU_LANG = packMenuLangSprm(code);
+      }
+    }
+    // Before Start, only seed preference/lang — do not jump into menus.
+    if (!host || !vmReady() || needsStart()) {
+      return;
+    }
+    if (typeof host.setMenuLanguage === 'function') {
+      host.setMenuLanguage(code);
+    } else {
+      setDiscMenuLanguage(host, code);
+    }
   };
 
   return (
@@ -220,16 +274,56 @@ export const PlayDisc: Component = () => {
           </p>
         </div>
       </Show>
+      <Show when={metadata() && showRemote()}>
+        <VirtualRemote host={hostEl()} />
+      </Show>
       <Show when={metadata()}>
         <div class="player-toolbar">
-          <label class="player-toolbar__debug">
-            <input
-              type="checkbox"
-              checked={debugHitboxes()}
-              onChange={(e) => setDebugHitboxes(e.currentTarget.checked)}
-            />
-            Debug button hitboxes
-          </label>
+          <div class="player-toolbar__toggles">
+            <label class="player-toolbar__debug">
+              <input
+                type="checkbox"
+                checked={debugHitboxes()}
+                onChange={(e) => setDebugHitboxes(e.currentTarget.checked)}
+              />
+              Debug button hitboxes
+            </label>
+            <Show when={menuLanguages().length > 1}>
+              <label class="player-toolbar__lang">
+                <span class="player-toolbar__lang-label">Menu language</span>
+                <select
+                  class="player-toolbar__lang-select"
+                  value={menuLang()}
+                  onChange={(e) => onLanguageChange(e.currentTarget.value)}
+                >
+                  <For each={menuLanguages()}>
+                    {(lang) => (
+                      <option value={lang}>{menuLangLabel(lang)}</option>
+                    )}
+                  </For>
+                </select>
+              </label>
+            </Show>
+            <label class="player-toolbar__debug">
+              <input
+                type="checkbox"
+                checked={showRemote()}
+                onChange={(e) => {
+                  const on = e.currentTarget.checked;
+                  setShowRemote(on);
+                  try {
+                    localStorage.setItem(
+                      'dvdjs-virtual-remote',
+                      on ? '1' : '0',
+                    );
+                  } catch {
+                    /* private mode / quota */
+                  }
+                }}
+              />
+              Virtual remote
+            </label>
+          </div>
           <div class="player-toolbar__actions">
             <button
               type="button"

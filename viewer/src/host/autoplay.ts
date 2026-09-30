@@ -29,6 +29,81 @@ export function unlockDvdAudio(host: AutoplayHost) {
   host._dvdjsAudioUnlocked = true;
 }
 
+/** Linear volume ramp after forcing silence on clip start / unmute. */
+export const AUDIO_FADE_IN_MS = 50;
+
+const audioFadeTimers = new WeakMap<
+  HTMLMediaElement,
+  ReturnType<typeof setTimeout>
+>();
+const preferredVolume = new WeakMap<HTMLMediaElement, number>();
+
+function targetVolumeFor(video: HTMLMediaElement): number {
+  const remembered = preferredVolume.get(video);
+  if (remembered != null && remembered > 0.05) {
+    return remembered;
+  }
+  if (Number.isFinite(video.volume) && video.volume > 0.05) {
+    return video.volume;
+  }
+  return 1;
+}
+
+function rememberPreferredVolume(video: HTMLMediaElement): void {
+  if (Number.isFinite(video.volume) && video.volume > 0.05) {
+    preferredVolume.set(video, video.volume);
+  }
+}
+
+/** Stop an in-flight volume ramp (mute / seek cover / new clip). */
+export function cancelVideoAudioFade(video: HTMLMediaElement): void {
+  const timer = audioFadeTimers.get(video);
+  if (timer != null) {
+    clearTimeout(timer);
+    audioFadeTimers.delete(video);
+  }
+}
+
+/** Hard-silence a clip (seek cover, segment end). Volume + muted. */
+export function silenceVideoAudio(video: HTMLMediaElement): void {
+  cancelVideoAudioFade(video);
+  rememberPreferredVolume(video);
+  video.volume = 0;
+  video.muted = true;
+}
+
+/**
+ * Force volume to 0, unmute, then ramp linearly to full over ~50ms.
+ */
+export function fadeInVideoAudio(
+  video: HTMLMediaElement,
+  durationMs: number = AUDIO_FADE_IN_MS,
+): void {
+  cancelVideoAudioFade(video);
+  const target = targetVolumeFor(video);
+  preferredVolume.set(video, target);
+  video.volume = 0;
+  video.muted = false;
+  if (!(durationMs > 0)) {
+    video.volume = target;
+    return;
+  }
+  const start = performance.now();
+  const stepMs = 10;
+  const tick = () => {
+    const t = Math.min(1, (performance.now() - start) / durationMs);
+    video.volume = target * t;
+    if (t < 1) {
+      audioFadeTimers.set(video, setTimeout(tick, stepMs));
+    } else {
+      audioFadeTimers.delete(video);
+      video.volume = target;
+    }
+  };
+  // Start the ramp on the next timer tick so volume=0 is committed first.
+  audioFadeTimers.set(video, setTimeout(tick, stepMs));
+}
+
 /**
  * Try unmuted play; on rejection try muted play and unmute if unlocked.
  * @returns whether playback started
@@ -36,20 +111,36 @@ export function unlockDvdAudio(host: AutoplayHost) {
 export async function playWithAutoplayFallback(
   video: HTMLVideoElement,
   host: AutoplayHost,
+  opts: { startMuted?: boolean } = {},
 ): Promise<boolean> {
-  try {
-    video.muted = false;
-    await video.play();
-    return true;
-  } catch {
-    // fall through
+  if (opts.startMuted) {
+    // Menu seek cover: play under an opaque hold without leaking audio.
+    try {
+      silenceVideoAudio(video);
+      await video.play();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   try {
-    video.muted = true;
+    cancelVideoAudioFade(video);
+    rememberPreferredVolume(video);
+    video.volume = 0;
+    video.muted = false;
+    await video.play();
+    fadeInVideoAudio(video);
+    return true;
+  } catch {
+    video.volume = targetVolumeFor(video);
+  }
+
+  try {
+    silenceVideoAudio(video);
     await video.play();
     if (host._dvdjsAudioUnlocked) {
-      video.muted = false;
+      fadeInVideoAudio(video);
     }
     return true;
   } catch {

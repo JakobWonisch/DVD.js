@@ -14,6 +14,11 @@ export type MenuButtonNav = {
   left?: number;
   right?: number;
   auto_action_mode?: number;
+  /**
+   * Hitbox geometry CSS decls (`left/top/width/height` %). Applied inline so
+   * mouse targets work even when menu-*.css attribute selectors miss.
+   */
+  css?: string;
 };
 
 export type MenuCellMeta = {
@@ -40,6 +45,8 @@ export type MenuCellMap = Record<string, Record<string, MenuCellMeta>>;
 
 export type MenuPgcEntry = {
   pgc: number;
+  /** Full PGCI entry_id; menu type is entry & 0x0f (2=Title, 3=Root). */
+  entry?: number;
   cellID?: number;
   vobID?: number;
   still_time?: number;
@@ -51,10 +58,18 @@ export type DomainMetadata = {
   menuCell?: MenuCellMap;
   /** Menu VOB WebMs */
   index?: string[];
-  /** Title VOB WebMs (absent on menus-only rips) */
+  /** Title VOB WebMs (absent or partial on menus-mode rips) */
   video?: string[];
   vtt?: string[];
   extractMode?: 'menus' | 'full';
+  /**
+   * When present, only these title PGCs were encoded as short-cell segments
+   * (menus mode). JumpTT to other PGCs in the domain shows “not included”.
+   */
+  titlePgcMedia?: {
+    includedPgcs: number[];
+    pgcTimeline: Record<string, { startSec: number; endSec: number }>;
+  };
 };
 
 export type DiscMetadata = DomainMetadata[];

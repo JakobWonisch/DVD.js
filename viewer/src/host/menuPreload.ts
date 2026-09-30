@@ -1,6 +1,11 @@
+import { fadeInVideoAudio, silenceVideoAudio } from './autoplay.js';
+
 /**
  * Warm menu stills / WebMs so motion→still handoffs do not flash black or
  * frame 0 while the next PNG is still fetching.
+ *
+ * Principle: keep the last painted frame until the next asset has real pixels
+ * (or the WebM is inside its segment). Never pretend a timed-out load is ready.
  */
 
 export type MenuCellRef = {
@@ -41,6 +46,12 @@ export function menuStillUrl(
   return `${baseDir}menu-${domain}-${cellID}-${vobID}.png`;
 }
 
+export function imageHasPixels(
+  img: HTMLImageElement | null | undefined,
+): boolean {
+  return !!(img && img.complete && img.naturalWidth > 0);
+}
+
 /** Fire-and-forget image warm into the browser cache. */
 export function preloadImageUrl(url: string): Promise<void> {
   if (!url || typeof Image === 'undefined') {
@@ -57,34 +68,90 @@ export function preloadImageUrl(url: string): Promise<void> {
   });
 }
 
+export type WhenImageReadyOpts = {
+  /** Cap how long we wait; on timeout resolve false unless pixels already exist. */
+  timeoutMs?: number;
+  /** Ignore load events for a different src (stale cell). */
+  expectedSrc?: string | null;
+};
+
 /**
- * Resolve when an <img> has pixels (or fails / times out). Used to keep the
- * menu WebM painted until the replacement still is ready.
+ * Resolve when an <img> has decoded pixels for the expected src.
+ * Returns true only when pixels are present — never treats a blind timeout as ready.
  */
 export function whenImageReady(
   img: HTMLImageElement | null | undefined,
-  timeoutMs = 400,
-): Promise<void> {
-  if (!img || !img.getAttribute('src')) {
-    return Promise.resolve();
+  timeoutOrOpts: number | WhenImageReadyOpts = 30_000,
+): Promise<boolean> {
+  const opts: WhenImageReadyOpts =
+    typeof timeoutOrOpts === 'number'
+      ? { timeoutMs: timeoutOrOpts }
+      : timeoutOrOpts || {};
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+  const expectedSrc = opts.expectedSrc;
+
+  if (!img) {
+    return Promise.resolve(false);
   }
-  if (img.complete && img.naturalWidth > 0) {
-    return Promise.resolve();
+  const srcAttr = img.getAttribute('src');
+  if (!srcAttr) {
+    return Promise.resolve(false);
   }
+  if (expectedSrc != null && srcAttr !== expectedSrc) {
+    return Promise.resolve(false);
+  }
+  if (imageHasPixels(img)) {
+    return Promise.resolve(true);
+  }
+  // Already failed (complete, no pixels) — do not wait/retry.
+  if (img.complete) {
+    return Promise.resolve(false);
+  }
+
   return new Promise((resolve) => {
     let done = false;
-    const finish = () => {
+    const finish = (ok: boolean) => {
       if (done) {
         return;
       }
       done = true;
-      img.removeEventListener('load', finish);
-      img.removeEventListener('error', finish);
-      resolve();
+      img.removeEventListener('load', onLoad);
+      img.removeEventListener('error', onError);
+      resolve(ok);
     };
-    img.addEventListener('load', finish);
-    img.addEventListener('error', finish);
-    setTimeout(finish, timeoutMs);
+    const matchesExpected = () => {
+      const src = img.getAttribute('src');
+      if (!src) {
+        return false;
+      }
+      if (expectedSrc != null && src !== expectedSrc) {
+        return false;
+      }
+      return true;
+    };
+    const onLoad = () => {
+      if (!matchesExpected()) {
+        finish(false);
+        return;
+      }
+      finish(imageHasPixels(img));
+    };
+    const onError = () => {
+      // Failed decode — caller must keep the previous cover.
+      finish(false);
+    };
+    img.addEventListener('load', onLoad);
+    img.addEventListener('error', onError);
+    setTimeout(() => {
+      if (done) {
+        return;
+      }
+      if (matchesExpected() && imageHasPixels(img)) {
+        finish(true);
+        return;
+      }
+      finish(false);
+    }, timeoutMs);
   });
 }
 
@@ -172,14 +239,17 @@ export function preloadLinkedMenuAssets(
  * Menu WebMs only guarantee keyframes at cell starts. Seeking to `end - ε`
  * often snaps back to the wipe's first frame — the flash users see at the end
  * of transitions. If the browser already reset to 0 via `ended`, hide the
- * element instead of reseeking.
+ * element instead of reseeking (caller should keep a still cover painted).
+ *
+ * @returns true when the end frame was lost and video opacity was cleared.
  */
 export function freezeMenuVideoAtEnd(
   menuVideo: HTMLVideoElement,
   start: number,
   end: number,
-): void {
+): boolean {
   menuVideo.loop = false;
+  silenceVideoAudio(menuVideo);
   try {
     menuVideo.pause();
   } catch {
@@ -190,31 +260,72 @@ export function freezeMenuVideoAtEnd(
     menuVideo.ended ||
     !Number.isFinite(t) ||
     t < start + 0.05 ||
-    t < end - 1.5;
+    t < end - 1.5 ||
+    t >= end; // already into the next concat cell
   if (lostEndFrame) {
     menuVideo.style.opacity = '0';
+    return true;
   }
+  return false;
 }
 
-/** Hide the menu WebM while seeking so sparse-keyframe snaps stay invisible. */
+/** Hide the menu WebM while seeking so sparse-keyframe snaps stay invisible.
+ * Also mute while covered — play() during seek must not leak the next cell's audio.
+ */
 export function setMenuVideoSeekCover(
   menuVideo: HTMLVideoElement,
   covering: boolean,
+  opts: { unmute?: boolean } = {},
 ): void {
   menuVideo.style.opacity = covering ? '0' : '';
+  if (covering) {
+    silenceVideoAudio(menuVideo);
+  } else if (opts.unmute !== false) {
+    // Soften cell-boundary / seek-unmute clicks on concat menu WebMs.
+    fadeInVideoAudio(menuVideo);
+  }
 }
 
-/** Prefer the outgoing cell's still (dataset) over a stale cover src on the img. */
+/**
+ * Finish motion slightly before EOF so we pause on a decoded frame, but never
+ * before the segment has meaningfully started (short cells used to finish
+ * immediately when `end - 0.15 <= start`).
+ *
+ * Long cells finish ~250ms early so sparse `timeupdate` / decoder lag cannot
+ * overrun into the next concat cell (audio/frame bleed at wipe end).
+ */
+export function motionSegmentFinishAt(start: number, end: number): number {
+  const duration = end - start;
+  if (!(duration > 0) || !Number.isFinite(duration)) {
+    return end;
+  }
+  const early = Math.min(0.25, Math.max(0, duration * 0.25));
+  const minPlay = Math.min(0.02, duration / 2);
+  return Math.max(start + minPlay, end - early);
+}
+
+/**
+ * Prefer the still that is actually decoded on the outgoing menu (including an
+ * opacity:0 seek cover left from the previous segment). Falling back to the
+ * dataset cell URL would flash a transition cell's mid-wipe PNG on loops.
+ */
 export function stillCoverUrlFromMenu(
   menu: HTMLElement | null | undefined,
+  lastPaintedStillSrc?: string | null,
 ): string | null {
   if (!menu) {
-    return null;
+    return lastPaintedStillSrc || null;
   }
   const still = menu.querySelector(
     'img.menu-still',
   ) as HTMLImageElement | null;
   const fromImg = still?.getAttribute('src') || null;
+  if (imageHasPixels(still) && fromImg) {
+    return fromImg;
+  }
+  if (lastPaintedStillSrc) {
+    return lastPaintedStillSrc;
+  }
   const domain = menu.dataset.domain;
   const cell = menu.dataset.cell;
   const vob = menu.dataset.vob;

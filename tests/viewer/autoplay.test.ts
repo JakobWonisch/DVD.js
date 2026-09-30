@@ -1,9 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
+  AUDIO_FADE_IN_MS,
   AUTOPLAY_BLOCKED_EVENT,
+  cancelVideoAudioFade,
+  fadeInVideoAudio,
   notifyAutoplayBlocked,
   pageHasUserGesture,
   playWithAutoplayFallback,
+  silenceVideoAudio,
   unlockDvdAudio,
   type AutoplayHost,
 } from '../../viewer/src/host/autoplay.js';
@@ -59,11 +63,13 @@ describe('autoplay helpers', () => {
     const host = fakeHost();
     const video = {
       muted: true,
+      volume: 1,
       play: vi.fn(async () => undefined),
     } as unknown as HTMLVideoElement;
     const ok = await playWithAutoplayFallback(video, host);
     expect(ok).toBe(true);
     expect(video.muted).toBe(false);
+    expect(video.volume).toBe(0);
     expect(video.play).toHaveBeenCalledOnce();
   });
 
@@ -73,6 +79,7 @@ describe('autoplay helpers', () => {
     let calls = 0;
     const video = {
       muted: false,
+      volume: 1,
       play: vi.fn(async () => {
         calls += 1;
         if (calls === 1) {
@@ -90,11 +97,74 @@ describe('autoplay helpers', () => {
     const host = fakeHost();
     const video = {
       muted: false,
+      volume: 1,
       play: vi.fn(async () => {
         throw new DOMException('blocked', 'NotAllowedError');
       }),
     } as unknown as HTMLVideoElement;
     const ok = await playWithAutoplayFallback(video, host);
     expect(ok).toBe(false);
+  });
+
+  it('silenceVideoAudio zeros volume and mutes', () => {
+    const video = {
+      muted: false,
+      volume: 0.8,
+    } as unknown as HTMLVideoElement;
+    silenceVideoAudio(video);
+    expect(video.muted).toBe(true);
+    expect(video.volume).toBe(0);
+  });
+});
+
+describe('fadeInVideoAudio', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it(`forces volume 0 then ramps to 1 over ${AUDIO_FADE_IN_MS}ms`, () => {
+    const video = {
+      muted: true,
+      volume: 1,
+    } as unknown as HTMLVideoElement;
+
+    fadeInVideoAudio(video);
+    expect(video.muted).toBe(false);
+    expect(video.volume).toBe(0);
+
+    vi.advanceTimersByTime(30);
+    expect(video.volume).toBeGreaterThan(0.4);
+    expect(video.volume).toBeLessThan(0.7);
+
+    vi.advanceTimersByTime(AUDIO_FADE_IN_MS);
+    expect(video.volume).toBe(1);
+  });
+
+  it('cancelVideoAudioFade stops an in-flight ramp', () => {
+    const video = {
+      muted: true,
+      volume: 1,
+    } as unknown as HTMLVideoElement;
+
+    fadeInVideoAudio(video);
+    vi.advanceTimersByTime(AUDIO_FADE_IN_MS / 2);
+    const mid = video.volume;
+    cancelVideoAudioFade(video);
+    vi.advanceTimersByTime(AUDIO_FADE_IN_MS);
+    expect(video.volume).toBe(mid);
+  });
+
+  it('restores preferred volume after silenceVideoAudio', () => {
+    const video = {
+      muted: false,
+      volume: 0.7,
+    } as unknown as HTMLVideoElement;
+    silenceVideoAudio(video);
+    fadeInVideoAudio(video);
+    vi.advanceTimersByTime(AUDIO_FADE_IN_MS + 20);
+    expect(video.volume).toBeCloseTo(0.7, 5);
   });
 });

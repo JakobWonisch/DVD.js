@@ -267,12 +267,153 @@ footer {
   border-top: 1px solid #e5e5e5;
 }
 
+.player-toolbar__toggles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+}
+
 .player-toolbar__debug {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   cursor: pointer;
   user-select: none;
+}
+
+.player-toolbar__lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.player-toolbar__lang-label {
+  white-space: nowrap;
+}
+
+.player-toolbar__lang-select {
+  appearance: none;
+  border: 1px solid #ccc;
+  background: #f7f7f7;
+  color: #333;
+  border-radius: 4px;
+  padding: 0.25rem 0.55rem;
+  font: inherit;
+  cursor: pointer;
+  max-width: 12rem;
+}
+
+.player-toolbar__lang-select:hover {
+  background: #eee;
+}
+
+.player-stage:fullscreen .player-toolbar__lang-select {
+  border-color: #666;
+  background: #2a2a2a;
+  color: #eee;
+}
+
+.player-stage:fullscreen .player-toolbar__lang-select:hover {
+  background: #3a3a3a;
+}
+
+/*
+ * Emulator-style touch D-pad: bottom-center over the stage, semi-transparent.
+ * Available on all viewports when the toolbar checkbox is on (not mobile-only).
+ */
+.virtual-remote {
+  position: absolute;
+  left: 50%;
+  bottom: 4.75rem;
+  transform: translateX(-50%);
+  z-index: 35;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.player-stage:fullscreen .virtual-remote {
+  bottom: 3.75rem;
+}
+
+.virtual-remote__pad {
+  display: grid;
+  grid-template-columns: repeat(3, 3.1rem);
+  grid-template-rows: repeat(3, 3.1rem);
+  gap: 0.2rem;
+  padding: 0.45rem;
+  border-radius: 1.35rem;
+  background: rgba(20, 20, 24, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(2px);
+  pointer-events: auto;
+}
+
+.virtual-remote__btn {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.virtual-remote__btn:active {
+  background: rgba(255, 255, 255, 0.38);
+  color: #fff;
+}
+
+.virtual-remote__btn--up {
+  grid-column: 2;
+  grid-row: 1;
+  border-radius: 0.55rem 0.55rem 0.35rem 0.35rem;
+}
+
+.virtual-remote__btn--left {
+  grid-column: 1;
+  grid-row: 2;
+  border-radius: 0.55rem 0.35rem 0.35rem 0.55rem;
+}
+
+.virtual-remote__btn--enter {
+  grid-column: 2;
+  grid-row: 2;
+  border-radius: 50%;
+  background: rgba(255, 204, 0, 0.28);
+  border-color: rgba(255, 204, 0, 0.55);
+  color: #ffe082;
+  font-size: 1.05rem;
+}
+
+.virtual-remote__btn--enter:active {
+  background: rgba(255, 204, 0, 0.5);
+  color: #fff8e1;
+}
+
+.virtual-remote__btn--right {
+  grid-column: 3;
+  grid-row: 2;
+  border-radius: 0.35rem 0.55rem 0.55rem 0.35rem;
+}
+
+.virtual-remote__btn--down {
+  grid-column: 2;
+  grid-row: 3;
+  border-radius: 0.35rem 0.35rem 0.55rem 0.55rem;
 }
 
 .player-toolbar__actions {
@@ -543,6 +684,25 @@ input[type='button'].btn.btn-spu.selected {
 
 .dvdjs-menu-video {
   pointer-events: none;
+}
+
+/*
+ * Last-frame hold while the menu WebM seeks or the next still loads.
+ * z-index 0 with video: later in DOM so it covers the WebM; menu stills (z-index 1)
+ * and buttons sit above. Never leave the stage without a painted layer.
+ */
+x-video > canvas.dvdjs-menu-hold {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+x-video > canvas.dvdjs-menu-hold[hidden] {
+  display: none !important;
 }
 
 x-video > video {

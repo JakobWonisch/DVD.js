@@ -38,6 +38,7 @@ const MenuButtons: Component<{
           data-left={nav().left}
           data-right={nav().right}
           data-auto-action={nav().auto_action_mode || undefined}
+          style={nav().css || undefined}
         />
       );
     }}
@@ -175,7 +176,15 @@ const DomainVideos: Component<{ domain: DomainMetadata; id: number }> = (
         />
       </Show>
       <Show when={titleSrc()}>
-        <video id={`video-${props.id}`} src={titleSrc()}>
+        <video
+          id={`video-${props.id}`}
+          src={titleSrc()}
+          attr:data-title-pgc-media={
+            props.domain.titlePgcMedia
+              ? JSON.stringify(props.domain.titlePgcMedia)
+              : undefined
+          }
+        >
           <For each={tracks()}>
             {(track, index) => (
               <track

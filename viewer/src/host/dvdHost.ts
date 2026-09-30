@@ -4,12 +4,15 @@ import {
   clearUserButtonNav,
   hideTitleUnavailableOverlay,
   restoreMenuResumeState,
+  afterLanguageCopyrightPost,
+  menuCellPrefersStillOnly,
   scheduleMenuPostAfterStill,
   shouldHoldAfterMenuMotion,
   showTitleUnavailableOverlay,
   tryAutoSkipMissingTitle,
 } from './titleUnavailable.js';
 import {
+  silenceVideoAudio,
   notifyAutoplayBlocked,
   playWithAutoplayFallback,
   type AutoplayHost,
@@ -19,14 +22,29 @@ import {
   bindMenuKeys,
 } from './menuKeys.js';
 import { goToMainMenu as jumpToMainMenu } from './goToMainMenu.js';
+import { setDiscMenuLanguage } from './menuLanguage.js';
 import {
   freezeMenuVideoAtEnd,
+  imageHasPixels,
+  motionSegmentFinishAt,
+  preloadImageUrl,
   preloadLinkedMenuAssets,
   setMenuVideoSeekCover,
   stillCoverUrlFromMenu,
   whenImageReady,
 } from './menuPreload.js';
+import {
+  captureMenuHoldFrame,
+  captureMenuHoldFromStage,
+  hideMenuHoldFrame,
+  menuHoldFrameVisible,
+  showMenuHoldFrame,
+} from './menuHoldFrame.js';
 import { skipPlaybackToEnd } from './skipToEnd.js';
+import {
+  applyMenuButtonGeometry,
+  stampHitboxStylesFromStylesheet,
+} from './menuButtonHitboxes.js';
 
 export type MenuCellPlayOpts = {
   menuId?: string;
@@ -43,10 +61,17 @@ export type MenuCellPlayOpts = {
     left?: number;
     right?: number;
     auto_action_mode?: number;
+    /** Hitbox geometry CSS decls from convert (`left/top/width/height`). */
+    css?: string;
   }>;
   spuSelect?: string[];
   spuActivate?: string[];
   onPost?: () => void;
+};
+
+type TitlePgcMedia = {
+  includedPgcs?: number[];
+  pgcTimeline?: Record<string, { startSec: number; endSec: number }>;
 };
 
 type PlaylistEntry = {
@@ -54,6 +79,7 @@ type PlaylistEntry = {
   video: HTMLVideoElement;
   src: string;
   chapterCues: TextTrackCue[];
+  titlePgcMedia: TitlePgcMedia | null;
 };
 
 export type XVideoElement = HTMLElement & {
@@ -71,12 +97,15 @@ export type XVideoElement = HTMLElement & {
   skipToEnd: () => boolean;
   /** Escape stuck menus via title/root onmenu (M / toolbar). */
   goToMainMenu: () => boolean;
+  /** Switch menu language unit and jump to main menu. */
+  setMenuLanguage: (lang: string) => boolean;
   /**
-   * Pre-check before JumpTT / JumpVTS_* — if the title WebM is missing and the
-   * jump came from a menu button, show the dialog without leaving the menu.
+   * Pre-check before JumpTT / JumpVTS_* — if the title WebM is missing (or this
+   * PGC was not included in a short-cell menus rip) and the jump came from a
+   * menu button, show the dialog without leaving the menu.
    * @returns false when the jump must be aborted.
    */
-  guardTitleJump: (elementID: string) => boolean;
+  guardTitleJump: (elementID: string, pgc?: number) => boolean;
   /** Latch button nav + snapshot menu/VM for missing-title restore. */
   beginUserButtonNav: () => void;
   setMenuHighlight: (menu: Element | null, buttonIndex: number) => void;
@@ -148,7 +177,10 @@ function showTitleUnavailable(host: XVideoElement, message?: string) {
   }
 }
 
-function isTitleMediaMissing(entry: PlaylistEntry | undefined) {
+function isTitleMediaMissing(
+  entry: PlaylistEntry | undefined,
+  pgc?: number,
+) {
   if (!entry) {
     return true;
   }
@@ -157,7 +189,36 @@ function isTitleMediaMissing(entry: PlaylistEntry | undefined) {
     entry.video.currentSrc ||
     entry.video.getAttribute('src') ||
     '';
-  return !src;
+  if (!src) {
+    return true;
+  }
+  const media = entry.titlePgcMedia;
+  if (
+    media &&
+    Array.isArray(media.includedPgcs) &&
+    media.includedPgcs.length > 0 &&
+    pgc != null &&
+    Number.isFinite(pgc)
+  ) {
+    return media.includedPgcs.indexOf(Number(pgc)) < 0;
+  }
+  return false;
+}
+
+function parseTitlePgcMediaAttr(video: HTMLVideoElement): TitlePgcMedia | null {
+  const raw = video.getAttribute('data-title-pgc-media');
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as TitlePgcMedia;
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 function clearDvdjsTimers(host: any) {
@@ -173,6 +234,129 @@ function clearDvdjsTimers(host: any) {
     clearTimeout(host._dvdjsMotionWatchdog);
     host._dvdjsMotionWatchdog = null;
   }
+  if (host._dvdjsRevealRetryTimer) {
+    clearTimeout(host._dvdjsRevealRetryTimer);
+    host._dvdjsRevealRetryTimer = null;
+  }
+  if (host._dvdjsMotionRaf) {
+    cancelAnimationFrame(host._dvdjsMotionRaf);
+    host._dvdjsMotionRaf = null;
+  }
+}
+
+/** Drop in-flight seek/meta/finish handlers without running onPost. Keep pixels. */
+function cancelActiveMenuMotion(host: any) {
+  clearDvdjsTimers(host);
+  const video = (host._dvdjsMenuMotionVideo || null) as HTMLVideoElement | null;
+  if (video) {
+    if (host._dvdjsMenuSeeked) {
+      video.removeEventListener('seeked', host._dvdjsMenuSeeked);
+      host._dvdjsMenuSeeked = null;
+    }
+    if (host._dvdjsMenuLoadedMeta) {
+      video.removeEventListener('loadedmetadata', host._dvdjsMenuLoadedMeta);
+      host._dvdjsMenuLoadedMeta = null;
+    }
+    if (host._dvdjsMenuTimeUpdate) {
+      video.removeEventListener('timeupdate', host._dvdjsMenuTimeUpdate);
+      host._dvdjsMenuTimeUpdate = null;
+    }
+    if (host._dvdjsMenuEnded) {
+      video.removeEventListener('ended', host._dvdjsMenuEnded);
+      host._dvdjsMenuEnded = null;
+    }
+    if (host._dvdjsMenuRevealTimeUpdate) {
+      video.removeEventListener('timeupdate', host._dvdjsMenuRevealTimeUpdate);
+      host._dvdjsMenuRevealTimeUpdate = null;
+    }
+  } else {
+    host._dvdjsMenuSeeked = null;
+    host._dvdjsMenuLoadedMeta = null;
+    host._dvdjsMenuTimeUpdate = null;
+    host._dvdjsMenuEnded = null;
+    host._dvdjsMenuRevealTimeUpdate = null;
+  }
+  host._dvdjsFinishMenuSegment = null;
+  host._dvdjsMenuSegmentEnd = null;
+  host._dvdjsMenuMotionVideo = null;
+}
+
+function bumpMenuPlayGen(host: any): number {
+  host._dvdjsMenuPlayGen = (host._dvdjsMenuPlayGen || 0) + 1;
+  return host._dvdjsMenuPlayGen as number;
+}
+
+function notePaintedStill(host: any, img: HTMLImageElement | null | undefined) {
+  if (imageHasPixels(img)) {
+    const src = img!.getAttribute('src');
+    if (src) {
+      host._dvdjsLastPaintedStillSrc = src;
+    }
+  }
+}
+
+/** True when the menu WebM is painted (usable as a hold-frame cover). */
+function menuVideoShowsFrame(
+  menuVideo: HTMLVideoElement | null | undefined,
+): boolean {
+  if (!menuVideo || menuVideo.hidden) {
+    return false;
+  }
+  if (menuVideo.style.opacity === '0') {
+    return false;
+  }
+  // HAVE_CURRENT_DATA or better — a decoded frame is available to paint.
+  return menuVideo.readyState >= 2;
+}
+
+/** Hide every menu WebM except the active one once the new layer covers it. */
+function hideOtherMenuVideos(
+  host: ParentNode,
+  active: HTMLVideoElement | null,
+) {
+  host.querySelectorAll('video.dvdjs-menu-video').forEach((node) => {
+    const video = node as HTMLVideoElement;
+    if (video === active) {
+      return;
+    }
+    try {
+      video.pause();
+    } catch {
+      // ignore
+    }
+    video.hidden = true;
+    video.style.cssText = '';
+    video.style.opacity = '';
+  });
+}
+
+/**
+ * Paint a still as seek/black cover. Only call when the menu video is NOT
+ * showing a usable frame — otherwise the previous cell's cached PNG flashes
+ * on top of a good freeze/transition end frame.
+ */
+function ensureStillCoverVisible(
+  menu: Element | null,
+  coverSrc: string | null,
+  host: any,
+) {
+  if (!menu || !coverSrc) {
+    return;
+  }
+  let still = menu.querySelector('img.menu-still') as HTMLImageElement | null;
+  if (!still) {
+    still = document.createElement('img');
+    still.className = 'menu-still';
+    still.alt = '';
+    menu.insertBefore(still, menu.firstChild);
+  }
+  // Only swap src when needed — keep decoded pixels during same-URL loops.
+  if (still.getAttribute('src') !== coverSrc) {
+    still.setAttribute('src', coverSrc);
+  }
+  still.style.display = '';
+  still.style.opacity = '';
+  notePaintedStill(host, still);
 }
 
 function resetMenuMotion(
@@ -184,6 +368,10 @@ function resetMenuMotion(
     if (host._dvdjsMenuTimeUpdate) {
       menuVideo.removeEventListener('timeupdate', host._dvdjsMenuTimeUpdate);
       host._dvdjsMenuTimeUpdate = null;
+    }
+    if (host._dvdjsMenuEnded) {
+      menuVideo.removeEventListener('ended', host._dvdjsMenuEnded);
+      host._dvdjsMenuEnded = null;
     }
     host._dvdjsMenuSegmentEnd = null;
     host._dvdjsFinishMenuSegment = null;
@@ -203,6 +391,33 @@ function resetMenuMotion(
   }
 }
 
+/** Hide WebM only after hold or still covers the stage. */
+function hideMenuVideoUnderCover(
+  host: HTMLElement,
+  menuVideo: HTMLVideoElement | null,
+  menu: Element | null,
+) {
+  const still = menu?.querySelector('img.menu-still') as HTMLImageElement | null;
+  const covered =
+    menuHoldFrameVisible(host) ||
+    (still &&
+      still.style.opacity !== '0' &&
+      still.style.display !== 'none' &&
+      imageHasPixels(still));
+  if (!covered && menuVideo && menuVideoShowsFrame(menuVideo)) {
+    captureMenuHoldFrame(host, menuVideo);
+  }
+  if (menuVideo) {
+    try {
+      menuVideo.pause();
+    } catch {
+      // ignore
+    }
+    menuVideo.hidden = true;
+    menuVideo.style.cssText = '';
+    menuVideo.style.opacity = '';
+  }
+}
 function setMenuButtonsEnabled(menu: Element | null, enabled: boolean) {
   if (!menu) {
     return;
@@ -327,12 +542,17 @@ function resolveMenuAssetBase(
 function updateMenuCellVisuals(
   menu: HTMLElement,
   opts: MenuCellPlayOpts,
-  visualOpts: { stillMode?: 'show' | 'motion' } = {},
-) {
+  visualOpts: {
+    stillMode?: 'show' | 'motion';
+    /** Keep the current still painted; return nextStillSrc for deferred swap. */
+    deferStillSrc?: boolean;
+  } = {},
+): string | null {
   if (opts.cellID == null || opts.vobID == null) {
-    return;
+    return null;
   }
   const stillMode = visualOpts.stillMode || 'show';
+  const deferStillSrc = !!visualOpts.deferStillSrc;
   const domain =
     opts.domain != null ? opts.domain : menu.dataset.domain;
   const baseDir = resolveMenuAssetBase(menu, domain, opts);
@@ -365,13 +585,22 @@ function updateMenuCellVisuals(
       still.alt = '';
       menu.insertBefore(still, menu.firstChild);
     }
-    still.setAttribute('src', stillSrc);
-    still.style.display = '';
-    // Motion segments hide the still; always restore when swapping cells so a
-    // late play() from the previous clip cannot leave a black screen.
-    still.style.opacity = '';
+    const stillGen = ((menu as any)._dvdjsStillGen =
+      ((menu as any)._dvdjsStillGen || 0) + 1);
+    if (!deferStillSrc) {
+      still.setAttribute('src', stillSrc);
+      still.style.display = '';
+      still.style.opacity = '';
+    } else {
+      // Keep whatever is currently painted (often opacity:0 over a frozen
+      // WebM). Revealing now would flash the previous cell's cached PNG.
+      still.style.display = '';
+    }
     still.onerror = () => {
-      // Motion-only cells may lack a still PNG — keep video visible.
+      if ((menu as any)._dvdjsStillGen !== stillGen) {
+        return;
+      }
+      // Failed decode of the *new* src — hide broken icon; video/cover stays.
       still!.style.display = 'none';
     };
   } else if (stillMode === 'motion' && still) {
@@ -406,7 +635,6 @@ function updateMenuCellVisuals(
       const spuSrc = `${baseDir}${prefix}-spu.png`;
       if (spu) {
         spu.setAttribute('src', spuSrc);
-        spu.style.display = '';
       } else {
         spu = document.createElement('img');
         spu.className = 'menu-spu';
@@ -419,6 +647,9 @@ function updateMenuCellVisuals(
           menu.appendChild(spu);
         }
       }
+      // Hide SPU until the still/video for this cell is revealed.
+      spu.style.display =
+        stillMode === 'motion' || deferStillSrc ? 'none' : '';
     } else if (spu) {
       spu.removeAttribute('src');
       spu.style.display = 'none';
@@ -487,6 +718,12 @@ function updateMenuCellVisuals(
 
   // Always rebuild hitboxes — empty cells must clear the previous page's buttons.
   menu.querySelectorAll('input.btn').forEach((el) => el.remove());
+  let btnCssLink: HTMLLinkElement | null = null;
+  if (cssHref) {
+    btnCssLink = menu.querySelector(
+      'link[rel="stylesheet"]',
+    ) as HTMLLinkElement | null;
+  }
   if (opts.buttons && opts.buttons.length) {
     const hasSpuHighlight =
       (opts.spuSelect && opts.spuSelect.length > 0) ||
@@ -504,9 +741,15 @@ function updateMenuCellVisuals(
       if (nav.auto_action_mode) {
         input.dataset.autoAction = String(nav.auto_action_mode);
       }
+      applyMenuButtonGeometry(input, nav);
       menu.appendChild(input);
     }
+    // Old archives: geometry only in menu-*.css (attribute-scoped). Stamp
+    // decls onto buttons so a data-cell/vob mismatch cannot collapse hitboxes.
+    stampHitboxStylesFromStylesheet(menu, btnCssLink);
   }
+
+  return stillSrc;
 }
 
 function playMenuMotionSegment(
@@ -514,19 +757,59 @@ function playMenuMotionSegment(
   menuVideo: HTMLVideoElement,
   opts: MenuCellPlayOpts,
   onReady: () => void,
+  playGen: number,
+  seekCoverSrc: string | null = null,
 ) {
   const start = opts.startSec || 0;
   const end = opts.endSec!;
+  const finishAt = motionSegmentFinishAt(start, end);
   host._dvdjsMenuSegmentEnd = end;
+  host._dvdjsMenuSegmentStart = start;
+  host._dvdjsMenuMotionVideo = menuVideo;
   menuVideo.loop = false;
 
-  const finishSegment = () => {
+  // Assigned below; identity token for stale seek/play/finish guards.
+  let finishSegment: () => void = () => {};
+
+  const isCurrent = () =>
+    host._dvdjsMenuPlayGen === playGen &&
+    host._dvdjsFinishMenuSegment === finishSegment;
+
+  const armWatchdog = () => {
+    if (host._dvdjsMotionWatchdog) {
+      clearTimeout(host._dvdjsMotionWatchdog);
+      host._dvdjsMotionWatchdog = null;
+    }
+    // Budget from segment duration, not live currentTime. If currentTime is
+    // still past the new cell (seek lag), end - currentTime is negative and a
+    // 0.2s floor would finish instantly → onPost cascades through scene pages.
+    const remaining = Math.max(0.2, end - start + 0.35);
+    host._dvdjsMotionWatchdog = setTimeout(() => {
+      host._dvdjsMotionWatchdog = null;
+      if (isCurrent()) {
+        finishSegment();
+      }
+    }, remaining * 1000);
+  };
+
+  finishSegment = () => {
     if (host._dvdjsFinishMenuSegment !== finishSegment) {
+      return;
+    }
+    if (host._dvdjsMenuPlayGen !== playGen) {
       return;
     }
     if (host._dvdjsMotionWatchdog) {
       clearTimeout(host._dvdjsMotionWatchdog);
       host._dvdjsMotionWatchdog = null;
+    }
+    if (host._dvdjsRevealRetryTimer) {
+      clearTimeout(host._dvdjsRevealRetryTimer);
+      host._dvdjsRevealRetryTimer = null;
+    }
+    if (host._dvdjsMotionRaf) {
+      cancelAnimationFrame(host._dvdjsMotionRaf);
+      host._dvdjsMotionRaf = null;
     }
     menuVideo.removeEventListener('timeupdate', onTimeUpdate);
     menuVideo.removeEventListener('ended', onEnded);
@@ -536,11 +819,33 @@ function playMenuMotionSegment(
     if (host._dvdjsMenuEnded === onEnded) {
       host._dvdjsMenuEnded = null;
     }
-    // Freeze near end *before* leaving the segment. Some browsers snap to
-    // frame 0 on `ended`. Do **not** reveal this cell's still PNG — for
-    // transition cells that still is a mid-wipe / lookalike of the previous
-    // menu and causes a visible jump. Hold the last decoded video frame.
-    freezeMenuVideoAtEnd(menuVideo, start, end);
+    if (host._dvdjsMenuRevealTimeUpdate) {
+      menuVideo.removeEventListener(
+        'timeupdate',
+        host._dvdjsMenuRevealTimeUpdate,
+      );
+      host._dvdjsMenuRevealTimeUpdate = null;
+    }
+    // Kill audio first — overshoot into the next concat cell is audible even
+    // when the video layer is already covered.
+    silenceVideoAudio(menuVideo);
+    // Snapshot the end frame *before* freeze may hide a snapped-to-0 video.
+    captureMenuHoldFrame(host, menuVideo, { show: false });
+    const lostEndFrame = freezeMenuVideoAtEnd(menuVideo, start, end);
+    if (lostEndFrame) {
+      showMenuHoldFrame(host);
+      if (!menuHoldFrameVisible(host)) {
+        ensureStillCoverVisible(
+          host._dvdjsActiveMenu,
+          host._dvdjsLastPaintedStillSrc ||
+            stillCoverUrlFromMenu(
+              host._dvdjsActiveMenu,
+              host._dvdjsLastPaintedStillSrc,
+            ),
+          host,
+        );
+      }
+    }
     const stillTime = opts.still_time != null ? opts.still_time : 0;
     host._dvdjsMenuSegmentEnd = null;
     host._dvdjsFinishMenuSegment = null;
@@ -551,16 +856,88 @@ function playMenuMotionSegment(
     if (shouldHoldAfterMenuMotion(stillTime)) {
       return;
     }
+    // Timed still after motion (Avatar copyrights): prefer the extracted PNG
+    // over a black/near-black frozen WebM frame during still_time.
+    if (stillTime > 0 && stillTime < 255) {
+      const active = host._dvdjsActiveMenu as HTMLElement | null;
+      const stillEl = active?.querySelector(
+        'img.menu-still',
+      ) as HTMLImageElement | null;
+      if (stillEl) {
+        const domain =
+          opts.domain != null
+            ? opts.domain
+            : active?.dataset?.domain;
+        const base = resolveMenuAssetBase(active || stillEl, domain, opts);
+        if (
+          base &&
+          domain != null &&
+          opts.cellID != null &&
+          opts.vobID != null
+        ) {
+          const src = `${base}menu-${domain}-${opts.cellID}-${opts.vobID}.png`;
+          stillEl.setAttribute('src', src);
+          stillEl.style.display = '';
+          stillEl.style.opacity = '';
+          void whenImageReady(stillEl, { timeoutMs: 2000, expectedSrc: src }).then(
+            (ok) => {
+              if (!ok || host._dvdjsActiveMenu !== active) return;
+              hideMenuVideoUnderCover(host, menuVideo, active);
+              hideMenuHoldFrame(host);
+            },
+          );
+        }
+      }
+    }
     // DVD: play the cell, then hold last frame for still_time before post().
-    scheduleMenuPostAfterStill(host, stillTime, host._dvdjsMenuPost);
+    // Language copyrights: after the timed hold, open translated menus (same
+    // as the preferStillOnly path) so a motion fallback cannot fall into PGC9.
+    const rawPost = host._dvdjsMenuPost as (() => void) | null | undefined;
+    const postFn = menuCellPrefersStillOnly(opts)
+      ? () => {
+          try {
+            rawPost?.();
+          } finally {
+            afterLanguageCopyrightPost(window as any);
+          }
+        }
+      : rawPost;
+    scheduleMenuPostAfterStill(host, stillTime, postFn);
+  };
+
+  const checkSegmentEnd = () => {
+    if (!isCurrent()) {
+      return;
+    }
+    const t = menuVideo.currentTime;
+    // Mute slightly before finish so a late decoder tick cannot play the next
+    // cell's audio (Harry Potter wipe → scene page bleed).
+    if (t >= finishAt - 0.08 || t >= end - 0.02) {
+      silenceVideoAudio(menuVideo);
+    }
+    if (t >= finishAt || t >= end) {
+      finishSegment();
+    }
   };
 
   const onTimeUpdate = () => {
-    // Finish before EOF so we pause on a real decoded frame. Hitting `ended`
-    // resets many browsers to 0; freeze-seek would then snap to the cell's
-    // opening keyframe (wipe start).
-    if (menuVideo.currentTime >= end - 0.15) {
-      finishSegment();
+    // Keep a silent snapshot near the end so finish/lost-frame has a bitmap.
+    if (menuVideo.currentTime >= finishAt - 0.35) {
+      captureMenuHoldFrame(host, menuVideo, { show: false });
+    }
+    checkSegmentEnd();
+  };
+
+  const pollSegmentEnd = () => {
+    if (!isCurrent()) {
+      host._dvdjsMotionRaf = null;
+      return;
+    }
+    checkSegmentEnd();
+    if (host._dvdjsFinishMenuSegment === finishSegment) {
+      host._dvdjsMotionRaf = requestAnimationFrame(pollSegmentEnd);
+    } else {
+      host._dvdjsMotionRaf = null;
     }
   };
 
@@ -570,80 +947,136 @@ function playMenuMotionSegment(
   };
 
   host._dvdjsFinishMenuSegment = finishSegment;
-  // Short / artifacted WebMs may never hit endSec or fire ended reliably.
-  if (host._dvdjsMotionWatchdog) {
-    clearTimeout(host._dvdjsMotionWatchdog);
-  }
-  host._dvdjsMotionWatchdog = setTimeout(
-    () => {
-      host._dvdjsMotionWatchdog = null;
-      finishSegment();
-    },
-    Math.max(0.2, end - start + 0.35) * 1000,
-  );
 
-  if (host._dvdjsMenuTimeUpdate) {
-    menuVideo.removeEventListener('timeupdate', host._dvdjsMenuTimeUpdate);
-    host._dvdjsMenuTimeUpdate = null;
-  }
-  if (host._dvdjsMenuEnded) {
-    menuVideo.removeEventListener('ended', host._dvdjsMenuEnded);
-    host._dvdjsMenuEnded = null;
-  }
+  // Capture the currently painted stage BEFORE hiding the WebM for seek.
+  // Without this, opacity:0 on video + still leaves a black frame.
+  const stageStill = host._dvdjsActiveMenu?.querySelector(
+    'img.menu-still',
+  ) as HTMLImageElement | null;
+  const held = captureMenuHoldFromStage(host, {
+    menuVideo,
+    still: stageStill,
+  });
 
   // Match still/SPU: fill the DVD stage (letterboxing is on the stage, not here).
-  menuVideo.hidden = false;
+  // Start opacity:0 in the same style write — never paint a seek snap for a frame.
   menuVideo.style.cssText =
-    'position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;z-index:0;';
-  // Hide video during seek — sparse WebM keyframes flash the segment start.
-  setMenuVideoSeekCover(menuVideo, true);
+    'position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;z-index:0;opacity:0;';
+  menuVideo.hidden = false;
+
+  if (!held && seekCoverSrc) {
+    // No canvas hold — last resort: previous still PNG under the seek.
+    ensureStillCoverVisible(host._dvdjsActiveMenu, seekCoverSrc, host);
+  } else if (stageStill) {
+    // Hold canvas (or nothing) covers; keep still hidden so cached PNGs cannot flash.
+    stageStill.style.opacity = '0';
+  }
+
   const still =
     host._dvdjsActiveMenu &&
     host._dvdjsActiveMenu.querySelector('img.menu-still');
 
-  const beginPlayback = () => {
+  const beginPlayback = (): boolean => {
+    if (!isCurrent()) {
+      return false;
+    }
+    // Do not arm finish listeners while still outside the segment — a stale
+    // currentTime past finishAt would finish on the first timeupdate and
+    // auto-advance the PGC (Harry Potter scene pages).
+    if (menuVideo.currentTime < start - 0.25 || menuVideo.currentTime >= end) {
+      return false;
+    }
     host._dvdjsMenuTimeUpdate = onTimeUpdate;
     host._dvdjsMenuEnded = onEnded;
     menuVideo.addEventListener('timeupdate', onTimeUpdate);
     menuVideo.addEventListener('ended', onEnded);
-    void playWithAutoplayFallback(menuVideo, host as AutoplayHost).then(
+    armWatchdog();
+    // Stay muted until reveal — otherwise play() leaks audio under the seek cover.
+    void playWithAutoplayFallback(menuVideo, host as AutoplayHost, {
+      startMuted: true,
+    }).then(
       (ok) => {
         // Segment may have already finished / advanced (seek past EOF, short
         // WebM). Do not hide the still after the next cell has taken over.
-        if (host._dvdjsFinishMenuSegment !== finishSegment) {
+        if (!isCurrent()) {
           return;
         }
         if (ok) {
-          const reveal = () => {
-            if (host._dvdjsFinishMenuSegment !== finishSegment) {
-              return;
+          const reveal = (): boolean => {
+            if (!isCurrent()) {
+              return true;
             }
             // Only drop the cover once we are actually inside this segment.
             if (menuVideo.currentTime < start - 0.25) {
-              return;
+              return false;
             }
-            setMenuVideoSeekCover(menuVideo, false);
+            // Show video first, then drop hold — never black between layers.
+            // Unmute only once the frame is visible (seek was muted).
+            setMenuVideoSeekCover(menuVideo, false, {
+              unmute: true,
+            });
             if (still) {
               (still as HTMLElement).style.opacity = '0';
             }
+            // Refresh hold bitmap for the *next* handoff without flashing it now.
+            captureMenuHoldFrame(host, menuVideo, { show: false });
+            hideMenuHoldFrame(host);
+            const spu = host._dvdjsActiveMenu?.querySelector(
+              'img.menu-spu',
+            ) as HTMLElement | null;
+            if (spu && spu.getAttribute('src')) {
+              spu.style.display = '';
+            }
+            hideOtherMenuVideos(host, menuVideo);
+            // Precise end detection — timeupdate alone overruns into the next cell.
+            if (host._dvdjsMotionRaf) {
+              cancelAnimationFrame(host._dvdjsMotionRaf);
+            }
+            host._dvdjsMotionRaf = requestAnimationFrame(pollSegmentEnd);
             onReady();
+            return true;
           };
-          if (menuVideo.currentTime >= start - 0.25) {
-            reveal();
-          } else {
-            const onTime = () => {
-              if (menuVideo.currentTime >= start - 0.25) {
-                menuVideo.removeEventListener('timeupdate', onTime);
-                reveal();
+          const scheduleRevealRetry = () => {
+            if (host._dvdjsRevealRetryTimer) {
+              clearTimeout(host._dvdjsRevealRetryTimer);
+            }
+            host._dvdjsRevealRetryTimer = setTimeout(() => {
+              host._dvdjsRevealRetryTimer = null;
+              if (!isCurrent()) {
+                return;
               }
-            };
-            menuVideo.addEventListener('timeupdate', onTime);
-            // Safety: don't leave the cover forever if timeupdate is sparse.
-            setTimeout(() => {
-              menuVideo.removeEventListener('timeupdate', onTime);
-              reveal();
-            }, 400);
+              if (reveal()) {
+                if (host._dvdjsMenuRevealTimeUpdate) {
+                  menuVideo.removeEventListener(
+                    'timeupdate',
+                    host._dvdjsMenuRevealTimeUpdate,
+                  );
+                  host._dvdjsMenuRevealTimeUpdate = null;
+                }
+                return;
+              }
+              // Keep cover; retry until in-segment or segment cancelled.
+              scheduleRevealRetry();
+            }, 100);
+          };
+          if (reveal()) {
+            return;
           }
+          const onTime = () => {
+            if (reveal()) {
+              menuVideo.removeEventListener('timeupdate', onTime);
+              if (host._dvdjsMenuRevealTimeUpdate === onTime) {
+                host._dvdjsMenuRevealTimeUpdate = null;
+              }
+              if (host._dvdjsRevealRetryTimer) {
+                clearTimeout(host._dvdjsRevealRetryTimer);
+                host._dvdjsRevealRetryTimer = null;
+              }
+            }
+          };
+          host._dvdjsMenuRevealTimeUpdate = onTime;
+          menuVideo.addEventListener('timeupdate', onTime);
+          scheduleRevealRetry();
           return;
         }
         // Autoplay blocked: show a usable still (prefer this cell's PNG when
@@ -703,23 +1136,65 @@ function playMenuMotionSegment(
         }
       },
     );
+    return true;
   };
 
   /** Seek then play — avoids black/skip when re-entering a segment already near end. */
+  let seekAttempts = 0;
   const seekThenPlay = () => {
-    const onSeeked = () => {
-      menuVideo.removeEventListener('seeked', onSeeked);
-      beginPlayback();
-    };
-    if (Math.abs(menuVideo.currentTime - start) < 0.04) {
-      beginPlayback();
+    if (!isCurrent()) {
       return;
     }
+    if (host._dvdjsMenuSeeked) {
+      menuVideo.removeEventListener('seeked', host._dvdjsMenuSeeked);
+      host._dvdjsMenuSeeked = null;
+    }
+    const onSeeked = () => {
+      if (host._dvdjsMenuSeeked === onSeeked) {
+        host._dvdjsMenuSeeked = null;
+      }
+      menuVideo.removeEventListener('seeked', onSeeked);
+      if (!isCurrent()) {
+        return;
+      }
+      if (beginPlayback()) {
+        return;
+      }
+      // Landed outside the segment — retry seek a few times, then give up
+      // without arming finish (still cover stays; no onPost cascade).
+      if (seekAttempts >= 3) {
+        return;
+      }
+      seekAttempts += 1;
+      host._dvdjsMenuSeeked = onSeeked;
+      menuVideo.addEventListener('seeked', onSeeked);
+      try {
+        menuVideo.currentTime = start;
+      } catch {
+        menuVideo.removeEventListener('seeked', onSeeked);
+        if (host._dvdjsMenuSeeked === onSeeked) {
+          host._dvdjsMenuSeeked = null;
+        }
+      }
+    };
+    if (
+      Math.abs(menuVideo.currentTime - start) < 0.04 &&
+      menuVideo.currentTime < end
+    ) {
+      if (beginPlayback()) {
+        return;
+      }
+    }
+    seekAttempts += 1;
+    host._dvdjsMenuSeeked = onSeeked;
     menuVideo.addEventListener('seeked', onSeeked);
     try {
       menuVideo.currentTime = start;
     } catch {
       menuVideo.removeEventListener('seeked', onSeeked);
+      if (host._dvdjsMenuSeeked === onSeeked) {
+        host._dvdjsMenuSeeked = null;
+      }
       beginPlayback();
     }
   };
@@ -727,12 +1202,33 @@ function playMenuMotionSegment(
   if (menuVideo.readyState >= 1) {
     seekThenPlay();
   } else {
+    if (host._dvdjsMenuLoadedMeta) {
+      menuVideo.removeEventListener(
+        'loadedmetadata',
+        host._dvdjsMenuLoadedMeta,
+      );
+      host._dvdjsMenuLoadedMeta = null;
+    }
     const onMeta = () => {
+      if (host._dvdjsMenuLoadedMeta === onMeta) {
+        host._dvdjsMenuLoadedMeta = null;
+      }
       menuVideo.removeEventListener('loadedmetadata', onMeta);
+      if (!isCurrent()) {
+        return;
+      }
       seekThenPlay();
     };
+    host._dvdjsMenuLoadedMeta = onMeta;
     menuVideo.addEventListener('loadedmetadata', onMeta);
-    menuVideo.load();
+    // Avoid load() while preload is already fetching — resets the buffer.
+    const ns = menuVideo.networkState;
+    if (
+      ns === HTMLMediaElement.NETWORK_EMPTY ||
+      (ns === HTMLMediaElement.NETWORK_IDLE && menuVideo.readyState === 0)
+    ) {
+      menuVideo.load();
+    }
   }
 }
 
@@ -763,6 +1259,7 @@ function buildPlaylist(host: HTMLElement): PlaylistEntry[] {
         video: el,
         src: el.getAttribute('src') || el.currentSrc || '',
         chapterCues,
+        titlePgcMedia: parseTitlePgcMediaAttr(el),
       };
     });
 }
@@ -849,6 +1346,11 @@ class XVideo extends HTMLElement implements XVideoElement {
     return jumpToMainMenu(this);
   }
 
+  /** Persist menu lang preference and reopen main menu in that LU. */
+  setMenuLanguage(lang: string): boolean {
+    return setDiscMenuLanguage(this, lang, window as any);
+  }
+
   /** Snapshot menu/VM before a user button command runs. */
   beginUserButtonNav(): void {
     latchUserButtonNav(this as any, window as any);
@@ -856,17 +1358,18 @@ class XVideo extends HTMLElement implements XVideoElement {
 
   /**
    * Called from compiled JumpTT / JumpVTS_* before title PGC run.
-   * When a menu button targets a missing title, show the dialog and abort
-   * without mutating domain/pgc or hiding the current menu.
+   * When a menu button targets a missing title (or a PGC omitted from a
+   * short-cell rip), show the dialog and abort without mutating domain/pgc
+   * or hiding the current menu.
    */
-  guardTitleJump(elementID: string): boolean {
+  guardTitleJump(elementID: string, pgc?: number): boolean {
     if (elementID === undefined) {
       return true;
     }
     const id = String(elementID);
     this.#refreshPlaylist();
     const entry = this.playlist.find((e) => e.id === id);
-    if (!isTitleMediaMissing(entry)) {
+    if (!isTitleMediaMissing(entry, pgc)) {
       return true;
     }
     // Missing title: button → sticky dialog in place; FP/auto → let run proceed.
@@ -913,7 +1416,10 @@ class XVideo extends HTMLElement implements XVideoElement {
       return;
     }
 
-    if (isTitleMediaMissing(this.playlist[targetElementIndex])) {
+    const entry = this.playlist[targetElementIndex];
+    const g = window as any;
+    const pgc = g && g.pgc;
+    if (isTitleMediaMissing(entry, pgc)) {
       showTitleUnavailable(this);
       return;
     }
@@ -923,6 +1429,32 @@ class XVideo extends HTMLElement implements XVideoElement {
     hideAllMenu(this);
 
     const video = this.playlist[this.videoIndex].video;
+    const timeline =
+      entry.titlePgcMedia &&
+      entry.titlePgcMedia.pgcTimeline &&
+      pgc != null
+        ? entry.titlePgcMedia.pgcTimeline[String(pgc)]
+        : null;
+    if (timeline && Number.isFinite(timeline.startSec)) {
+      const seekTo = timeline.startSec;
+      const onMeta = () => {
+        video.removeEventListener('loadedmetadata', onMeta);
+        try {
+          video.currentTime = seekTo;
+        } catch {
+          // ignore
+        }
+      };
+      if (video.readyState >= 1) {
+        try {
+          video.currentTime = seekTo;
+        } catch {
+          // ignore
+        }
+      } else {
+        video.addEventListener('loadedmetadata', onMeta);
+      }
+    }
     const onMediaError = () => {
       video.removeEventListener('error', onMediaError);
       showTitleUnavailable(this);
@@ -975,11 +1507,13 @@ class XVideo extends HTMLElement implements XVideoElement {
     hideTitleUnavailableOverlay(this);
     this.pause();
     hideAllMenu(this);
-    clearDvdjsTimers(this);
+    cancelActiveMenuMotion(this as any);
+    bumpMenuPlayGen(this as any);
     const domainVideo = this.querySelector(
       `#menu-video-${menu.dataset.domain != null ? menu.dataset.domain : ''}`,
     ) as HTMLVideoElement | null;
     resetMenuMotion(this, domainVideo, menu);
+    hideOtherMenuVideos(this, null);
     (this as any)._dvdjsActiveMenu = menu;
     if (typeof menu.show === 'function') {
       menu.show();
@@ -1010,11 +1544,17 @@ class XVideo extends HTMLElement implements XVideoElement {
     hideTitleUnavailableOverlay(this);
     clearUserButtonNav(this as any);
     clearMissingTitleSkip(this as any);
-    clearDvdjsTimers(this);
+    // Cancel prior motion/seek before swapping posts — stale finish must not
+    // run with the new onPost. Keep last painted frame until the next asset is ready.
+    cancelActiveMenuMotion(this as any);
+    const playGen = bumpMenuPlayGen(this as any);
 
     // Capture outgoing still before we retarget _dvdjsActiveMenu.
     const prevMenu = (this as any)._dvdjsActiveMenu as HTMLElement | null;
-    const coverSrc = stillCoverUrlFromMenu(prevMenu);
+    const coverSrc = stillCoverUrlFromMenu(
+      prevMenu,
+      (this as any)._dvdjsLastPaintedStillSrc,
+    );
 
     (this as any)._dvdjsActiveMenu = menu;
     (this as any)._dvdjsMenuPost =
@@ -1031,11 +1571,17 @@ class XVideo extends HTMLElement implements XVideoElement {
     }
 
     const stillTime = opts.still_time != null ? opts.still_time : 0;
+    // Infinite still (255): still-only path. Playing these as motion finishes the
+    // short cell and runs onPost, which auto-advances multi-cell PGCs (Harry Potter
+    // scene selection pages → main menu).
+    // Timed language copyrights (still_time ≥ 3, short cell, no buttons): still-only.
+    const preferStillOnly = menuCellPrefersStillOnly(opts);
     const hasMotion =
       opts.startSec != null &&
       opts.endSec != null &&
       opts.endSec > opts.startSec &&
-      stillTime !== 255;
+      stillTime !== 255 &&
+      !preferStillOnly;
 
     const menuVideo = this.querySelector(
       `#menu-video-${opts.domain != null ? opts.domain : menu.dataset.domain}`,
@@ -1044,8 +1590,12 @@ class XVideo extends HTMLElement implements XVideoElement {
       menuVideo.loop = false;
     }
 
-    updateMenuCellVisuals(menu, opts, {
-      stillMode: hasMotion && menuVideo && menuVideo.src ? 'motion' : 'show',
+    const playMotion = !!(hasMotion && menuVideo && menuVideo.src);
+    // Copyright still-only: install PNG immediately (no defer) so we never sit on
+    // a black WebM/hold cover. Other stills still defer for seamless handoff.
+    const nextStillSrc = updateMenuCellVisuals(menu, opts, {
+      stillMode: playMotion ? 'motion' : 'show',
+      deferStillSrc: !playMotion && !preferStillOnly,
     });
 
     const baseDir = resolveMenuAssetBase(
@@ -1068,23 +1618,40 @@ class XVideo extends HTMLElement implements XVideoElement {
       menu.style.display = 'flex';
     }
 
-    if (hasMotion && menuVideo && menuVideo.src) {
-      let still = menu.querySelector(
-        'img.menu-still',
-      ) as HTMLImageElement | null;
-      if (!still && coverSrc) {
-        still = document.createElement('img');
-        still.className = 'menu-still';
-        still.alt = '';
-        menu.insertBefore(still, menu.firstChild);
+    // Snapshot whatever is on screen before we change layers.
+    const stageStill = menu.querySelector(
+      'img.menu-still',
+    ) as HTMLImageElement | null;
+    captureMenuHoldFromStage(this, {
+      menuVideo,
+      still: stageStill,
+    });
+
+    if (playMotion) {
+      // Hold canvas covers the seek; keep still hidden (no cached PNG flash).
+      if (stageStill) {
+        stageStill.style.opacity = '0';
       }
-      if (still && coverSrc) {
-        // Hold the previous menu under the seek; hide once playback starts.
-        still.setAttribute('src', coverSrc);
-        still.style.display = '';
-        still.style.opacity = '';
-      } else if (still) {
-        still.style.opacity = '0';
+    } else if (preferStillOnly) {
+      // Language copyrights: show PNG now, hide video/hold (avoid black cover).
+      if (stageStill) {
+        stageStill.style.display = '';
+        stageStill.style.opacity = '';
+      }
+      hideMenuVideoUnderCover(this, menuVideo, menu);
+      hideMenuHoldFrame(this);
+      hideOtherMenuVideos(this, null);
+    } else {
+      if (menuVideoShowsFrame(menuVideo) || menuHoldFrameVisible(this)) {
+        // Frozen WebM or canvas hold is the cover — keep still hidden.
+        if (stageStill) {
+          stageStill.style.opacity = '0';
+        }
+        if (!menuVideoShowsFrame(menuVideo) && menuHoldFrameVisible(this)) {
+          showMenuHoldFrame(this);
+        }
+      } else if (coverSrc) {
+        ensureStillCoverVisible(menu, coverSrc, this as any);
       }
     }
 
@@ -1095,6 +1662,9 @@ class XVideo extends HTMLElement implements XVideoElement {
           : 0x0400) / 0x0400,
       ) - 1;
     const enableButtons = () => {
+      if ((this as any)._dvdjsMenuPlayGen !== playGen) {
+        return;
+      }
       highlightMenuButton(menu, btnIndex);
       setMenuButtonsEnabled(menu, true);
       if (this.classList.contains('dvdjs-debug-hitboxes')) {
@@ -1115,36 +1685,132 @@ class XVideo extends HTMLElement implements XVideoElement {
       hliDelay = Math.max(0, opts.hli_s_ptm / 90000 - cellStart);
     }
 
-    if (hasMotion && menuVideo && menuVideo.src) {
-      playMenuMotionSegment(this, menuVideo, opts, () => {
-        if (hliDelay > 0) {
-          (this as any)._dvdjsHighlightTimer = setTimeout(
-            enableButtons,
-            hliDelay * 1000,
-          );
-        } else {
-          enableButtons();
-        }
-      });
+    if (playMotion) {
+      playMenuMotionSegment(
+        this,
+        menuVideo!,
+        opts,
+        () => {
+          if (hliDelay > 0) {
+            (this as any)._dvdjsHighlightTimer = setTimeout(
+              enableButtons,
+              hliDelay * 1000,
+            );
+          } else {
+            enableButtons();
+          }
+        },
+        playGen,
+        coverSrc,
+      );
       return;
     }
 
-    // Still-only (or motion missing): keep the previous WebM frame painted
-    // until the still PNG is ready, then hide the video.
+    if (preferStillOnly) {
+      // PNG already installed + visible above. Hold still_time then PGC post.
+      // After post sets the Avatar language cookie, skip studio-logo / Angle
+      // JumpTT hubs and open the translated menus immediately.
+      enableButtons();
+      if (stillTime > 0 && stillTime < 255) {
+        const priorPost = (this as any)._dvdjsMenuPost as
+          | (() => void)
+          | null
+          | undefined;
+        const wrappedPost = () => {
+          try {
+            priorPost?.();
+          } finally {
+            afterLanguageCopyrightPost(window as any);
+          }
+        };
+        scheduleMenuPostAfterStill(this as any, stillTime, wrappedPost);
+      }
+      return;
+    }
+
+    // Still-only: keep frozen WebM / hold canvas until the *target* PNG has
+    // pixels, then reveal still and drop video+hold together.
     const stillImg = menu.querySelector(
       'img.menu-still',
     ) as HTMLImageElement | null;
-    const hideVideoWhenStillReady = () => {
+    const targetStillSrc =
+      nextStillSrc || stillImg?.getAttribute('src') || null;
+
+    const finishStillHandoff = (ready: boolean) => {
+      if ((this as any)._dvdjsMenuPlayGen !== playGen) {
+        return;
+      }
       if ((this as any)._dvdjsActiveMenu !== menu) {
         return;
       }
-      // A newer motion segment owns the video now — leave it alone.
       if ((this as any)._dvdjsFinishMenuSegment) {
         return;
       }
-      resetMenuMotion(this, menuVideo, menu);
+      if (!ready) {
+        if (
+          stillImg &&
+          targetStillSrc &&
+          stillImg.getAttribute('src') === targetStillSrc &&
+          !stillImg.complete
+        ) {
+          void whenImageReady(stillImg, {
+            timeoutMs: 30_000,
+            expectedSrc: targetStillSrc,
+          }).then(finishStillHandoff);
+        }
+        // Keep hold/video forever if the still never arrives.
+        return;
+      }
+      // Reveal still first, then drop video + hold — never black.
+      if (stillImg) {
+        stillImg.style.display = '';
+        stillImg.style.opacity = '';
+      }
+      notePaintedStill(this as any, stillImg);
+      const spu = menu.querySelector('img.menu-spu') as HTMLElement | null;
+      if (spu && spu.getAttribute('src')) {
+        spu.style.display = '';
+      }
+      hideMenuVideoUnderCover(this, menuVideo, menu);
+      hideMenuHoldFrame(this);
+      hideOtherMenuVideos(this, null);
+      if (menuVideo) {
+        (this as any)._dvdjsMenuSegmentEnd = null;
+        (this as any)._dvdjsFinishMenuSegment = null;
+      }
     };
-    void whenImageReady(stillImg).then(hideVideoWhenStillReady);
+
+    const installStillWhenReady = async () => {
+      if (!stillImg || !targetStillSrc) {
+        finishStillHandoff(imageHasPixels(stillImg));
+        return;
+      }
+      if (
+        stillImg.getAttribute('src') === targetStillSrc &&
+        imageHasPixels(stillImg)
+      ) {
+        finishStillHandoff(true);
+        return;
+      }
+      // Keep still invisible while swapping; stage is covered by video/hold.
+      stillImg.style.opacity = '0';
+      if (!menuVideoShowsFrame(menuVideo)) {
+        showMenuHoldFrame(this);
+      }
+      await preloadImageUrl(targetStillSrc);
+      if ((this as any)._dvdjsMenuPlayGen !== playGen) {
+        return;
+      }
+      stillImg.setAttribute('src', targetStillSrc);
+      stillImg.style.display = '';
+      stillImg.style.opacity = '0';
+      const ready = await whenImageReady(stillImg, {
+        timeoutMs: 30_000,
+        expectedSrc: targetStillSrc,
+      });
+      finishStillHandoff(ready);
+    };
+    void installStillWhenReady();
 
     if (hliDelay > 0) {
       (this as any)._dvdjsHighlightTimer = setTimeout(

@@ -163,6 +163,65 @@ export function activateButton(
   return true;
 }
 
+export type MenuNavAction = 'up' | 'down' | 'left' | 'right' | 'enter';
+
+/**
+ * Programmatic D-pad / Enter (virtual remote). Same path as keyboard arrows.
+ * @returns true if the action was handled.
+ */
+export function handleMenuNavAction(
+  host: MenuKeyHost,
+  action: MenuNavAction,
+): boolean {
+  // Sticky missing-title dialog owns input until OK / Escape.
+  if (isTitleUnavailableOpen(host as any)) {
+    return false;
+  }
+
+  const menu = activeMenu(host);
+  if (!menu) {
+    return false;
+  }
+
+  const buttons = buttonList(menu);
+  if (!buttons.length) {
+    return false;
+  }
+
+  const idx = currentIndex(buttons);
+
+  if (action === 'enter') {
+    return activateButton(host, menu, idx);
+  }
+
+  const dir = action;
+  const currentBtn = buttons[idx];
+  let nextId = neighborFromDataset(currentBtn, dir); // 1-based
+  // Self-link or missing → spatial fallback so vertical lists stay fully reachable.
+  if (nextId == null || nextId === idx + 1) {
+    const spatial = findSpatialNeighbor(buttons, idx, dir);
+    if (spatial != null) {
+      nextId = spatial + 1;
+    }
+  }
+  if (nextId == null || nextId < 1 || nextId > buttons.length) {
+    return false;
+  }
+  if (nextId === idx + 1) {
+    return false;
+  }
+
+  const sprm = (window as any).sprm || ((window as any).sprm = {});
+  sprm.HL_BTNN = nextId * 0x0400;
+  host.setMenuHighlight?.(menu, nextId - 1);
+
+  const nextBtn = buttons[nextId - 1];
+  if (nextBtn?.dataset.autoAction === '1') {
+    activateButton(host, menu, nextId - 1);
+  }
+  return true;
+}
+
 /**
  * @returns true if the event was handled (caller should stop propagation).
  */
@@ -206,66 +265,23 @@ export function handleMenuKeyDown(
     return false;
   }
 
-  let dir: 'up' | 'down' | 'left' | 'right' | null = null;
-  if (key === 'ArrowUp' || event.code === 'ArrowUp') dir = 'up';
-  else if (key === 'ArrowDown' || event.code === 'ArrowDown') dir = 'down';
-  else if (key === 'ArrowLeft' || event.code === 'ArrowLeft') dir = 'left';
-  else if (key === 'ArrowRight' || event.code === 'ArrowRight') dir = 'right';
-  else if (key !== 'Enter' && event.code !== 'Enter') {
+  let action: MenuNavAction | null = null;
+  if (key === 'ArrowUp' || event.code === 'ArrowUp') action = 'up';
+  else if (key === 'ArrowDown' || event.code === 'ArrowDown') action = 'down';
+  else if (key === 'ArrowLeft' || event.code === 'ArrowLeft') action = 'left';
+  else if (key === 'ArrowRight' || event.code === 'ArrowRight') action = 'right';
+  else if (key === 'Enter' || event.code === 'Enter') action = 'enter';
+  else {
     return false;
   }
 
-  const menu = activeMenu(host);
-  if (!menu) {
+  if (!handleMenuNavAction(host, action)) {
     return false;
   }
-
-  const buttons = buttonList(menu);
-  if (!buttons.length) {
-    return false;
-  }
-
-  const idx = currentIndex(buttons);
-
-  if (key === 'Enter' || event.code === 'Enter') {
-    // Only claim the event when btnCmd runs. A failed host lookup must not
-    // stopImmediatePropagation — generated vm.js still handles Enter with cell.
-    if (!activateButton(host, menu, idx)) {
-      return false;
-    }
-    event.preventDefault();
-    return true;
-  }
-
-  if (!dir) {
-    return false;
-  }
-
-  const currentBtn = buttons[idx];
-  let nextId = neighborFromDataset(currentBtn, dir); // 1-based
-  // Self-link or missing → spatial fallback so vertical lists stay fully reachable.
-  if (nextId == null || nextId === idx + 1) {
-    const spatial = findSpatialNeighbor(buttons, idx, dir);
-    if (spatial != null) {
-      nextId = spatial + 1;
-    }
-  }
-  if (nextId == null || nextId < 1 || nextId > buttons.length) {
-    return false;
-  }
-  if (nextId === idx + 1) {
-    return false;
-  }
-
+  // Enter: only claim when btnCmd ran (handleMenuNavAction already gated that).
+  // A failed host lookup must not stopImmediatePropagation — generated vm.js
+  // still handles Enter with cell.
   event.preventDefault();
-  const sprm = (window as any).sprm || ((window as any).sprm = {});
-  sprm.HL_BTNN = nextId * 0x0400;
-  host.setMenuHighlight?.(menu, nextId - 1);
-
-  const nextBtn = buttons[nextId - 1];
-  if (nextBtn?.dataset.autoAction === '1') {
-    activateButton(host, menu, nextId - 1);
-  }
   return true;
 }
 

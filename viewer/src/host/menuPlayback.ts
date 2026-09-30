@@ -3,6 +3,10 @@ import {
   playWithAutoplayFallback,
   type AutoplayHost,
 } from './autoplay.js';
+import {
+  applyMenuButtonGeometry,
+  stampHitboxStylesFromStylesheet,
+} from './menuButtonHitboxes.js';
 
 export const TITLE_UNAVAILABLE_MESSAGE =
   'This title was intentionally left out of this archive. Only menus were converted.';
@@ -23,6 +27,7 @@ export interface PlayMenuCellOpts {
     left?: number;
     right?: number;
     auto_action_mode?: number;
+    css?: string;
   }>;
   spuSelect?: string[];
   spuActivate?: string[];
@@ -402,8 +407,13 @@ export function updateMenuCellVisuals(
       if (nav.auto_action_mode) {
         input.dataset.autoAction = String(nav.auto_action_mode);
       }
+      applyMenuButtonGeometry(input, nav);
       menu.appendChild(input);
     }
+    stampHitboxStylesFromStylesheet(
+      menu,
+      menu.querySelector('link[rel="stylesheet"]') as HTMLLinkElement | null,
+    );
   }
 }
 

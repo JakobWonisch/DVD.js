@@ -60,32 +60,11 @@ export type VmNavGlobals = {
   PGCIUT?: any;
   MPGCIUT?: any;
   MENU_TYPES?: any;
+  gprm?: number[];
 };
 
-/** ISO-639-ish lang keys on MPGCIUT/MENU_TYPES entries (skip array indices). */
-export function menuLangKeys(obj: unknown): string[] {
-  if (!obj || typeof obj !== 'object') {
-    return [];
-  }
-  return Object.keys(obj as object).filter((k) => !/^\d+$/.test(k));
-}
-
-/**
- * Pick a language that exists for the given menu domain.
- * Prefer current g.lang when valid; never return a lang missing from that domain.
- */
-export function pickMenuLang(g: VmNavGlobals, domain = 0): string {
-  const fromMpg = menuLangKeys(g.MPGCIUT?.[domain]);
-  const fromTypes = menuLangKeys(g.MENU_TYPES?.[domain]);
-  const candidates = fromMpg.length ? fromMpg : fromTypes;
-  if (g.lang && candidates.includes(g.lang)) {
-    return g.lang;
-  }
-  if (candidates.length) {
-    return candidates[0];
-  }
-  return g.lang || 'en';
-}
+import { menuLangKeys, pickMenuLang } from './menuLanguage.js';
+export { menuLangKeys, pickMenuLang };
 
 /** Clear the menu-button latch once the user is back in a real menu. */
 export function clearUserButtonNav(host: {
@@ -291,6 +270,14 @@ export function tryAutoSkipMissingTitle(
     return false;
   }
 
+  // Avatar: after a language-copyright PGC sets gprm[0x0B], the next JumpTTs are
+  // only studio logos / hubs. Skip them and open the translated VTS menus.
+  if (uiLanguageCookie(g) && runLanguageDispatcherRoot(g)) {
+    clearMissingTitleSkip(host);
+    host._dvdjsMissingTitleBroken = false;
+    return true;
+  }
+
   const domain = g.domain;
   const pgc = g.pgc as number | undefined;
   const pgcObj =
@@ -311,11 +298,18 @@ export function tryAutoSkipMissingTitle(
   if (host._dvdjsMissingTitleBroken || visited.has(key)) {
     host._dvdjsMissingTitleBroken = true;
     visited.add(key);
-    if (!escapeToVmgmTitleMenu(host, g)) {
+    // Language was chosen (Avatar DE/FR/NL cookie) but JumpTT hub has no titles —
+    // open the translated menus instead of falling through to English Title/Root.
+    if (
+      !runLanguageDispatcherRoot(g) &&
+      !escapeToVmgmTitleMenu(host, g)
+    ) {
       showTitleUnavailableOverlay(host as TitleUnavailableMountHost, {
         onDismiss: () => {
           clearUserButtonNav(host);
-          escapeToVmgmTitleMenu(host, g);
+          if (!runLanguageDispatcherRoot(g)) {
+            escapeToVmgmTitleMenu(host, g);
+          }
         },
       });
     }
@@ -377,6 +371,72 @@ function runMenu(g: VmNavGlobals, menu: MenuRef): boolean {
   g.domain = menu.domain;
   g.lang = menu.lang;
   g.MPGCIUT![menu.domain][menu.lang][menu.pgc].run();
+  return true;
+}
+
+
+/** Avatar-style UI language cookie in gprm[0x0B] (0 = English / unset). */
+function uiLanguageCookie(g: VmNavGlobals): number {
+  const v = g.gprm && g.gprm[0x0b];
+  return typeof v === 'number' ? v : 0;
+}
+
+/**
+ * VTS Root whose pre() linkPGCs by language cookie (Avatar VTS1). Empty cells
+ * but not a JumpTT stub (Avatar VTS5).
+ */
+export function runLanguageDispatcherRoot(g: VmNavGlobals): boolean {
+  const types = g.MENU_TYPES as
+    | Array<Record<string, Array<MenuRef | undefined>> | undefined>
+    | undefined;
+  if (!types || !uiLanguageCookie(g)) {
+    return false;
+  }
+  for (let d = 0; d < types.length; d++) {
+    if (!types[d]) continue;
+    const prefer = pickMenuLang(g, d);
+    for (const lang of [
+      prefer,
+      ...menuLangKeys(types[d]).filter((k) => k !== prefer),
+    ]) {
+      const root = types[d]![lang]?.[3 /* Root */];
+      if (!isRunnableMenu(g, root)) continue;
+      const pgcObj = g.MPGCIUT![root!.domain][root!.lang][root!.pgc];
+      const src =
+        typeof pgcObj.pre === 'function'
+          ? Function.prototype.toString.call(pgcObj.pre)
+          : '';
+      if (!/linkPGC\s*\(/.test(src) || /VTT_TABLE|PTT_TABLE/.test(src)) {
+        continue;
+      }
+      if (runMenu(g, root!)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * After a language-copyright PGC post sets gprm[0x0B] and schedules a JumpTT
+ * hub (PGC9 / Angle) on `g.t`, open the translated menus instead. Clears the
+ * hub timer only when the dispatcher replaced it via linkPGC — never clear
+ * `g.t` afterward (that would cancel the language menu).
+ */
+export function afterLanguageCopyrightPost(
+  g: VmNavGlobals & { t?: ReturnType<typeof setTimeout> | null },
+): boolean {
+  const hubTimer = g.t;
+  if (!runLanguageDispatcherRoot(g)) {
+    return false;
+  }
+  if (hubTimer != null && hubTimer !== g.t) {
+    try {
+      clearTimeout(hubTimer);
+    } catch {
+      // ignore
+    }
+  }
   return true;
 }
 
@@ -613,8 +673,32 @@ export function shouldHoldAfterMenuMotion(stillTime: number): boolean {
 }
 
 /**
+ * Language copyright / FBI warnings: short MPEG cell + still_time ≥ 3, no buttons.
+ * Show as a held PNG (not a sub-second motion flash). still_time 1–2 (Avatar FP
+ * black pad) stays on the motion path.
+ */
+export function menuCellPrefersStillOnly(opts: {
+  still_time?: number;
+  startSec?: number;
+  endSec?: number;
+  buttons?: unknown[];
+}): boolean {
+  const stillTime = opts.still_time != null ? opts.still_time : 0;
+  if (!(stillTime >= 3 && stillTime < 255)) {
+    return false;
+  }
+  if (opts.buttons && opts.buttons.length) {
+    return false;
+  }
+  const start = opts.startSec != null ? opts.startSec : 0;
+  const end = opts.endSec != null ? opts.endSec : start;
+  const duration = end - start;
+  return duration > 0 && duration <= 1.5;
+}
+
+/**
  * After a motion cell ends, DVD still_time holds the last frame before post().
- * 0 = advance now; 255 = infinite (caller should not invoke this for hold).
+ * 0 = advance now; 255 = infinite (never call post from here).
  */
 export function scheduleMenuPostAfterStill(
   host: {
@@ -624,8 +708,16 @@ export function scheduleMenuPostAfterStill(
   stillTime: number,
   post: (() => void) | null | undefined,
 ): void {
+  if (stillTime === 255) {
+    // Infinite still — keep last frame; caller must not advance the PGC.
+    return;
+  }
   if (typeof post !== 'function') {
     return;
+  }
+  if (host._dvdjsStillTimer) {
+    clearTimeout(host._dvdjsStillTimer);
+    host._dvdjsStillTimer = null;
   }
   host._dvdjsMenuPost = post;
   if (stillTime > 0 && stillTime < 255) {

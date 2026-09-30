@@ -4,6 +4,7 @@ import {
   bindMenuKeys,
   findSpatialNeighbor,
   handleMenuKeyDown,
+  handleMenuNavAction,
   lookupBtnCmd,
   type MenuKeyHost,
 } from '../../viewer/src/host/menuKeys.ts';
@@ -168,6 +169,26 @@ describe('Enter activates via cell-keyed btnCmd', () => {
     const miss = fakeKey('Enter');
     expect(handleMenuKeyDown(host, miss)).toBe(false);
     expect(miss.defaultPrevented).toBe(false);
+  });
+
+  it('handleMenuNavAction mirrors keyboard Enter / arrows', () => {
+    const { host, menu, buttons } = fakeMenuHost('1');
+    buttons[0].dataset.down = '2';
+    buttons[1].dataset.up = '1';
+    const cmd1 = vi.fn();
+    const btnCmd: any = [];
+    btnCmd[1] = [];
+    btnCmd[1][5] = [];
+    btnCmd[1][5][1] = [vi.fn(), cmd1];
+    const sprm = { HL_BTNN: 1 * 0x0400 };
+    stubWindow({ btnCmd, sprm });
+
+    expect(handleMenuNavAction(host, 'down')).toBe(true);
+    expect(sprm.HL_BTNN).toBe(2 * 0x0400);
+    expect(host.setMenuHighlight).toHaveBeenCalledWith(menu, 1);
+
+    expect(handleMenuNavAction(host, 'enter')).toBe(true);
+    expect(cmd1).toHaveBeenCalledOnce();
   });
 });
 

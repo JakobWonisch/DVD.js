@@ -1,4 +1,8 @@
 import { menuLangKeys, pickMenuLang } from '../host/titleUnavailable.js';
+import {
+  aliasUnspecifiedMenuLangs,
+  packMenuLangSprm,
+} from '../host/menuLanguage.js';
 import { patchPlayCurrentMenuCellPgN } from './patchMenuPgN.js';
 
 type VmGlobals = {
@@ -16,6 +20,8 @@ function pickExistingLang(host: HTMLElement) {
   if (typeof g.MPGCIUT === 'undefined' || !Array.isArray(g.MPGCIUT)) {
     return;
   }
+  // Older archives emit VMGM unspecified LU as "ÿÿ" (0xFFFF).
+  aliasUnspecifiedMenuLangs(g as any);
   // Prefer a lang that exists on VMGM (domain 0). Iterating every domain used
   // to let a later VTS overwrite g.lang with a code missing from MPGCIUT[0],
   // which breaks JumpSS VMGM (MPGCIUT[0][lang] is undefined).
@@ -24,15 +30,24 @@ function pickExistingLang(host: HTMLElement) {
     for (let d = 1; d < g.MPGCIUT.length; d++) {
       const keys = menuLangKeys(g.MPGCIUT[d]);
       if (keys.length) {
-        g.lang = keys[0];
+        g.lang = pickMenuLang(
+          { ...g, lang: undefined, MPGCIUT: g.MPGCIUT } as any,
+          d,
+        );
         break;
       }
+    }
+  }
+  if (g.lang) {
+    const sprm = (g as any).sprm;
+    if (sprm && typeof sprm === 'object') {
+      sprm.MENU_LANG = packMenuLangSprm(g.lang);
     }
   }
 
   // Harden onmenu: prefer a non-stub Root, else VMGM Title.
   // Avatar VTS5 Root is empty and JumpTTs into missing titles — skip stubs.
-  // Harry Potter has no VMGM Title (MENU_TYPES[0] empty/`ÿÿ`) — search every
+  // Harry Potter has no VMGM Title (MENU_TYPES[0] empty/default) — search every
   // domain for a real Root so Main menu / dismiss never leaves UI dead.
   const dvd = host as HTMLElement & { onmenu?: (event: object) => void };
   dvd.onmenu = () => {

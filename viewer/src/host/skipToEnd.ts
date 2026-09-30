@@ -1,3 +1,5 @@
+import { motionSegmentFinishAt } from './menuPreload.js';
+
 /**
  * Skip the active menu motion segment, timed still wait, or title clip.
  * Returns true if something was skipped.
@@ -12,6 +14,7 @@ export type SkipToEndHost = {
   _dvdjsFinishMenuSegment?: (() => void) | null;
   _dvdjsStillTimer?: ReturnType<typeof setTimeout> | null;
   _dvdjsMenuPost?: (() => void) | null;
+  _dvdjsMenuSegmentStart?: number | null;
 };
 
 function activeMenuVideo(host: SkipToEndHost): HTMLVideoElement | null {
@@ -43,10 +46,16 @@ export function skipPlaybackToEnd(host: SkipToEndHost): boolean {
     if (
       menuVideo &&
       typeof segmentEnd === 'number' &&
-      Number.isFinite(segmentEnd) &&
-      menuVideo.currentTime >= segmentEnd - 0.15
+      Number.isFinite(segmentEnd)
     ) {
-      return false;
+      const start =
+        typeof host._dvdjsMenuSegmentStart === 'number'
+          ? host._dvdjsMenuSegmentStart
+          : 0;
+      const finishAt = motionSegmentFinishAt(start, segmentEnd);
+      if (menuVideo.currentTime >= finishAt) {
+        return false;
+      }
     }
     // Do not seek to segmentEnd — sparse WebM keyframes snap to cell start.
     // finish() pauses in place (or hides if already ended) and advances the VM.

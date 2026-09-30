@@ -48,15 +48,36 @@ function cancelPendingMenuAdvance(host: GoToMainMenuHost): void {
 
   const menu = host._dvdjsActiveMenu;
   const domain = menu?.dataset?.domain;
-  if (domain != null && domain !== '' && host._dvdjsMenuTimeUpdate) {
-    const menuVideo = host.querySelector(
-      `#menu-video-${String(domain)}`,
-    ) as HTMLVideoElement | null;
-    if (menuVideo) {
-      menuVideo.removeEventListener('timeupdate', host._dvdjsMenuTimeUpdate);
+  const menuVideo =
+    domain != null && domain !== ''
+      ? (host.querySelector(
+          `#menu-video-${String(domain)}`,
+        ) as HTMLVideoElement | null)
+      : null;
+  const video =
+    menuVideo ||
+    ((host as any)._dvdjsMenuMotionVideo as HTMLVideoElement | null);
+  if (video) {
+    if (host._dvdjsMenuTimeUpdate) {
+      video.removeEventListener('timeupdate', host._dvdjsMenuTimeUpdate);
     }
-    host._dvdjsMenuTimeUpdate = null;
+    if ((host as any)._dvdjsMenuEnded) {
+      video.removeEventListener('ended', (host as any)._dvdjsMenuEnded);
+      (host as any)._dvdjsMenuEnded = null;
+    }
+    if ((host as any)._dvdjsMenuSeeked) {
+      video.removeEventListener('seeked', (host as any)._dvdjsMenuSeeked);
+      (host as any)._dvdjsMenuSeeked = null;
+    }
+    if ((host as any)._dvdjsMenuLoadedMeta) {
+      video.removeEventListener(
+        'loadedmetadata',
+        (host as any)._dvdjsMenuLoadedMeta,
+      );
+      (host as any)._dvdjsMenuLoadedMeta = null;
+    }
   }
+  host._dvdjsMenuTimeUpdate = null;
 }
 
 /**

@@ -11,6 +11,8 @@ import {
   hideTitleUnavailableOverlay,
   resolveTitleUnavailableRoot,
   restoreMenuResumeState,
+  afterLanguageCopyrightPost,
+  menuCellPrefersStillOnly,
   scheduleMenuPostAfterStill,
   shouldHoldAfterMenuMotion,
   showTitleUnavailableOverlay,
@@ -466,6 +468,77 @@ describe('shouldHoldAfterMenuMotion', () => {
   });
 });
 
+describe('menuCellPrefersStillOnly', () => {
+  it('holds Avatar language copyrights as stills', () => {
+    expect(
+      menuCellPrefersStillOnly({
+        still_time: 5,
+        startSec: 2.88,
+        endSec: 3.36,
+        buttons: [],
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves short FP pads and button menus on the motion path', () => {
+    expect(
+      menuCellPrefersStillOnly({
+        still_time: 2,
+        startSec: 0,
+        endSec: 0.48,
+      }),
+    ).toBe(false);
+    expect(
+      menuCellPrefersStillOnly({
+        still_time: 5,
+        startSec: 0,
+        endSec: 10,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('tryAutoSkipMissingTitle language cookie', () => {
+  it('opens language-dispatcher Root when gprm[0x0B] is set', () => {
+    const dutchRun = vi.fn(() => {
+      /* pre returns via linkPGC in real discs */
+    });
+    const post = vi.fn();
+    const host: { _dvdjsMissingTitleSkip?: Set<string> } = {};
+    const g: any = {
+      domain: 5,
+      pgc: 4,
+      lang: 'en',
+      gprm: Array(16).fill(0),
+      PGCIUT: { 5: { 4: { post } } },
+      MPGCIUT: [
+        {},
+        {
+          en: {
+            1: {
+              run: dutchRun,
+              cells: [],
+              pre: new Function(
+                'if (gprm[0x0B] === 0x014D) { linkPGC(22); return 1; }',
+              ),
+            },
+          },
+        },
+      ],
+      MENU_TYPES: [
+        {},
+        { en: [null, null, null, { domain: 1, lang: 'en', pgc: 1 }] },
+      ],
+    };
+    g.gprm[0x0b] = 0x014d;
+
+    expect(tryAutoSkipMissingTitle(host, g, false)).toBe(true);
+    expect(dutchRun).toHaveBeenCalledOnce();
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
+
 describe('scheduleMenuPostAfterStill', () => {
   it('waits still_time seconds before post (copyright-style cells)', async () => {
     vi.useFakeTimers();
@@ -494,6 +567,19 @@ describe('scheduleMenuPostAfterStill', () => {
     scheduleMenuPostAfterStill(host, 0, post);
     expect(post).toHaveBeenCalledOnce();
     expect(host._dvdjsMenuPost).toBeNull();
+  });
+
+  it('does not post for infinite still_time 255 (HP scene pages)', () => {
+    const post = vi.fn();
+    const host: {
+      _dvdjsStillTimer?: ReturnType<typeof setTimeout> | null;
+      _dvdjsMenuPost?: (() => void) | null;
+    } = { _dvdjsMenuPost: post };
+
+    scheduleMenuPostAfterStill(host, 255, post);
+    expect(post).not.toHaveBeenCalled();
+    // Leave the posted handler alone — hold until the user navigates.
+    expect(host._dvdjsMenuPost).toBe(post);
   });
 });
 
@@ -581,5 +667,64 @@ describe('escapeToVmgmTitleMenu', () => {
     expect(runTitle).toHaveBeenCalledOnce();
     expect(runStub).not.toHaveBeenCalled();
     expect(g.domain).toBe(0);
+  });
+});
+
+describe('afterLanguageCopyrightPost', () => {
+  it('opens dispatcher and clears the hub timer only', () => {
+    const langRun = vi.fn();
+    const hub = { cleared: false } as { cleared: boolean; id?: ReturnType<typeof setTimeout> };
+    // Fake timer id object
+    const hubTimer = { id: 'hub' } as unknown as ReturnType<typeof setTimeout>;
+    const langTimer = { id: 'lang' } as unknown as ReturnType<typeof setTimeout>;
+    const g: any = {
+      lang: 'en',
+      gprm: Array(16).fill(0),
+      t: hubTimer,
+      MPGCIUT: [
+        {},
+        {
+          en: {
+            1: {
+              run: () => {
+                // Simulate linkPGC replacing t
+                g.t = langTimer;
+                langRun();
+              },
+              cells: [],
+              pre: new Function(
+                'if (gprm[0x0B] === 0x6F) { /* linkPGC */ }',
+              ),
+            },
+          },
+        },
+      ],
+      MENU_TYPES: [
+        {},
+        { en: [null, null, null, { domain: 1, lang: 'en', pgc: 1 }] },
+      ],
+    };
+    g.gprm[0x0b] = 0x6f;
+    // Make pre contain linkPGC so dispatcher accepts this Root
+    g.MPGCIUT[1].en[1].pre = new Function(
+      'if (gprm[0x0B] === 0x6F) { linkPGC(14); return 1; }',
+    );
+
+    expect(afterLanguageCopyrightPost(g)).toBe(true);
+    expect(langRun).toHaveBeenCalledOnce();
+    expect(g.t).toBe(langTimer);
+  });
+
+  it('leaves hub timer alone when cookie is English/unset', () => {
+    const hubTimer = { id: 'hub' } as unknown as ReturnType<typeof setTimeout>;
+    const g: any = {
+      lang: 'en',
+      gprm: Array(16).fill(0),
+      t: hubTimer,
+      MPGCIUT: [],
+      MENU_TYPES: [],
+    };
+    expect(afterLanguageCopyrightPost(g)).toBe(false);
+    expect(g.t).toBe(hubTimer);
   });
 });
