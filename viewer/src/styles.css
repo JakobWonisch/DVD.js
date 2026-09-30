@@ -465,6 +465,16 @@ footer {
   user-select: none;
 }
 
+.player-toolbar--media-wait {
+  opacity: 0.85;
+}
+
+.player-toolbar--media-wait .player-toolbar__toggles,
+.player-toolbar--media-wait .player-toolbar__report,
+.player-toolbar--media-wait .player-toolbar__fs {
+  opacity: 0.55;
+}
+
 .player-toolbar--locked .player-toolbar__report-msg {
   pointer-events: none;
 }

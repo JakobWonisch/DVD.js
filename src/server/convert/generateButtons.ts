@@ -162,6 +162,22 @@ function generateButtons(dvdPath: string, callback) {
 
         saveCSSFile(cssContent, json.pci.hli.hl_gi.btn_ns, buttons);
       } else {
+        // Buttonless (or HLI miss): clear prior interactive metadata so
+        // reconvert cannot keep ghost hitboxes / stale hliDelaySec.
+        if (
+          css[pointer] &&
+          css[pointer].menuCell &&
+          css[pointer].menuCell[cellID] &&
+          css[pointer].menuCell[cellID][vobID]
+        ) {
+          var cleared = css[pointer].menuCell[cellID][vobID];
+          cleared.buttons = [];
+          cleared.btn_nb = 0;
+          delete cleared.css;
+          delete cleared.hliDelaySec;
+          delete cleared.hli_s_ptm;
+          delete cleared.hli_e_ptm;
+        }
         // Still advance even with no buttons.
         vobPointer++;
         if (vobPointer < menuCellAdrCount(ifoJson.menu_c_adt)) {

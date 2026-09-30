@@ -324,7 +324,9 @@ function generateJavaScript(dvdPath: string, callback) {
     }
 
     function first_play_pgc(json, code) {
-      if (!json.first_play_pgc || !json.first_play_pgc.command_tbl.nr_of_pre) {
+      var fp = json.first_play_pgc;
+      var fpCmds = fp && fp.command_tbl;
+      if (!fp || !fpCmds || !fpCmds.nr_of_pre) {
         console.log('No First Play PGC present');
         return code;
       }
@@ -334,7 +336,7 @@ function generateJavaScript(dvdPath: string, callback) {
         '// First Play PGC',
         'function fp_pgc() {',
         '  setTimeout(function() {' +
-          recompile(json.first_play_pgc.command_tbl.pre_cmds) +
+          recompile(fpCmds.pre_cmds) +
           '}, 500);',
         '}',
       ]);
@@ -461,6 +463,9 @@ function generateJavaScript(dvdPath: string, callback) {
         var lu = json.pgci_ut.lu[i];
         var langCode = utils.ifoMenuLangCode(lu.lang_code);
         code.push('MPGCIUT[' + index + '].' + langCode + ' = {};');
+        if (!lu.pgcit || !lu.pgcit.pgci_srp) {
+          continue;
+        }
         for (var j = 0; j < lu.pgcit.nr_of_pgci_srp; j++) {
           var pgci_srp = lu.pgcit.pgci_srp[j];
           var pgcIndex = j + 1;
@@ -719,8 +724,11 @@ function generateJavaScript(dvdPath: string, callback) {
           code.push('btnNav[' + pointer + '] = btnNav[' + pointer + '] || [];');
           emitted = true;
         }
-        var vobId = stub.vobID;
-        var cellId = stub.cellID;
+        // Namespace stubs under vob="stub"/cell=pgc so they never wipe menu
+        // btnCmd[domain][vob][cell] when stub cell/vob reuse menu IDs (1:1).
+        var stubPgc = keys[ki];
+        var vobId = JSON.stringify('stub');
+        var cellId = stubPgc;
         code.push(
           'btnCmd[' +
             pointer +
@@ -855,6 +863,10 @@ function generateJavaScript(dvdPath: string, callback) {
           'PTT_TABLE[' + domainIndex + '][' + vtsIndex + '] = [];'
         );
 
+        if (!pgci_srp.pgc) {
+          vtsIndex++;
+          continue;
+        }
         for (var j = 0; j < pgci_srp.pgc.nr_of_programs; j++) {
           code.push(
             'PTT_TABLE[' +
@@ -894,6 +906,9 @@ function generateJavaScript(dvdPath: string, callback) {
         var langCode = utils.ifoMenuLangCode(lu.lang_code);
         code.push('MENU_TYPES[' + domainIndex + '].' + langCode + ' = [];');
 
+        if (!lu.pgcit || !lu.pgcit.pgci_srp) {
+          continue;
+        }
         for (var j = 0; j < lu.pgcit.nr_of_pgci_srp; j++) {
           var pgci_srp = lu.pgcit.pgci_srp[j];
           var pgcIndex = j + 1;
@@ -977,6 +992,9 @@ function generateJavaScript(dvdPath: string, callback) {
         '    sprm["HL_BTNN"] = (parseInt(id, 10) + 1) * 0x0400;',
         '',
         '    if (target.tagName !== \'INPUT\' || domain === undefined || vob === undefined || cell === undefined || id === undefined) {',
+        '      return;',
+        '    }',
+        '    if (target.disabled) {',
         '      return;',
         '    }',
         '',

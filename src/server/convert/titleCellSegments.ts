@@ -177,6 +177,58 @@ export function resolveLogicalSector(
 }
 
 /**
+ * Split a logical cell sector range into per-VOB file byte ranges when the
+ * cell spans VTS_XX_1.VOB → VTS_XX_2.VOB (etc.).
+ */
+export function splitCellAcrossVobFiles(
+  extents: VobExtent[],
+  startSector: number,
+  lastSector: number,
+): Array<{
+  path: string;
+  skipBytes: number;
+  endBytes: number;
+  startSector: number;
+  lastSector: number;
+}> {
+  const out: Array<{
+    path: string;
+    skipBytes: number;
+    endBytes: number;
+    startSector: number;
+    lastSector: number;
+  }> = [];
+  if (!(startSector >= 0) || !(lastSector >= startSector) || !extents.length) {
+    return out;
+  }
+  let offset = 0;
+  for (let i = 0; i < extents.length; i++) {
+    const ext = extents[i];
+    const extStart = offset;
+    const extEnd = offset + ext.sectorCount - 1;
+    offset += ext.sectorCount;
+    if (ext.sectorCount <= 0) {
+      continue;
+    }
+    if (lastSector < extStart || startSector > extEnd) {
+      continue;
+    }
+    const partStart = Math.max(startSector, extStart);
+    const partLast = Math.min(lastSector, extEnd);
+    const sectorInFileStart = partStart - extStart;
+    const sectorInFileLast = partLast - extStart;
+    out.push({
+      path: ext.path,
+      skipBytes: sectorInFileStart * DVD_VIDEO_LB_LEN,
+      endBytes: (sectorInFileLast + 1) * DVD_VIDEO_LB_LEN,
+      startSector: partStart,
+      lastSector: partLast,
+    });
+  }
+  return out;
+}
+
+/**
  * True length of a cell from NAV presentation timestamps in the VOB.
  * Returns 0 when NAVs cannot be read.
  */
@@ -193,7 +245,7 @@ export function probeCellDurationSec(
     return 0;
   }
 
-  const startNav = readNavAtLogicalSector(extents, startSector);
+  const startNav = readNavAtLogicalSector(extents, startSector, lastSector);
   if (!startNav) {
     return 0;
   }
@@ -216,7 +268,7 @@ export function probeCellDurationSec(
       return elapsed / PTS_HZ;
     }
 
-    const cur = readNavAtLogicalSector(extents, sector);
+    const cur = readNavAtLogicalSector(extents, sector, lastSector);
     if (!cur) {
       break;
     }
@@ -367,27 +419,47 @@ export function buildShortTitleEncodePlan(
   const segments: TitleEncodeSegment[] = [];
   let t = 0;
   for (const cell of selected) {
-    const resolved = resolveLogicalSector(extents, cell.startSector);
-    const endResolved = resolveLogicalSector(extents, cell.lastSector);
-    if (!resolved || !endResolved || resolved.path !== endResolved.path) {
-      // Multi-file span — skip this cell; drop PGCs that needed it.
+    const parts = splitCellAcrossVobFiles(
+      extents,
+      cell.startSector,
+      cell.lastSector,
+    );
+    if (!parts.length) {
       continue;
     }
     const durationSec = cell.durationSec;
-    segments.push({
-      startSec: t,
-      endSec: t + durationSec,
-      durationSec,
-      skipBytes: resolved.sectorInFile * DVD_VIDEO_LB_LEN,
-      endBytes: (endResolved.sectorInFile + 1) * DVD_VIDEO_LB_LEN,
-      inputPath: resolved.path,
-      cellId: String(cell.cellId),
-      vobId: String(cell.vobId),
-      label: cell.pgcIndex + ':' + cell.cellId + ':' + cell.vobId,
-      startSector: cell.startSector,
-      lastSector: cell.lastSector,
-    });
-    t += durationSec;
+    const totalSectors = cell.lastSector - cell.startSector + 1;
+    let cellStartT = t;
+    for (let pi = 0; pi < parts.length; pi++) {
+      const part = parts[pi];
+      const partSectors = part.lastSector - part.startSector + 1;
+      const partDur =
+        totalSectors > 0
+          ? durationSec * (partSectors / totalSectors)
+          : durationSec;
+      segments.push({
+        startSec: t,
+        endSec: t + partDur,
+        durationSec: partDur,
+        skipBytes: part.skipBytes,
+        endBytes: part.endBytes,
+        inputPath: part.path,
+        cellId: String(cell.cellId),
+        vobId: String(cell.vobId),
+        label:
+          cell.pgcIndex +
+          ':' +
+          cell.cellId +
+          ':' +
+          cell.vobId +
+          (parts.length > 1 ? ':p' + pi : ''),
+        // Keep the full cell key on every part so PGC remapping still finds it.
+        startSector: cell.startSector,
+        lastSector: cell.lastSector,
+      });
+      t += partDur;
+    }
+    void cellStartT;
   }
 
   if (!segments.length) {
@@ -396,9 +468,25 @@ export function buildShortTitleEncodePlan(
 
   // Remap PGC timelines from the cells that made it into segments.
   const pgcTimeline: Record<string, TitlePgcTimeline> = {};
-  const segBySector = new Map<string, TitleEncodeSegment>();
+  // Multi-VOB cells produce several segments with the same cell key — fold them.
+  const segBySector = new Map<
+    string,
+    { startSec: number; endSec: number; parts: TitleEncodeSegment[] }
+  >();
   for (const seg of segments) {
-    segBySector.set(seg.startSector + ':' + seg.lastSector, seg);
+    const key = seg.startSector + ':' + seg.lastSector;
+    const prev = segBySector.get(key);
+    if (!prev) {
+      segBySector.set(key, {
+        startSec: seg.startSec,
+        endSec: seg.endSec,
+        parts: [seg],
+      });
+    } else {
+      prev.startSec = Math.min(prev.startSec, seg.startSec);
+      prev.endSec = Math.max(prev.endSec, seg.endSec);
+      prev.parts.push(seg);
+    }
   }
 
   const finalPgcs: number[] = [];
@@ -450,10 +538,17 @@ export function buildShortTitleEncodePlan(
     const dur = seg.durationSec;
     seg.startSec = t2;
     seg.endSec = t2 + dur;
-    sectorRemap.set(seg.startSector + ':' + seg.lastSector, {
-      startSec: seg.startSec,
-      endSec: seg.endSec,
-    });
+    const key = seg.startSector + ':' + seg.lastSector;
+    const prev = sectorRemap.get(key);
+    if (!prev) {
+      sectorRemap.set(key, {
+        startSec: seg.startSec,
+        endSec: seg.endSec,
+      });
+    } else {
+      // Multi-VOB parts share a cell key — keep first start, extend end.
+      prev.endSec = seg.endSec;
+    }
     t2 += dur;
   }
   for (const pgcIndex of finalPgcs) {
@@ -517,23 +612,34 @@ export function buildShortTitleEncodePlan(
 function readNavAtLogicalSector(
   extents: VobExtent[],
   logicalSector: number,
+  maxLogicalSector?: number,
 ): NavPtsLike | null {
   const resolved = resolveLogicalSector(extents, logicalSector);
   if (!resolved) {
     return null;
   }
-  return readNavAtFileSector(resolved.path, resolved.sectorInFile);
+  const maxDelta =
+    maxLogicalSector != null && maxLogicalSector >= logicalSector
+      ? Math.min(7, maxLogicalSector - logicalSector)
+      : 7;
+  return readNavAtFileSector(
+    resolved.path,
+    resolved.sectorInFile,
+    maxDelta,
+  );
 }
 
 function readNavAtFileSector(
   filePath: string,
   sectorInFile: number,
+  maxDelta: number = 7,
 ): NavPtsLike | null {
   try {
     const fd = fs.openSync(filePath, 'r');
     try {
-      // Scan a few packs forward if the exact sector is not a NAV.
-      for (let delta = 0; delta < 8; delta++) {
+      // Scan a few packs forward if the exact sector is not a NAV — but never
+      // past maxDelta (caller clamps to the cell's last_sector).
+      for (let delta = 0; delta <= maxDelta; delta++) {
         const buf = Buffer.alloc(DVD_VIDEO_LB_LEN);
         const offset = (sectorInFile + delta) * DVD_VIDEO_LB_LEN;
         const n = fs.readSync(fd, buf, 0, DVD_VIDEO_LB_LEN, offset);

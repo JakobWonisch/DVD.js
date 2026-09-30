@@ -166,7 +166,7 @@ export function findHighlightInTitleCell(
   let best: HighlightNavHit | null = null;
 
   while (guard++ < maxGuard && sector <= lastSector) {
-    const nav = readNavAtLogicalSector(extents, sector);
+    const nav = readNavAtLogicalSector(extents, sector, lastSector);
     if (!nav) {
       break;
     }
@@ -319,7 +319,7 @@ function findHighlightNearCellEnd(
   const denseWindow = Math.min(span, 2500);
   const denseStart = Math.max(startSector, lastSector - denseWindow);
   for (let s = lastSector; s >= denseStart; s--) {
-    const nav = readNavAtLogicalSector(extents, s);
+    const nav = readNavAtLogicalSector(extents, s, lastSector);
     if (nav && btnNs(nav) > 0) {
       return { sector: s, nav };
     }
@@ -328,7 +328,7 @@ function findHighlightNearCellEnd(
   if (denseStart > startSector) {
     const step = Math.max(1, Math.floor((denseStart - startSector) / 64));
     for (let s = denseStart - 1; s >= startSector; s -= step) {
-      const nav = readNavAtLogicalSector(extents, s);
+      const nav = readNavAtLogicalSector(extents, s, lastSector);
       if (nav && btnNs(nav) > 0) {
         return { sector: s, nav };
       }
@@ -338,7 +338,7 @@ function findHighlightNearCellEnd(
           if (t < startSector) {
             break;
           }
-          const n2 = readNavAtLogicalSector(extents, t);
+          const n2 = readNavAtLogicalSector(extents, t, lastSector);
           if (n2 && btnNs(n2) > 0) {
             return { sector: t, nav: n2 };
           }
@@ -385,17 +385,23 @@ function roundPct(val: number): number | string {
 function readNavAtLogicalSector(
   extents: VobExtent[],
   logicalSector: number,
+  maxLogicalSector?: number,
 ): NavPtsLike | null {
   const resolved = resolveLogicalSector(extents, logicalSector);
   if (!resolved) {
     return null;
   }
-  return readNavAtFileSector(resolved.path, resolved.sectorInFile);
+  const maxDelta =
+    maxLogicalSector != null && maxLogicalSector >= logicalSector
+      ? Math.min(7, maxLogicalSector - logicalSector)
+      : 7;
+  return readNavAtFileSector(resolved.path, resolved.sectorInFile, maxDelta);
 }
 
 function readNavAtFileSector(
   filePath: string,
   sectorInFile: number,
+  maxDelta: number = 7,
 ): NavPtsLike | null {
   try {
     if (!fs.existsSync(filePath)) {
@@ -403,7 +409,7 @@ function readNavAtFileSector(
     }
     const fd = fs.openSync(filePath, 'r');
     try {
-      for (let delta = 0; delta < 8; delta++) {
+      for (let delta = 0; delta <= maxDelta; delta++) {
         const buf = Buffer.alloc(DVD_VIDEO_LB_LEN);
         const offset = (sectorInFile + delta) * DVD_VIDEO_LB_LEN;
         const n = fs.readSync(fd, buf, 0, DVD_VIDEO_LB_LEN, offset);

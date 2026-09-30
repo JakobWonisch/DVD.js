@@ -8,15 +8,17 @@ import {
   clearUserButtonNav,
   escapeToVmgmTitleMenu,
   hideTitleUnavailableOverlay,
+  type MenuResumeSnapshot,
 } from './titleUnavailable.js';
 import { hideMenuHoldFrame } from './menuHoldFrame.js';
+import { clearMediaLoad } from './mediaLoadState.js';
 
 export type GoToMainMenuHost = {
   onmenu?: ((event: object) => void) | null;
   querySelector: (selectors: string) => Element | null;
   closest?: (selectors: string) => Element | null;
   _dvdjsFromButton?: boolean;
-  _dvdjsMenuResume?: unknown;
+  _dvdjsMenuResume?: MenuResumeSnapshot | null;
   _dvdjsStillTimer?: ReturnType<typeof setTimeout> | null;
   _dvdjsHighlightTimer?: ReturnType<typeof setTimeout> | null;
   _dvdjsMotionWatchdog?: ReturnType<typeof setTimeout> | null;
@@ -47,6 +49,19 @@ function cancelPendingMenuAdvance(host: GoToMainMenuHost): void {
   host._dvdjsMenuPost = null;
   host._dvdjsFinishMenuSegment = null;
   host._dvdjsMenuSegmentEnd = null;
+  (host as any)._dvdjsMediaLoadToken = null;
+  clearMediaLoad();
+  // Invalidate in-flight motion finish/reveal so they cannot schedule after escape.
+  (host as any)._dvdjsMenuPlayGen =
+    ((host as any)._dvdjsMenuPlayGen || 0) + 1;
+  if ((host as any)._dvdjsRevealRetryTimer) {
+    clearTimeout((host as any)._dvdjsRevealRetryTimer);
+    (host as any)._dvdjsRevealRetryTimer = null;
+  }
+  if ((host as any)._dvdjsMotionRaf) {
+    cancelAnimationFrame((host as any)._dvdjsMotionRaf);
+    (host as any)._dvdjsMotionRaf = null;
+  }
 
   const menu = host._dvdjsActiveMenu;
   const domain = menu?.dataset?.domain;
@@ -80,6 +95,13 @@ function cancelPendingMenuAdvance(host: GoToMainMenuHost): void {
     }
   }
   host._dvdjsMenuTimeUpdate = null;
+  if (video) {
+    try {
+      video.pause();
+    } catch {
+      // ignore
+    }
+  }
 }
 
 /**

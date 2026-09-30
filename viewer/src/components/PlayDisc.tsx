@@ -354,14 +354,18 @@ export const PlayDisc: Component = () => {
     }
   };
 
-  /** Overlays / media waits on the video surface — toolbar stays visible but inert. */
+  /** Hard lock: start overlay / decompress — all toolbar controls inert. */
   const controlsLocked = () =>
     !!(
-      mediaLoad().active ||
       (needsStart() && vmReady() && metadata()) ||
       (decompressing() && metadata.loading) ||
       (metadata.loading && !decompressing())
     );
+
+  /** Soft lock: media wait — keep Skip / Main menu as escapes. */
+  const mediaWaitActive = () => mediaLoad().active;
+
+  const toolbarNonEscapeLocked = () => controlsLocked() || mediaWaitActive();
 
   return (
     <div class="player-stage" ref={setStageEl}>
@@ -434,7 +438,10 @@ export const PlayDisc: Component = () => {
       <Show when={metadata()}>
         <div
           class="player-toolbar"
-          classList={{ 'player-toolbar--locked': controlsLocked() }}
+          classList={{
+            'player-toolbar--locked': controlsLocked(),
+            'player-toolbar--media-wait': mediaWaitActive() && !controlsLocked(),
+          }}
           aria-disabled={controlsLocked() ? 'true' : undefined}
         >
           <div class="player-toolbar__toggles">
@@ -442,7 +449,7 @@ export const PlayDisc: Component = () => {
               <input
                 type="checkbox"
                 checked={debugHitboxes()}
-                disabled={controlsLocked()}
+                disabled={toolbarNonEscapeLocked()}
                 onChange={(e) => setDebugHitboxes(e.currentTarget.checked)}
               />
               Debug button hitboxes
@@ -451,7 +458,7 @@ export const PlayDisc: Component = () => {
               <input
                 type="checkbox"
                 checked={consoleDebug()}
-                disabled={controlsLocked()}
+                disabled={toolbarNonEscapeLocked()}
                 onChange={(e) => {
                   const on = e.currentTarget.checked;
                   setConsoleDebug(on);
@@ -467,7 +474,7 @@ export const PlayDisc: Component = () => {
               <input
                 type="checkbox"
                 checked={showRemote()}
-                disabled={controlsLocked()}
+                disabled={toolbarNonEscapeLocked()}
                 onChange={(e) => {
                   const on = e.currentTarget.checked;
                   setShowRemote(on);
@@ -482,7 +489,7 @@ export const PlayDisc: Component = () => {
               type="button"
               class="player-toolbar__report"
               title="Send this session’s diagnostic log to the server"
-              disabled={controlsLocked() || reportBusy()}
+              disabled={toolbarNonEscapeLocked() || reportBusy()}
               onClick={() => void onReportProblem()}
             >
               {reportBusy() ? 'Sending…' : 'Report a problem'}
@@ -513,7 +520,7 @@ export const PlayDisc: Component = () => {
             <button
               type="button"
               class="player-toolbar__fs"
-              disabled={controlsLocked()}
+              disabled={toolbarNonEscapeLocked()}
               onClick={() => void toggleFullscreen()}
             >
               {isFullscreen() ? 'Exit fullscreen' : 'Fullscreen'}

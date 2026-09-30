@@ -340,6 +340,11 @@ export function nextVobuSectorFromNav(
   fileSector: number,
   nav: NavPtsLike,
 ): number | null {
+  // Prefer authored NAV LBN when present (libdvdnav); fall back to the sector
+  // we read from when the pack was found via a small forward scan.
+  const lbn = nav.dsi?.dsi_gi?.nv_pck_lbn;
+  const base =
+    typeof lbn === 'number' && lbn >= 0 ? lbn : fileSector;
   const sri = nav.dsi?.vobu_sri?.next_vobu;
   if (sri != null) {
     const offset = sri & SRI_END_OF_CELL;
@@ -347,12 +352,12 @@ export function nextVobuSectorFromNav(
       return null;
     }
     if (offset > 0) {
-      return fileSector + offset;
+      return base + offset;
     }
   }
   const ea = nav.dsi?.dsi_gi?.vobu_ea;
   if (ea != null && ea >= 0) {
-    return fileSector + ea + 1;
+    return base + ea + 1;
   }
   return null;
 }

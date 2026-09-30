@@ -5,6 +5,7 @@ import {
   listTitleCellsFromIfo,
   resolveLogicalSector,
   buildVobExtents,
+  splitCellAcrossVobFiles,
 } from '../../src/server/convert/titleCellSegments.js';
 import { TITLE_INCLUDE_MAX_SEC } from '../../src/server/convert/titleIncludePolicy.js';
 
@@ -120,5 +121,32 @@ describe('buildVobExtents', () => {
   it('returns zero sectorCount for missing files', () => {
     var extents = buildVobExtents(['/no/such/file.VOB']);
     expect(extents).toEqual([{ path: '/no/such/file.VOB', sectorCount: 0 }]);
+  });
+});
+
+describe('splitCellAcrossVobFiles', function () {
+  it('splits a logical range that spans two VOB extents', function () {
+    const extents = [
+      { path: '/a.VOB', sectorCount: 100 },
+      { path: '/b.VOB', sectorCount: 100 },
+    ];
+    const parts = splitCellAcrossVobFiles(extents, 90, 110);
+    expect(parts).toHaveLength(2);
+    expect(parts[0].path).toBe('/a.VOB');
+    expect(parts[0].startSector).toBe(90);
+    expect(parts[0].lastSector).toBe(99);
+    expect(parts[1].path).toBe('/b.VOB');
+    expect(parts[1].startSector).toBe(100);
+    expect(parts[1].lastSector).toBe(110);
+  });
+
+  it('returns one part when the cell stays in a single file', function () {
+    const extents = [
+      { path: '/a.VOB', sectorCount: 100 },
+      { path: '/b.VOB', sectorCount: 100 },
+    ];
+    const parts = splitCellAcrossVobFiles(extents, 10, 20);
+    expect(parts).toHaveLength(1);
+    expect(parts[0].path).toBe('/a.VOB');
   });
 });

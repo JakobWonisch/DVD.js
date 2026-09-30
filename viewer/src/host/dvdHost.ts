@@ -33,6 +33,7 @@ import {
 } from './viewerDebug.js';
 import {
   beginMediaLoad,
+  clearMediaLoad,
   endMediaLoad,
   updateMediaLoadProgress,
 } from './mediaLoadState.js';
@@ -306,6 +307,13 @@ function clearDvdjsTimers(host: any) {
   }
 }
 
+/** Cancel menu motion/still advance; keep button-nav resume snapshot intact. */
+function cancelMenuAdvanceKeepResume(host: any): void {
+  cancelActiveMenuMotion(host);
+  bumpMenuPlayGen(host);
+  host._dvdjsMenuPost = null;
+}
+
 /** Drop in-flight seek/meta/finish handlers without running onPost. Keep pixels. */
 function cancelActiveMenuMotion(host: any) {
   clearDvdjsTimers(host);
@@ -346,6 +354,10 @@ function cancelActiveMenuMotion(host: any) {
   host._dvdjsFinishMenuSegment = null;
   host._dvdjsMenuSegmentEnd = null;
   host._dvdjsMenuMotionVideo = null;
+  host._dvdjsMediaLoadToken = null;
+  // Drop spinner / toolbar lock even when the next cell is still-only
+  // (preferStillOnly) or playMenuByID and never calls beginMediaLoad.
+  clearMediaLoad();
 }
 
 function bumpMenuPlayGen(host: any): number {
@@ -962,6 +974,13 @@ function playMenuMotionSegment(
     if (host._dvdjsMenuPlayGen !== playGen) {
       return;
     }
+    // Claim immediately so concurrent cancel/playMenuCell sees us done and
+    // cannot install a new post that we would schedule with this still_time.
+    host._dvdjsFinishMenuSegment = null;
+    host._dvdjsMenuSegmentEnd = null;
+    const capturedPost = host._dvdjsMenuPost as (() => void) | null | undefined;
+    host._dvdjsMenuPost = null;
+    const stillTimeEarly = opts.still_time != null ? opts.still_time : 0;
     endMediaLoad(loadToken);
     menuVideo.removeEventListener('progress', onBufferProgress);
     menuVideo.removeEventListener('loadeddata', onBufferProgress);
@@ -1024,13 +1043,14 @@ function playMenuMotionSegment(
         );
       }
     }
-    const stillTime = opts.still_time != null ? opts.still_time : 0;
-    host._dvdjsMenuSegmentEnd = null;
-    host._dvdjsFinishMenuSegment = null;
+    const stillTime = stillTimeEarly;
     // still_time 255: hold last frame until the user picks a button.
     // still_time 0 with buttons: still post — cellCmds / PGC post often loop
     // the motion segment (Harry Potter main menu). Keep loop=false + freeze;
     // restart comes from onPost → playCurrentMenuCell, not HTML video.loop.
+    if (host._dvdjsMenuPlayGen !== playGen) {
+      return;
+    }
     if (shouldHoldAfterMenuMotion(stillTime)) {
       return;
     }
@@ -1071,7 +1091,10 @@ function playMenuMotionSegment(
     // DVD: play the cell, then hold last frame for still_time before post().
     // Language copyrights: after the timed hold, open translated menus (same
     // as the preferStillOnly path) so a motion fallback cannot fall into PGC9.
-    const rawPost = host._dvdjsMenuPost as (() => void) | null | undefined;
+    if (host._dvdjsMenuPlayGen !== playGen) {
+      return;
+    }
+    const rawPost = capturedPost;
     const postFn = menuCellPrefersStillOnly(opts)
       ? () => {
           try {
@@ -1328,12 +1351,20 @@ function playMenuMotionSegment(
           (still as HTMLElement).style.opacity = '';
         }
         const stillTime = opts.still_time != null ? opts.still_time : 0;
-        if (
-          stillTime > 0 &&
-          stillTime < 255 &&
-          typeof host._dvdjsMenuPost === 'function'
-        ) {
-          scheduleMenuPostAfterStill(host, stillTime, host._dvdjsMenuPost);
+        // Reveal hitboxes even when motion cannot play (mouse path uses disabled).
+        onReady();
+        if (typeof host._dvdjsMenuPost === 'function') {
+          if (stillTime > 0 && stillTime < 255) {
+            scheduleMenuPostAfterStill(host, stillTime, host._dvdjsMenuPost);
+          } else if (
+            stillTime === 0 &&
+            !(opts.buttons && opts.buttons.length)
+          ) {
+            // Pure transition — advance so we never sit on a dead hold forever.
+            scheduleMenuPostAfterStill(host, 0, host._dvdjsMenuPost);
+          } else {
+            notifyAutoplayBlocked(host as AutoplayHost);
+          }
         } else {
           notifyAutoplayBlocked(host as AutoplayHost);
         }
@@ -1681,6 +1712,8 @@ class XVideo extends HTMLElement implements XVideoElement {
     }
     // Missing title with no stub: button → sticky dialog in place; FP/auto → let run proceed.
     if ((this as any)._dvdjsFromButton) {
+      // Stop motion/still onPost so it cannot clear the resume snapshot mid-dialog.
+      cancelMenuAdvanceKeepResume(this as any);
       showTitleUnavailable(this);
       return false;
     }
@@ -1709,13 +1742,14 @@ class XVideo extends HTMLElement implements XVideoElement {
       hideTitleUnavailableOverlay(this);
       clearUserButtonNav(this as any);
       clearMissingTitleSkip(this as any);
+      cancelMenuAdvanceKeepResume(this as any);
       this.pause();
       hideAllMenu(this);
       // Hide title videos while showing the stub still.
       this.playlist.forEach((e) => {
         e.video.style.display = 'none';
       });
-      const menu = ensureTitleStubMenu(this, domain, stub);
+      const menu = ensureTitleStubMenu(this, domain, stub, pgc);
       (this as any)._dvdjsActiveMenu = menu;
       if (typeof (menu as any).show === 'function') {
         (menu as any).show();
@@ -1740,6 +1774,14 @@ class XVideo extends HTMLElement implements XVideoElement {
       this.setMenuHighlight(menu, Math.max(0, hl));
       // Infinite / timed still — no WebM; post only via button cmds or still_time.
       const stillTime = stub.still_time != null ? stub.still_time : 255;
+      const hasButtons = !!(stub.buttons && stub.buttons.length);
+      if (!hasButtons && stillTime === 255) {
+        // Dead interactive stub (no hitboxes) — skip like a buttonless omit.
+        if (!playSkipTitleStub(this as any, window as any)) {
+          showTitleUnavailable(this);
+        }
+        return;
+      }
       if (stillTime > 0 && stillTime < 255) {
         scheduleMenuPostAfterStill(this as any, stillTime, () => {
           const g = window as any;
@@ -1828,6 +1870,7 @@ class XVideo extends HTMLElement implements XVideoElement {
     hideTitleUnavailableOverlay(this);
     clearUserButtonNav(this as any);
     clearMissingTitleSkip(this as any);
+    cancelMenuAdvanceKeepResume(this as any);
     hideAllMenu(this);
     hideMenuHoldFrame(this);
 
@@ -1992,6 +2035,8 @@ class XVideo extends HTMLElement implements XVideoElement {
     }
 
     hideTitleUnavailableOverlay(this);
+    // Drop armed menu finish/still posts — otherwise onPost can yank nav off the title.
+    cancelMenuAdvanceKeepResume(this as any);
     this.videoIndex = targetElementIndex;
     hideAllMenu(this);
     // Menu hold is z-index 0 absolute — it covers static title <video> and looks
@@ -2223,6 +2268,11 @@ class XVideo extends HTMLElement implements XVideoElement {
       warn('safety', 'playMenuCell unknown menu — advancing', {
         menuId: opts.menuId ?? null,
       });
+      // Same teardown as a normal entry so a prior motion/still load cannot
+      // finish into the wrong post or leave the toolbar locked.
+      cancelActiveMenuMotion(this as any);
+      bumpMenuPlayGen(this as any);
+      (this as any)._dvdjsMenuPost = null;
       if (typeof opts.onPost === 'function') {
         try {
           opts.onPost();
@@ -2486,6 +2536,7 @@ class XVideo extends HTMLElement implements XVideoElement {
         return;
       }
       if ((this as any)._dvdjsFinishMenuSegment) {
+        endMediaLoad((this as any)._dvdjsMediaLoadToken ?? 0);
         return;
       }
       if (!ready) {

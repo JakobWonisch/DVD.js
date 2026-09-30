@@ -85,6 +85,7 @@ export function ensureTitleStubMenu(
   host: HTMLElement,
   domain: number,
   stub: TitleStubEntry,
+  pgc?: number,
 ): HTMLElement {
   const id = `title-stub-${domain}`;
   let menu = host.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null;
@@ -96,12 +97,11 @@ export function ensureTitleStubMenu(
   }
 
   menu.dataset.domain = String(domain);
-  if (stub.cellID != null) {
-    menu.dataset.cell = String(stub.cellID);
-  }
-  if (stub.vobID != null) {
-    menu.dataset.vob = String(stub.vobID);
-  }
+  // btnCmd/btnNav for stubs live under [domain]["stub"][pgc] (see convert).
+  menu.dataset.vob = 'stub';
+  menu.dataset.cell = String(
+    pgc != null && Number.isFinite(pgc) ? pgc : stub.cellID != null ? stub.cellID : 1,
+  );
   menu.dataset.stillTime = String(
     stub.still_time != null ? stub.still_time : 255,
   );

@@ -222,3 +222,14 @@ describe('cellNeedsStillPng', () => {
     expect(cellNeedsStillPng({ highlight: null, still_time: 255 })).toBe(true);
   });
 });
+
+it('prefers nv_pck_lbn as the next-VOBU base', () => {
+  expect(
+    nextVobuSectorFromNav(10, {
+      dsi: {
+        dsi_gi: { nv_pck_lbn: 100, vobu_ea: 2 },
+        vobu_sri: { next_vobu: 5 },
+      },
+    } as any),
+  ).toBe(105);
+});

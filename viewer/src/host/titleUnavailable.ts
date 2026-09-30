@@ -223,12 +223,13 @@ export function restoreMenuResumeState(
         } catch {
           // ignore seek failures
         }
-        if (snap.menuVideoPaused === false) {
-          try {
-            void menuVideo.play();
-          } catch {
-            // ignore autoplay blocks
-          }
+        // Do not resume play without re-arming finishSegment — that left
+        // transition cells past EOF with no onPost. Freeze the snap frame;
+        // buttons / Main menu remain the escape.
+        try {
+          menuVideo.pause();
+        } catch {
+          // ignore
         }
       }
     }
