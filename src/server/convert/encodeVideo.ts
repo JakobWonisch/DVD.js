@@ -14,6 +14,7 @@ import * as serverUtils from '../../server/utils/index.js';
 import { globFiles } from '../../server/utils/globFiles.js';
 import {
   buildMenuEncodeSegments,
+  clipVobByteRange,
   menuForceKeyFrameTimes,
   type MenuEncodeSegment,
 } from './menuEncodeSegments.js';
@@ -51,8 +52,9 @@ export default encodeVideo;
  * DVD MPEG-PS often reports nonsense durations; we encode until EOF and do not
  * rely on two-pass stats (pass 1 frequently sees 0 frames on short/misprobed VOBs).
  *
- * Menu VOBs: encode each cell as an exact [startSec, endSec) segment (sector
- * skip + hard `-t`), then concat — avoids keyframe-seek bleed from prior cells.
+ * Menu VOBs: clip each cell's byte range, encode exact [startSec, endSec) with
+ * that cell's audio, then concat — no bleed into the next cell and no whole-VOB
+ * audio mux (which paired English audio with later German menu video).
  *
  * @param {string} dvdPath
  * @param {ConvertOptions|function} optionsOrCallback  Convert options, or callback (legacy).
@@ -166,6 +168,11 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
               's by VOB PTS):',
             vobFile[0],
           );
+          // Keep stubs from generateTitleStubs; mark no short cells included.
+          filesList[index].titlePgcMedia = mergeTitlePgcMedia(
+            metadata[index] && metadata[index].titlePgcMedia,
+            { includedPgcs: [], pgcTimeline: {} },
+          );
           finishOne();
           return;
         }
@@ -179,7 +186,10 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
             's):',
           path.basename(vobFile[0]),
         );
-        filesList[index].titlePgcMedia = titlePlan.titlePgcMedia;
+        filesList[index].titlePgcMedia = mergeTitlePgcMedia(
+          metadata[index] && metadata[index].titlePgcMedia,
+          titlePlan.titlePgcMedia,
+        );
       }
 
       warnIfCssLike(vobFile[0]);
@@ -250,10 +260,10 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
                 return p !== '/' + dvdName + '/' + path.basename(output);
               },
             );
-            filesList[index].titlePgcMedia = {
-              includedPgcs: [],
-              pgcTimeline: {},
-            };
+            filesList[index].titlePgcMedia = mergeTitlePgcMedia(
+              metadata[index] && metadata[index].titlePgcMedia,
+              { includedPgcs: [], pgcTimeline: {} },
+            );
             try {
               if (fs.existsSync(output)) {
                 fs.unlinkSync(output);
@@ -328,17 +338,13 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
   }
 
   /**
-   * Encode each menu cell for exactly durationSec from its start sector, then
-   * concat. Output timeline matches menuCell startSec/endSec used by the player.
-   * Segments are video-only (consistent concat); audio is muxed from the VOB.
+   * Encode each menu cell from a byte-clipped VOB slice, mux that cell's audio
+   * (or silence), then concat. Timeline matches menuCell startSec/endSec.
    */
   function encodeMenuSegments(input, output, segments: MenuEncodeSegment[], done) {
     var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-menu-enc-'));
     var segPaths: string[] = [];
     var i = 0;
-    var totalDuration = segments.reduce(function(sum, s) {
-      return sum + s.durationSec;
-    }, 0);
 
     process.stdout.write(
       'Encoding ' +
@@ -352,44 +358,51 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
 
     function encodeNext() {
       if (i >= segments.length) {
-        var videoOnly = path.join(tmpDir, 'video.webm');
-        concatSegments(segPaths, videoOnly, function(code) {
-          if (code !== 0) {
-            cleanupDir(tmpDir);
-            done(code);
-            return;
+        concatSegments(segPaths, output, function(code) {
+          cleanupDir(tmpDir);
+          if (code === 0) {
+            reportOutput(0, input, output);
           }
-          muxMenuAudio(input, videoOnly, output, totalDuration, function(muxCode) {
-            cleanupDir(tmpDir);
-            if (muxCode === 0) {
-              reportOutput(0, input, output);
-            }
-            done(muxCode);
-          });
+          done(code);
         });
         return;
       }
 
       var seg = segments[i];
-      var segOut = path.join(tmpDir, 'seg-' + String(i).padStart(3, '0') + '.webm');
-      // Hard -t after sector skip: keep only this cell's dvd_time window.
-      // Video-only so every segment has the same stream layout for concat.
-      var cmd = [
+      var cellVob = path.join(
+        tmpDir,
+        'cell-' + String(i).padStart(3, '0') + '.vob',
+      );
+      var videoOnly = path.join(
+        tmpDir,
+        'vid-' + String(i).padStart(3, '0') + '.webm',
+      );
+      var segOut = path.join(
+        tmpDir,
+        'seg-' + String(i).padStart(3, '0') + '.webm',
+      );
+      if (!clipVobByteRange(input, seg.skipBytes, seg.endBytes, cellVob)) {
+        console.error('Failed to clip menu cell', seg.label);
+        cleanupDir(tmpDir);
+        done(1);
+        return;
+      }
+
+      var videoCmd = [
         '-hide_banner',
         ...(options.verbose ? [] : ['-loglevel', 'error', '-stats']),
         '-analyzeduration', '50M',
         '-probesize', '20M',
         '-fflags', '+genpts+discardcorrupt',
         '-err_detect', 'ignore_err',
-        '-skip_initial_bytes', String(seg.skipBytes),
-        '-i', input,
+        '-i', cellVob,
         '-t', String(seg.durationSec),
         '-map', '0:v:0',
         '-an',
         ...libvpxVideoArgs(),
         '-force_key_frames', '0',
         '-y',
-        segOut,
+        videoOnly,
       ];
 
       console.log(
@@ -402,15 +415,15 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
           's',
       );
 
-      runFfmpeg(cmd, function(code) {
-        if (code !== 0) {
+      runFfmpeg(videoCmd, function(vCode) {
+        if (vCode !== 0) {
           console.error('ffmpeg segment failed for cell', seg.label);
           cleanupDir(tmpDir);
-          done(code);
+          done(vCode);
           return;
         }
         try {
-          if (fs.statSync(segOut).size < 256) {
+          if (fs.statSync(videoOnly).size < 256) {
             console.error('ffmpeg produced empty segment for cell', seg.label);
             cleanupDir(tmpDir);
             done(1);
@@ -421,27 +434,46 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
           done(1);
           return;
         }
-        segPaths.push(segOut);
-        i++;
-        setTimeout(encodeNext, 0);
+        // Audio from the same clipped cell (not the whole VOB — that mixed
+        // English stream-0 under later German menu video on Shrek).
+        muxCellAudio(cellVob, videoOnly, segOut, seg.durationSec, function() {
+          try {
+            fs.unlinkSync(cellVob);
+            fs.unlinkSync(videoOnly);
+          } catch (e) {
+            // ignore
+          }
+          segPaths.push(segOut);
+          i++;
+          setTimeout(encodeNext, 0);
+        });
       });
     }
   }
 
-  /** Mux VOB audio under the precise video timeline (best-effort). */
-  function muxMenuAudio(input, videoOnly, output, totalDuration, done) {
-    var cmd = [
+  /**
+   * Mux audio from a clipped cell VOB under video. On failure, pad silence so
+   * every segment has the same A/V layout for concat.
+   */
+  function muxCellAudio(
+    cellVob: string,
+    videoOnly: string,
+    output: string,
+    durationSec: number,
+    done: () => void,
+  ) {
+    var withAudio = [
       '-hide_banner',
       ...(options.verbose ? [] : ['-loglevel', 'error', '-stats']),
-      '-analyzeduration', '200M',
-      '-probesize', '100M',
+      '-analyzeduration', '50M',
+      '-probesize', '20M',
       '-fflags', '+genpts+discardcorrupt',
       '-err_detect', 'ignore_err',
       '-i', videoOnly,
-      '-i', input,
-      '-t', String(totalDuration),
+      '-i', cellVob,
+      '-t', String(durationSec),
       '-map', '0:v:0',
-      '-map', '1:a:0?',
+      '-map', '1:a:0',
       '-c:v', 'copy',
       '-c:a', 'libvorbis',
       '-b:a', '128k',
@@ -451,20 +483,40 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       '-y',
       output,
     ];
-    runFfmpeg(cmd, function(code) {
+    runFfmpeg(withAudio, function(code) {
       if (code === 0) {
-        done(0);
+        done();
         return;
       }
-      // No usable audio — ship the precise video-only file.
-      console.warn('Menu audio mux failed; keeping video-only WebM');
-      try {
-        fs.copyFileSync(videoOnly, output);
-        done(0);
-      } catch (e) {
-        console.error(e);
-        done(1);
-      }
+      var withSilence = [
+        '-hide_banner',
+        ...(options.verbose ? [] : ['-loglevel', 'error']),
+        '-i', videoOnly,
+        '-f', 'lavfi',
+        '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000',
+        '-t', String(durationSec),
+        '-map', '0:v:0',
+        '-map', '1:a:0',
+        '-c:v', 'copy',
+        '-c:a', 'libvorbis',
+        '-b:a', '64k',
+        '-shortest',
+        '-y',
+        output,
+      ];
+      runFfmpeg(withSilence, function(sCode) {
+        if (sCode === 0) {
+          done();
+          return;
+        }
+        // Last resort: video-only (concat may fail if other segs have audio).
+        try {
+          fs.copyFileSync(videoOnly, output);
+        } catch (e) {
+          console.error(e);
+        }
+        done();
+      });
     });
   }
 
@@ -551,10 +603,22 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       }
 
       var seg = segments[i];
+      var cellVob = path.join(
+        tmpDir,
+        'cell-' + String(i).padStart(3, '0') + '.vob',
+      );
       var segOut = path.join(
         tmpDir,
         'seg-' + String(i).padStart(3, '0') + '.webm',
       );
+      if (
+        !clipVobByteRange(seg.inputPath, seg.skipBytes, seg.endBytes, cellVob)
+      ) {
+        console.error('Failed to clip title cell', seg.label);
+        cleanupDir(tmpDir);
+        done(1);
+        return;
+      }
       var cmd = [
         '-hide_banner',
         ...(options.verbose ? [] : ['-loglevel', 'error', '-stats']),
@@ -562,8 +626,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         '-probesize', '20M',
         '-fflags', '+genpts+discardcorrupt',
         '-err_detect', 'ignore_err',
-        '-skip_initial_bytes', String(seg.skipBytes),
-        '-i', seg.inputPath,
+        '-i', cellVob,
         '-t', String(seg.durationSec),
         '-map', '0:v:0',
         '-map', '0:a:0?',
@@ -582,11 +645,15 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
           seg.label +
           ' t=' +
           seg.durationSec.toFixed(3) +
-          's skip=' +
-          seg.skipBytes,
+          's',
       );
 
       runFfmpeg(cmd, function(code) {
+        try {
+          fs.unlinkSync(cellVob);
+        } catch (e) {
+          // ignore
+        }
         if (code !== 0) {
           console.error('ffmpeg title segment failed for cell', seg.label);
           cleanupDir(tmpDir);
@@ -749,9 +816,25 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       content[i].video = entry.video.slice();
       content[i].extractMode = entry.extractMode;
       if (entry.titlePgcMedia) {
-        content[i].titlePgcMedia = entry.titlePgcMedia;
+        content[i].titlePgcMedia = mergeTitlePgcMedia(
+          content[i].titlePgcMedia,
+          entry.titlePgcMedia,
+        );
       } else if (!options.full) {
-        // Menus mode without short titles: clear stale partial-title maps.
+        // Menus mode: keep stubs from generateTitleStubs; clear only encode maps.
+        if (
+          content[i].titlePgcMedia &&
+          content[i].titlePgcMedia.stubs &&
+          Object.keys(content[i].titlePgcMedia.stubs).length
+        ) {
+          content[i].titlePgcMedia = mergeTitlePgcMedia(
+            content[i].titlePgcMedia,
+            { includedPgcs: [], pgcTimeline: {} },
+          );
+        } else {
+          delete content[i].titlePgcMedia;
+        }
+      } else {
         delete content[i].titlePgcMedia;
       }
     });
@@ -787,6 +870,37 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
   function getWebName(name: string): string {
     return path.join(webPath, getJsonFileName(name));
   }
+}
+
+/**
+ * Preserve stubs from generateTitleStubs while updating includedPgcs / timeline.
+ */
+function mergeTitlePgcMedia(
+  existing: TitlePgcMedia | null | undefined,
+  next: TitlePgcMedia,
+): TitlePgcMedia {
+  var stubs =
+    (next && next.stubs) ||
+    (existing && existing.stubs) ||
+    undefined;
+  var out: TitlePgcMedia = {
+    includedPgcs: (next && next.includedPgcs) || [],
+    pgcTimeline: (next && next.pgcTimeline) || {},
+  };
+  if (stubs && Object.keys(stubs).length) {
+    // Drop stubs for PGCs that are now included as short-cell WebMs.
+    var included = new Set(out.includedPgcs);
+    var kept: NonNullable<TitlePgcMedia['stubs']> = {};
+    Object.keys(stubs).forEach(function (k) {
+      if (!included.has(Number(k))) {
+        kept[k] = stubs[k];
+      }
+    });
+    if (Object.keys(kept).length) {
+      out.stubs = kept;
+    }
+  }
+  return out;
 }
 
 function getJsonFileName(name: string): string {

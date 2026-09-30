@@ -48,6 +48,8 @@ export type TitleEncodeSegment = {
   endSec: number;
   durationSec: number;
   skipBytes: number;
+  /** Exclusive end byte in `inputPath` (clip before encode to avoid bleed). */
+  endBytes: number;
   /** Absolute path of the VOB file that contains this cell. */
   inputPath: string;
   cellId: string;
@@ -67,6 +69,23 @@ export type TitlePgcMedia = {
   includedPgcs: number[];
   /** Remapped WebM timeline per included PGC. */
   pgcTimeline: Record<string, TitlePgcTimeline>;
+  /**
+   * Omitted title PGCs (menus mode): interactive = still+buttons stub;
+   * skip = silent PGC post. Filled by generateTitleStubs; encode merges.
+   */
+  stubs?: Record<
+    string,
+    {
+      kind: 'interactive' | 'skip';
+      cellID?: number;
+      vobID?: number;
+      still?: string | null;
+      css?: string | null;
+      still_time?: number;
+      buttons?: unknown[];
+      btn_nb?: number;
+    }
+  >;
 };
 
 export type ShortTitleEncodePlan = {
@@ -338,6 +357,7 @@ export function buildShortTitleEncodePlan(
       endSec: t + durationSec,
       durationSec,
       skipBytes: resolved.sectorInFile * DVD_VIDEO_LB_LEN,
+      endBytes: (endResolved.sectorInFile + 1) * DVD_VIDEO_LB_LEN,
       inputPath: resolved.path,
       cellId: String(cell.cellId),
       vobId: String(cell.vobId),

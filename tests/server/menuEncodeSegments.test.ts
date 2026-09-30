@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   buildMenuEncodeSegments,
+  clipVobByteRange,
   menuForceKeyFrameTimes,
 } from '../../src/server/convert/menuEncodeSegments.js';
 import { DVD_VIDEO_LB_LEN } from '../../src/server/convert/menuStillSeek.js';
@@ -39,6 +43,7 @@ describe('buildMenuEncodeSegments', () => {
       endSec: 10,
       durationSec: 10,
       skipBytes: 0,
+      endBytes: 100 * DVD_VIDEO_LB_LEN,
     });
     expect(segments[1]).toMatchObject({
       label: '2:1',
@@ -46,12 +51,33 @@ describe('buildMenuEncodeSegments', () => {
       endSec: 14,
       durationSec: 4,
       skipBytes: 100 * DVD_VIDEO_LB_LEN,
+      endBytes: 201 * DVD_VIDEO_LB_LEN,
     });
   });
 
   it('returns empty when menuCell missing', () => {
     expect(buildMenuEncodeSegments(null)).toEqual([]);
     expect(buildMenuEncodeSegments(undefined)).toEqual([]);
+  });
+});
+
+describe('clipVobByteRange', () => {
+  it('copies only the requested byte window', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-clip-'));
+    const src = path.join(dir, 'src.vob');
+    const out = path.join(dir, 'out.vob');
+    const buf = Buffer.alloc(10 * DVD_VIDEO_LB_LEN, 0);
+    buf[2 * DVD_VIDEO_LB_LEN] = 0xaa;
+    buf[3 * DVD_VIDEO_LB_LEN + 1] = 0xbb;
+    fs.writeFileSync(src, buf);
+    expect(
+      clipVobByteRange(src, 2 * DVD_VIDEO_LB_LEN, 4 * DVD_VIDEO_LB_LEN, out),
+    ).toBe(true);
+    const clipped = fs.readFileSync(out);
+    expect(clipped.length).toBe(2 * DVD_VIDEO_LB_LEN);
+    expect(clipped[0]).toBe(0xaa);
+    expect(clipped[DVD_VIDEO_LB_LEN + 1]).toBe(0xbb);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 
@@ -64,6 +90,7 @@ describe('menuForceKeyFrameTimes', () => {
           endSec: 5,
           durationSec: 5,
           skipBytes: 0,
+          endBytes: 2048,
           cellId: '1',
           vobId: '1',
           label: '1:1',
@@ -73,6 +100,7 @@ describe('menuForceKeyFrameTimes', () => {
           endSec: 9,
           durationSec: 3.75,
           skipBytes: 2048,
+          endBytes: 4096,
           cellId: '2',
           vobId: '1',
           label: '2:1',

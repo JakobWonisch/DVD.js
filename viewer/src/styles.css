@@ -644,6 +644,41 @@ input[type='button'].btn.btn-spu.selected {
   outline-offset: 2px;
 }
 
+/* Interactive title stub (omitted title with end-of-PGC buttons). */
+x-menu.dvdjs-title-stub {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  z-index: 5;
+  background: #000;
+}
+
+x-menu.dvdjs-title-stub .menu-still {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+x-menu.dvdjs-title-stub__banner,
+.dvdjs-title-stub__banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.75rem;
+  margin: 0;
+  padding: 0.35rem 0.75rem;
+  text-align: center;
+  font: 600 0.85rem/1.3 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+  z-index: 2;
+}
+
 .dvdjs-start-overlay {
   position: absolute;
   inset: 0;

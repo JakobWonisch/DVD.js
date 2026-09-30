@@ -7,6 +7,7 @@
 
 'use strict';
 
+import * as fs from 'node:fs';
 import { DVD_VIDEO_LB_LEN } from './menuStillSeek.js';
 
 export type MenuCellLike = {
@@ -21,7 +22,14 @@ export type MenuEncodeSegment = {
   startSec: number;
   endSec: number;
   durationSec: number;
+  /** Byte offset of the cell start in the menu VOB. */
   skipBytes: number;
+  /**
+   * Exclusive end byte of the cell in the menu VOB. Encode must clip to this
+   * range — `-skip_initial_bytes` + `-t` alone bleeds into the next cell when
+   * the IFO duration is longer than the packs (Shrek FP cell → German menu).
+   */
+  endBytes: number;
   cellId: string;
   vobId: string;
   label: string;
@@ -52,6 +60,7 @@ export function buildMenuEncodeSegments(
       const startSec = cell.startSec;
       const endSec = cell.endSec;
       const startSector = cell.start_sector;
+      const lastSector = cell.last_sector;
       if (
         startSec == null ||
         endSec == null ||
@@ -65,11 +74,19 @@ export function buildMenuEncodeSegments(
       if (!(durationSec > 0)) {
         continue;
       }
+      const skipBytes = startSector * DVD_VIDEO_LB_LEN;
+      const endBytes =
+        lastSector != null &&
+        Number.isFinite(lastSector) &&
+        lastSector >= startSector
+          ? (lastSector + 1) * DVD_VIDEO_LB_LEN
+          : skipBytes + DVD_VIDEO_LB_LEN;
       out.push({
         startSec,
         endSec,
         durationSec,
-        skipBytes: startSector * DVD_VIDEO_LB_LEN,
+        skipBytes,
+        endBytes,
         cellId: String(cellId),
         vobId: String(vobId),
         label: cellId + ':' + vobId,
@@ -84,6 +101,43 @@ export function buildMenuEncodeSegments(
     return a.skipBytes - b.skipBytes;
   });
   return out;
+}
+
+/**
+ * Copy `[startBytes, endBytes)` from a VOB into `outPath` so ffmpeg cannot
+ * demux past the cell (same pattern as menu still extraction).
+ */
+export function clipVobByteRange(
+  inputPath: string,
+  startBytes: number,
+  endBytes: number,
+  outPath: string,
+): boolean {
+  if (
+    !(startBytes >= 0) ||
+    !(endBytes > startBytes) ||
+    !Number.isFinite(startBytes) ||
+    !Number.isFinite(endBytes)
+  ) {
+    return false;
+  }
+  const length = endBytes - startBytes;
+  try {
+    const fd = fs.openSync(inputPath, 'r');
+    try {
+      const buf = Buffer.alloc(length);
+      const n = fs.readSync(fd, buf, 0, length, startBytes);
+      if (n <= 0) {
+        return false;
+      }
+      fs.writeFileSync(outPath, n === length ? buf : buf.subarray(0, n));
+      return true;
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
 }
 
 /**

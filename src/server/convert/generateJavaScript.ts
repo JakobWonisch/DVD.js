@@ -232,6 +232,7 @@ function generateJavaScript(dvdPath: string, callback) {
     code = pgciut(json, code);
     code = pgci_srp(json, code);
     code = btn_cmd(json, code);
+    code = title_stub_btn_cmd(code);
     code = vtt_table(json, code);
     code = ptt_table(json, code);
     code = menu_type_table(json, code);
@@ -316,7 +317,11 @@ function generateJavaScript(dvdPath: string, callback) {
             '  pgc = ' + pgcIndex + ';',
             '  console.debug("Run: Domain:", domain, "Lang:", lang, "PGC:", pgc);',
             '  if(this.pre()){return;}',
-            '  dvd.playByID("video-' + index + '");',
+            '  if (typeof dvd !== "undefined" && dvd && typeof dvd.playTitlePgc === "function") {',
+            '    dvd.playTitlePgc(domain, pgc);',
+            '  } else {',
+            '    dvd.playByID("video-' + index + '");',
+            '  }',
             '},',
             'pre: function() {' +
               recompile(titleCmds && titleCmds.pre_cmds) +
@@ -567,6 +572,120 @@ function generateJavaScript(dvdPath: string, callback) {
         }
       }
 
+      return code;
+    }
+
+    /**
+     * Interactive title stubs: emit btnCmd/btnNav from stub metadata so D-pad /
+     * clicks work without title NAV sidecars.
+     */
+    function title_stub_btn_cmd(code) {
+      var domainMeta = (metadata && metadata[pointer]) || {};
+      var stubs =
+        domainMeta.titlePgcMedia && domainMeta.titlePgcMedia.stubs
+          ? domainMeta.titlePgcMedia.stubs
+          : null;
+      if (!stubs) {
+        return code;
+      }
+      var keys = Object.keys(stubs);
+      var emitted = false;
+      for (var ki = 0; ki < keys.length; ki++) {
+        var stub = stubs[keys[ki]];
+        if (
+          !stub ||
+          stub.kind !== 'interactive' ||
+          !stub.buttons ||
+          !stub.buttons.length ||
+          stub.cellID == null ||
+          stub.vobID == null
+        ) {
+          continue;
+        }
+        if (!emitted) {
+          code.push('btnCmd[' + pointer + '] = btnCmd[' + pointer + '] || [];');
+          code.push('btnNav[' + pointer + '] = btnNav[' + pointer + '] || [];');
+          emitted = true;
+        }
+        var vobId = stub.vobID;
+        var cellId = stub.cellID;
+        code.push(
+          'btnCmd[' +
+            pointer +
+            '][' +
+            vobId +
+            '] = btnCmd[' +
+            pointer +
+            '][' +
+            vobId +
+            '] || [];',
+        );
+        code.push(
+          'btnNav[' +
+            pointer +
+            '][' +
+            vobId +
+            '] = btnNav[' +
+            pointer +
+            '][' +
+            vobId +
+            '] || [];',
+        );
+        code.push(
+          'btnCmd[' + pointer + '][' + vobId + '][' + cellId + '] = [];',
+        );
+        code.push(
+          'btnNav[' + pointer + '][' + vobId + '][' + cellId + '] = [];',
+        );
+        for (var j = 0; j < stub.buttons.length; j++) {
+          var btn = stub.buttons[j] as {
+            id?: number;
+            up?: number;
+            down?: number;
+            left?: number;
+            right?: number;
+            auto_action_mode?: number;
+            cmdBytes?: number[];
+          };
+          var cmdBytes =
+            btn && Array.isArray(btn.cmdBytes) ? btn.cmdBytes : [];
+          var cmdObj = { bytes: cmdBytes };
+          code.push(
+            'btnCmd[' +
+              pointer +
+              '][' +
+              vobId +
+              '][' +
+              cellId +
+              '][' +
+              j +
+              '] = function() {domain = ' +
+              pointer +
+              ';' +
+              recompile([cmdObj as any]) +
+              '};',
+          );
+          code.push(
+            'btnNav[' +
+              pointer +
+              '][' +
+              vobId +
+              '][' +
+              cellId +
+              '][' +
+              j +
+              '] = ' +
+              JSON.stringify({
+                up: (btn && btn.up) || 0,
+                down: (btn && btn.down) || 0,
+                left: (btn && btn.left) || 0,
+                right: (btn && btn.right) || 0,
+                auto_action_mode: (btn && btn.auto_action_mode) || 0,
+              }) +
+              ';',
+          );
+        }
+      }
       return code;
     }
 

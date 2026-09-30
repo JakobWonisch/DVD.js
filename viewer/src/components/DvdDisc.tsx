@@ -199,7 +199,15 @@ const DomainVideos: Component<{ domain: DomainMetadata; id: number }> = (
       </Show>
       <Show when={!titleSrc()}>
         {/* Keep id slot for JumpTT / playByID lookups on menus-only rips. */}
-        <video id={`video-${props.id}`} hidden />
+        <video
+          id={`video-${props.id}`}
+          hidden
+          attr:data-title-pgc-media={
+            props.domain.titlePgcMedia
+              ? JSON.stringify(props.domain.titlePgcMedia)
+              : undefined
+          }
+        />
       </Show>
     </>
   );

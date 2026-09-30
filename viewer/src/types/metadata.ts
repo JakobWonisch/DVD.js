@@ -69,6 +69,19 @@ export type DomainMetadata = {
   titlePgcMedia?: {
     includedPgcs: number[];
     pgcTimeline: Record<string, { startSec: number; endSec: number }>;
+    stubs?: Record<
+      string,
+      {
+        kind: 'interactive' | 'skip';
+        cellID?: number;
+        vobID?: number;
+        still?: string | null;
+        css?: string | null;
+        still_time?: number;
+        buttons?: MenuButtonNav[];
+        btn_nb?: number;
+      }
+    >;
   };
 };
 

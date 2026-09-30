@@ -12,6 +12,12 @@ import {
   tryAutoSkipMissingTitle,
 } from './titleUnavailable.js';
 import {
+  ensureTitleStubMenu,
+  getTitleStub,
+  playSkipTitleStub,
+  type TitlePgcMediaWithStubs,
+} from './titleStubs.js';
+import {
   silenceVideoAudio,
   notifyAutoplayBlocked,
   playWithAutoplayFallback,
@@ -69,10 +75,7 @@ export type MenuCellPlayOpts = {
   onPost?: () => void;
 };
 
-type TitlePgcMedia = {
-  includedPgcs?: number[];
-  pgcTimeline?: Record<string, { startSec: number; endSec: number }>;
-};
+type TitlePgcMedia = TitlePgcMediaWithStubs;
 
 type PlaylistEntry = {
   id: string;
@@ -103,9 +106,12 @@ export type XVideoElement = HTMLElement & {
    * Pre-check before JumpTT / JumpVTS_* — if the title WebM is missing (or this
    * PGC was not included in a short-cell menus rip) and the jump came from a
    * menu button, show the dialog without leaving the menu.
+   * Stubbed PGCs (skip / interactive) always proceed so playTitlePgc can run.
    * @returns false when the jump must be aborted.
    */
   guardTitleJump: (elementID: string, pgc?: number) => boolean;
+  /** Play a title PGC: WebM, interactive stub, or silent skip stub. */
+  playTitlePgc: (domain: number, pgc: number) => void;
   /** Latch button nav + snapshot menu/VM for missing-title restore. */
   beginUserButtonNav: () => void;
   setMenuHighlight: (menu: Element | null, buttonIndex: number) => void;
@@ -1360,7 +1366,7 @@ class XVideo extends HTMLElement implements XVideoElement {
    * Called from compiled JumpTT / JumpVTS_* before title PGC run.
    * When a menu button targets a missing title (or a PGC omitted from a
    * short-cell rip), show the dialog and abort without mutating domain/pgc
-   * or hiding the current menu.
+   * or hiding the current menu — unless a convert stub handles it.
    */
   guardTitleJump(elementID: string, pgc?: number): boolean {
     if (elementID === undefined) {
@@ -1372,12 +1378,86 @@ class XVideo extends HTMLElement implements XVideoElement {
     if (!isTitleMediaMissing(entry, pgc)) {
       return true;
     }
-    // Missing title: button → sticky dialog in place; FP/auto → let run proceed.
+    const stub = getTitleStub(entry?.titlePgcMedia, pgc);
+    if (stub) {
+      // skip / interactive stubs: let PGCIUT.run → playTitlePgc handle it.
+      return true;
+    }
+    // Missing title with no stub: button → sticky dialog in place; FP/auto → let run proceed.
     if ((this as any)._dvdjsFromButton) {
       showTitleUnavailable(this);
       return false;
     }
     return true;
+  }
+
+  /**
+   * Title PGC entry after pre(): play short-cell WebM, interactive stub UI,
+   * or silent skip (PGC post) for omitted buttonless titles.
+   */
+  playTitlePgc(domain: number, pgc: number): void {
+    this.#refreshPlaylist();
+    const id = `video-${domain}`;
+    const entry = this.playlist.find((e) => e.id === id);
+    const stub = getTitleStub(entry?.titlePgcMedia, pgc);
+
+    if (stub && stub.kind === 'skip') {
+      hideTitleUnavailableOverlay(this);
+      if (!playSkipTitleStub(this as any, window as any)) {
+        showTitleUnavailable(this);
+      }
+      return;
+    }
+
+    if (stub && stub.kind === 'interactive') {
+      hideTitleUnavailableOverlay(this);
+      clearUserButtonNav(this as any);
+      clearMissingTitleSkip(this as any);
+      this.pause();
+      hideAllMenu(this);
+      // Hide title videos while showing the stub still.
+      this.playlist.forEach((e) => {
+        e.video.style.display = 'none';
+      });
+      const menu = ensureTitleStubMenu(this, domain, stub);
+      (this as any)._dvdjsActiveMenu = menu;
+      if (typeof (menu as any).show === 'function') {
+        (menu as any).show();
+      } else {
+        menu.style.display = 'flex';
+        menu.hidden = false;
+      }
+      // Inline geometry already set in ensureTitleStubMenu; stamp sheet as fallback.
+      const cssLink = stub.css
+        ? (document.querySelector(
+            `link#title-stub-css-${domain}-${stub.cellID}-${stub.vobID}`,
+          ) as HTMLLinkElement | null)
+        : null;
+      menu.querySelectorAll('input.btn').forEach((el) => {
+        const id = Number((el as HTMLElement).dataset.id || 0);
+        const nav = (stub.buttons || [])[id];
+        applyMenuButtonGeometry(el as HTMLElement, nav);
+      });
+      stampHitboxStylesFromStylesheet(menu, cssLink);
+      const hl =
+        Math.floor(((window as any).sprm?.HL_BTNN || 0x0400) / 0x0400) - 1;
+      this.setMenuHighlight(menu, Math.max(0, hl));
+      // Infinite / timed still — no WebM; post only via button cmds or still_time.
+      const stillTime = stub.still_time != null ? stub.still_time : 255;
+      if (stillTime > 0 && stillTime < 255) {
+        scheduleMenuPostAfterStill(this as any, stillTime, () => {
+          const g = window as any;
+          const pgcObj = g.PGCIUT?.[domain]?.[pgc];
+          if (pgcObj && typeof pgcObj.post === 'function') {
+            pgcObj.post();
+          }
+        });
+      }
+      return;
+    }
+
+    // Included (or legacy missing): normal playByID path.
+    this.playByID(id);
   }
 
   playByIndex(videoIndex: number) {
@@ -1420,6 +1500,11 @@ class XVideo extends HTMLElement implements XVideoElement {
     const g = window as any;
     const pgc = g && g.pgc;
     if (isTitleMediaMissing(entry, pgc)) {
+      const stub = getTitleStub(entry.titlePgcMedia, pgc);
+      if (stub && typeof g.domain === 'number' && pgc != null) {
+        this.playTitlePgc(g.domain, Number(pgc));
+        return;
+      }
       showTitleUnavailable(this);
       return;
     }
@@ -1455,6 +1540,77 @@ class XVideo extends HTMLElement implements XVideoElement {
         video.addEventListener('loadedmetadata', onMeta);
       }
     }
+
+    // Short included titles: when the clip ends, run title PGC post() so
+    // buttonless games / extras auto-advance like on a real player.
+    const prevEnded = (this as any)._dvdjsTitleEnded as
+      | ((ev: Event) => void)
+      | null;
+    const prevTime = (this as any)._dvdjsTitleTimeEnd as
+      | ((ev: Event) => void)
+      | null;
+    if (prevEnded) {
+      video.removeEventListener('ended', prevEnded);
+    }
+    if (prevTime) {
+      video.removeEventListener('timeupdate', prevTime);
+    }
+    (this as any)._dvdjsTitleEnded = null;
+    (this as any)._dvdjsTitleTimeEnd = null;
+
+    let titlePostDone = false;
+    const runTitlePost = () => {
+      if (titlePostDone) {
+        return;
+      }
+      titlePostDone = true;
+      const endedFn = (this as any)._dvdjsTitleEnded;
+      const timeFn = (this as any)._dvdjsTitleTimeEnd;
+      if (endedFn) {
+        video.removeEventListener('ended', endedFn);
+      }
+      if (timeFn) {
+        video.removeEventListener('timeupdate', timeFn);
+      }
+      (this as any)._dvdjsTitleEnded = null;
+      (this as any)._dvdjsTitleTimeEnd = null;
+      const gg = window as any;
+      const pgcObj =
+        gg.PGCIUT &&
+        gg.domain != null &&
+        gg.pgc != null &&
+        gg.PGCIUT[gg.domain] &&
+        gg.PGCIUT[gg.domain][gg.pgc];
+      if (pgcObj && typeof pgcObj.post === 'function') {
+        try {
+          pgcObj.post();
+        } catch (e) {
+          console.warn('DVD.js title post failed', e);
+        }
+      }
+    };
+    const onTitleEnded = () => {
+      runTitlePost();
+    };
+    (this as any)._dvdjsTitleEnded = onTitleEnded;
+    video.addEventListener('ended', onTitleEnded);
+    const endAt =
+      timeline && Number.isFinite(timeline.endSec) ? timeline.endSec : null;
+    if (endAt != null) {
+      const onTime = () => {
+        if (video.currentTime + 0.05 >= endAt) {
+          try {
+            video.pause();
+          } catch {
+            // ignore
+          }
+          runTitlePost();
+        }
+      };
+      video.addEventListener('timeupdate', onTime);
+      (this as any)._dvdjsTitleTimeEnd = onTime;
+    }
+
     const onMediaError = () => {
       video.removeEventListener('error', onMediaError);
       showTitleUnavailable(this);
