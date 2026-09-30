@@ -45,16 +45,29 @@ describe('collectPreloadStillUrls', () => {
     const urls = collectPreloadStillUrls({
       baseDir: '/d/',
       domain: 0,
-      current: { cellID: 1, vobID: 1 },
+      current: { cellID: 1, vobID: 1, still_time: 255, buttons: [{}] },
       pgcCells: [
-        { cellID: 1, vobID: 1 },
-        { cellID: 2, vobID: 1 },
+        { cellID: 1, vobID: 1, still_time: 255, buttons: [{}] },
+        { cellID: 2, vobID: 1, still: '/d/menu-0-2-1.png' },
+        // Pure wipe — no still file; must not invent a 404 URL.
+        { cellID: 3, vobID: 1, still_time: 0, buttons: [] },
       ],
       linkedStillSrcs: ['/d/menu-1-9-1.png', ''],
     });
     expect(urls.sort()).toEqual(
       ['/d/menu-0-1-1.png', '/d/menu-0-2-1.png', '/d/menu-1-9-1.png'].sort(),
     );
+  });
+
+  it('skips pure transition cells with no still', () => {
+    expect(
+      collectPreloadStillUrls({
+        baseDir: '/d/',
+        domain: 1,
+        current: { cellID: 1, vobID: 2, still_time: 0, buttons: [] },
+        pgcCells: [{ cellID: 1, vobID: 2, still_time: 0 }],
+      }),
+    ).toEqual([]);
   });
 });
 
@@ -223,7 +236,12 @@ describe('preloadLinkedMenuAssets', () => {
     const menu = {
       dataset: {
         domain: '1',
-        cells: encodeURIComponent(JSON.stringify([{ cellID: 4, vobID: 1 }])),
+        cells: encodeURIComponent(
+          JSON.stringify([
+            { cellID: 4, vobID: 1, still_time: 255, buttons: [{}] },
+            { cellID: 1, vobID: 2, still_time: 0, buttons: [] },
+          ]),
+        ),
       },
     } as unknown as HTMLElement;
 
@@ -249,8 +267,10 @@ describe('preloadLinkedMenuAssets', () => {
     expect(video.loop).toBe(false);
     expect(video.preload).toBe('auto');
     expect(video.load).not.toHaveBeenCalled();
-    expect(urls).toContain('/web/menu-1-1-1.png');
+    // Current opts lack still_time/buttons — treated as wipe, not preloaded.
+    expect(urls).not.toContain('/web/menu-1-1-1.png');
     expect(urls).toContain('/web/menu-1-4-1.png');
+    expect(urls).not.toContain('/web/menu-1-1-2.png');
     expect(urls).toContain('/web/menu-1-9-2.png');
   });
 });

@@ -41,6 +41,8 @@ export type TitleCellProbe = {
   ifoDurationSec: number;
   /** Duration from VOB NAV PTS when probed; otherwise IFO fallback. */
   durationSec: number;
+  cell_cmd_nr: number;
+  still_time: number;
 };
 
 export type TitleEncodeSegment = {
@@ -64,11 +66,25 @@ export type TitlePgcTimeline = {
   endSec: number;
 };
 
+export type TitlePgcCellTimeline = {
+  startSec: number;
+  endSec: number;
+  cellID: number;
+  vobID: number;
+  cell_cmd_nr?: number;
+  still_time?: number;
+};
+
 export type TitlePgcMedia = {
   /** 1-based PGC indices fully covered by encoded short cells. */
   includedPgcs: number[];
   /** Remapped WebM timeline per included PGC. */
   pgcTimeline: Record<string, TitlePgcTimeline>;
+  /**
+   * Per-cell remapped WebM windows for included PGCs (LinkPGN / LinkCN in
+   * title domain — Shrek trivia answer clips, etc.).
+   */
+  pgcCells?: Record<string, TitlePgcCellTimeline[]>;
   /**
    * Omitted title PGCs (menus mode): interactive = still+buttons stub;
    * skip = silent PGC post. Filled by generateTitleStubs; encode merges.
@@ -102,6 +118,8 @@ type CellPlayback = {
   } | null;
   first_sector?: number;
   last_sector?: number;
+  cell_cmd_nr?: number;
+  still_time?: number;
 };
 
 type CellPosition = {
@@ -264,6 +282,10 @@ export function listTitleCellsFromIfo(ifo: TitleIfoLike): TitleCellProbe[] {
         lastSector,
         ifoDurationSec,
         durationSec: ifoDurationSec,
+        cell_cmd_nr:
+          playback && playback.cell_cmd_nr != null ? playback.cell_cmd_nr : 0,
+        still_time:
+          playback && playback.still_time != null ? playback.still_time : 0,
       });
     }
   }
@@ -282,7 +304,7 @@ export function buildShortTitleEncodePlan(
 ): ShortTitleEncodePlan {
   const empty: ShortTitleEncodePlan = {
     segments: [],
-    titlePgcMedia: { includedPgcs: [], pgcTimeline: {} },
+    titlePgcMedia: { includedPgcs: [], pgcTimeline: {}, pgcCells: {} },
   };
   const cells = listTitleCellsFromIfo(ifo);
   if (!cells.length || !vobFiles.length) {
@@ -455,11 +477,39 @@ export function buildShortTitleEncodePlan(
     }
   }
 
+  const pgcCellMap: Record<string, TitlePgcCellTimeline[]> = {};
+  for (const pgcIndex of finalPgcs) {
+    const pgcCells = byPgc.get(pgcIndex) || [];
+    // Keep IFO cell order (program / LinkPGN index), not sector-sort order.
+    const ordered = pgcCells.slice().sort(function (a, b) {
+      return a.cellIndex - b.cellIndex;
+    });
+    const list: TitlePgcCellTimeline[] = [];
+    for (const c of ordered) {
+      const m = sectorRemap.get(c.startSector + ':' + c.lastSector);
+      if (!m) {
+        continue;
+      }
+      list.push({
+        startSec: m.startSec,
+        endSec: m.endSec,
+        cellID: c.cellId,
+        vobID: c.vobId,
+        cell_cmd_nr: c.cell_cmd_nr,
+        still_time: c.still_time,
+      });
+    }
+    if (list.length) {
+      pgcCellMap[String(pgcIndex)] = list;
+    }
+  }
+
   return {
     segments: finalSegments,
     titlePgcMedia: {
       includedPgcs: finalPgcs,
       pgcTimeline,
+      pgcCells: pgcCellMap,
     },
   };
 }

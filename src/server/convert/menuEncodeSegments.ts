@@ -36,6 +36,32 @@ export type MenuEncodeSegment = {
 };
 
 /**
+ * Cap how many VOB bytes we copy for a cell encode.
+ *
+ * C_ADT `last_sector` can span the rest of the VOB while IFO playback_time is
+ * only a few frames (Shrek VMGM cell 1:3 → ~379MB for 0.04s). Allocating that
+ * for a temp clip OOMs / stalls encode; video for `-t duration` lives at the
+ * start of the range.
+ *
+ * ~12 Mbit/s + 128-sector pad covers high-bitrate menu cells without pulling
+ * the entire trailing VOB.
+ */
+export function capMenuEncodeEndBytes(
+  startBytes: number,
+  cadtEndBytes: number,
+  durationSec: number,
+): number {
+  if (!(startBytes >= 0) || !(cadtEndBytes > startBytes)) {
+    return startBytes + DVD_VIDEO_LB_LEN;
+  }
+  const dur = Number.isFinite(durationSec) && durationSec > 0 ? durationSec : 1 / 25;
+  const maxBytes =
+    Math.ceil(dur * 1.5e6) + 128 * DVD_VIDEO_LB_LEN;
+  const capped = startBytes + Math.max(DVD_VIDEO_LB_LEN, maxBytes);
+  return Math.min(cadtEndBytes, capped);
+}
+
+/**
  * Build encode segments from menuCell metadata, ordered by timeline.
  * Skips zero-duration / missing-sector cells.
  */
@@ -75,12 +101,17 @@ export function buildMenuEncodeSegments(
         continue;
       }
       const skipBytes = startSector * DVD_VIDEO_LB_LEN;
-      const endBytes =
+      const cadtEndBytes =
         lastSector != null &&
         Number.isFinite(lastSector) &&
         lastSector >= startSector
           ? (lastSector + 1) * DVD_VIDEO_LB_LEN
           : skipBytes + DVD_VIDEO_LB_LEN;
+      const endBytes = capMenuEncodeEndBytes(
+        skipBytes,
+        cadtEndBytes,
+        durationSec,
+      );
       out.push({
         startSec,
         endSec,

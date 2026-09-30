@@ -152,6 +152,12 @@ function generateJavaScript(dvdPath: string, callback) {
     '}',
     '',
     'function playCurrentMenuCell() {',
+    '  // LinkPGN/CN/TopC are used in title *and* menu space (Shrek trivia',
+    '  // answer clips LinkPGN inside title pre). Do not force menu space.',
+    '  if (pgcSpace === "title") {',
+    '    playCurrentTitleCell();',
+    '    return;',
+    '  }',
     '  pgcSpace = "menu";',
     '  // Menu cells are addressed as a flat 1-based list; LinkNextPG/PrevPG use',
     '  // pgN then copy to cellN. Keep them aligned when onPost (or LinkNextC)',
@@ -193,6 +199,47 @@ function generateJavaScript(dvdPath: string, callback) {
     '        return;',
     '      }',
     '      if (menu.post) { menu.post(); }',
+    '    }',
+    '  });',
+    '}',
+    '',
+    'function playCurrentTitleCell() {',
+    '  pgcSpace = "title";',
+    '  pgN = cellN || 1;',
+    '  var title = PGCIUT[domain] && PGCIUT[domain][pgc];',
+    '  if (!title) { return; }',
+    '  var cells = title.cells || [];',
+    '  var idx = cells.length ? Math.max(0, Math.min((cellN || 1) - 1, cells.length - 1)) : 0;',
+    '  var cell = cells[idx] || {};',
+    '  if (typeof dvd === "undefined" || !dvd || typeof dvd.playTitleCell !== "function") {',
+    '    if (typeof dvd !== "undefined" && dvd && typeof dvd.playTitlePgc === "function") {',
+    '      dvd.playTitlePgc(domain, pgc);',
+    '    } else if (typeof dvd !== "undefined" && dvd && dvd.playByID) {',
+    '      dvd.playByID("video-" + domain);',
+    '    }',
+    '    return;',
+    '  }',
+    '  dvd.playTitleCell({',
+    '    domain: domain,',
+    '    pgc: pgc,',
+    '    cellN: cellN || 1,',
+    '    cellID: cell.cellID,',
+    '    vobID: cell.vobID,',
+    '    still_time: cell.still_time || 0,',
+    '    startSec: cell.startSec,',
+    '    endSec: cell.endSec,',
+    '    onPost: function() {',
+    '      var cmdNr = cell.cell_cmd_nr || 0;',
+    '      if (cmdNr && title.cellCmds && typeof title.cellCmds[cmdNr - 1] === "function") {',
+    '        if (title.cellCmds[cmdNr - 1]()) { return; }',
+    '      }',
+    '      if (cells.length && (cellN || 1) < cells.length) {',
+    '        cellN = (cellN || 1) + 1;',
+    '        pgN = cellN;',
+    '        playCurrentTitleCell();',
+    '        return;',
+    '      }',
+    '      if (title.post) { title.post(); }',
     '    }',
     '  });',
     '}',
@@ -309,12 +356,19 @@ function generateJavaScript(dvdPath: string, callback) {
         // Emit even when command_tbl is null — titles may still be JumpTT targets.
         if (pgci_srp.pgc) {
           var titleCmds = pgci_srp.pgc.command_tbl;
+          var titleCellsJs = buildTitleCells(
+            pgci_srp.pgc,
+            ((metadata && metadata[index]) || {}).titlePgcMedia,
+            pgcIndex,
+          );
           code = code.concat([
             'PGCIUT[' + index + '][' + pgcIndex + '] = {',
             'run: function() {',
             '  pgcSpace = "title";',
             '  domain = ' + index + ';',
             '  pgc = ' + pgcIndex + ';',
+            '  cellN = 1;',
+            '  pgN = 1;',
             '  console.debug("Run: Domain:", domain, "Lang:", lang, "PGC:", pgc);',
             '  if(this.pre()){return;}',
             '  if (typeof dvd !== "undefined" && dvd && typeof dvd.playTitlePgc === "function") {',
@@ -329,12 +383,64 @@ function generateJavaScript(dvdPath: string, callback) {
             'post: function() {' +
               recompile(titleCmds && titleCmds.post_cmds) +
               '},',
+            'cells: ' + JSON.stringify(titleCellsJs) + ',',
             'cellCmds: ' + compileCellCmds(titleCmds && titleCmds.cell_cmds),
             '};',
           ]);
         }
       }
       return code;
+    }
+
+    /**
+     * Title-domain cells for LinkPGN/CN — prefer remapped WebM windows from
+     * titlePgcMedia.pgcCells (encode), else IFO durations (vm-only fallback).
+     */
+    function buildTitleCells(pgc, titlePgcMedia, pgcIndex) {
+      var fromMedia =
+        titlePgcMedia &&
+        titlePgcMedia.pgcCells &&
+        titlePgcMedia.pgcCells[String(pgcIndex)];
+      if (Array.isArray(fromMedia) && fromMedia.length) {
+        return fromMedia.map(function (cell) {
+          return {
+            cellID: cell.cellID,
+            vobID: cell.vobID,
+            still_time: cell.still_time || 0,
+            startSec: cell.startSec,
+            endSec: cell.endSec,
+            cell_cmd_nr: cell.cell_cmd_nr || 0,
+          };
+        });
+      }
+      var source = [];
+      var t = 0;
+      var timeline =
+        titlePgcMedia &&
+        titlePgcMedia.pgcTimeline &&
+        titlePgcMedia.pgcTimeline[String(pgcIndex)];
+      if (timeline && Number.isFinite(timeline.startSec)) {
+        t = timeline.startSec;
+      }
+      if (pgc && pgc.cell_position) {
+        for (var c = 0; c < pgc.cell_position.length; c++) {
+          var pos = pgc.cell_position[c];
+          var playback = pgc.cell_playback && pgc.cell_playback[c];
+          var duration = playback
+            ? dvdTimeToSeconds(playback.playback_time)
+            : 0;
+          source.push({
+            cellID: pos.cell_nr,
+            vobID: pos.vob_id_nr,
+            still_time: playback ? playback.still_time || 0 : 0,
+            startSec: t,
+            endSec: t + duration,
+            cell_cmd_nr: playback ? playback.cell_cmd_nr || 0 : 0,
+          });
+          t += duration;
+        }
+      }
+      return source;
     }
 
     function pgci_srp(json, code) {

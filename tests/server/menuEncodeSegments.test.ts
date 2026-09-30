@@ -4,10 +4,28 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   buildMenuEncodeSegments,
+  capMenuEncodeEndBytes,
   clipVobByteRange,
   menuForceKeyFrameTimes,
 } from '../../src/server/convert/menuEncodeSegments.js';
 import { DVD_VIDEO_LB_LEN } from '../../src/server/convert/menuStillSeek.js';
+
+describe('capMenuEncodeEndBytes', () => {
+  it('caps absurd C_ADT spans for short cells', () => {
+    const start = 78 * DVD_VIDEO_LB_LEN;
+    const cadtEnd = (185226 + 1) * DVD_VIDEO_LB_LEN;
+    const end = capMenuEncodeEndBytes(start, cadtEnd, 0.04);
+    expect(end).toBeGreaterThan(start);
+    expect(end - start).toBeLessThan(2 * 1024 * 1024);
+    expect(end).toBeLessThan(cadtEnd);
+  });
+
+  it('keeps full span when it fits the duration budget', () => {
+    const start = 0;
+    const cadtEnd = 100 * DVD_VIDEO_LB_LEN;
+    expect(capMenuEncodeEndBytes(start, cadtEnd, 10)).toBe(cadtEnd);
+  });
+});
 
 describe('buildMenuEncodeSegments', () => {
   it('orders cells by timeline and skips zero-duration', () => {
@@ -53,6 +71,23 @@ describe('buildMenuEncodeSegments', () => {
       skipBytes: 100 * DVD_VIDEO_LB_LEN,
       endBytes: 201 * DVD_VIDEO_LB_LEN,
     });
+  });
+
+  it('caps endBytes when last_sector dwarfs playback duration', () => {
+    const segments = buildMenuEncodeSegments({
+      '1': {
+        '3': {
+          startSec: 2.48,
+          endSec: 2.52,
+          start_sector: 78,
+          last_sector: 185226,
+        },
+      },
+    });
+    expect(segments).toHaveLength(1);
+    expect(segments[0].endBytes - segments[0].skipBytes).toBeLessThan(
+      2 * 1024 * 1024,
+    );
   });
 
   it('returns empty when menuCell missing', () => {

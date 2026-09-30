@@ -11,6 +11,10 @@ import { fadeInVideoAudio, silenceVideoAudio } from './autoplay.js';
 export type MenuCellRef = {
   cellID?: number | string;
   vobID?: number | string;
+  still_time?: number;
+  buttons?: unknown[];
+  /** Convert-emitted still URL when present. */
+  still?: string | null;
 };
 
 /** Parse `data-cells` on `<x-menu>` (URI-encoded JSON from the Solid tree). */
@@ -170,6 +174,20 @@ export function collectPreloadStillUrls(opts: {
       if (cell?.cellID == null || cell?.vobID == null) {
         return;
       }
+      // Pure wipe/transition cells intentionally have no PNG — skip preload
+      // so we do not spam 404s (and CSS nosniff noise for companion sheets).
+      const stillTime = cell.still_time != null ? cell.still_time : 0;
+      const hasButtons = !!(cell.buttons && cell.buttons.length);
+      if (cell.still === null || cell.still === '') {
+        return;
+      }
+      if (!hasButtons && stillTime === 0 && cell.still == null) {
+        return;
+      }
+      if (typeof cell.still === 'string' && cell.still) {
+        urls.add(cell.still);
+        return;
+      }
       urls.add(menuStillUrl(baseDir, domain, cell.cellID, cell.vobID));
     };
     addCell(opts.current);
@@ -196,6 +214,8 @@ export function preloadLinkedMenuAssets(
     domain?: string | number | null;
     cellID?: string | number | null;
     vobID?: string | number | null;
+    still_time?: number;
+    buttons?: unknown[];
     baseDir?: string | null;
   },
 ): string[] {
@@ -211,7 +231,12 @@ export function preloadLinkedMenuAssets(
   const urls = collectPreloadStillUrls({
     baseDir,
     domain,
-    current: { cellID: opts.cellID ?? undefined, vobID: opts.vobID ?? undefined },
+    current: {
+      cellID: opts.cellID ?? undefined,
+      vobID: opts.vobID ?? undefined,
+      still_time: opts.still_time,
+      buttons: opts.buttons,
+    },
     pgcCells: parseMenuCellsFromDataset(menu),
     linkedStillSrcs,
   });

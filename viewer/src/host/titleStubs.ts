@@ -34,6 +34,17 @@ export type TitleStubEntry = {
 export type TitlePgcMediaWithStubs = {
   includedPgcs?: number[];
   pgcTimeline?: Record<string, { startSec: number; endSec: number }>;
+  pgcCells?: Record<
+    string,
+    Array<{
+      startSec: number;
+      endSec: number;
+      cellID?: number;
+      vobID?: number;
+      cell_cmd_nr?: number;
+      still_time?: number;
+    }>
+  >;
   stubs?: Record<string, TitleStubEntry>;
 };
 

@@ -292,7 +292,16 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
     }
   });
 
-  function libvpxVideoArgs() {
+  /**
+   * @param padToDuration When true, freeze the last frame until `-t` cuts so
+   *   still/short cells match IFO playback_time (Shrek: hundreds of 0.48s
+   *   stills encode as one frame without this → WebM timeline drifts and
+   *   German menus seek into the wrong clip).
+   */
+  function libvpxVideoArgs(padToDuration?: boolean) {
+    var vf = padToDuration
+      ? 'yadif=0:-1:0,format=yuv420p,tpad=stop_mode=clone:stop_duration=3600'
+      : 'yadif=0:-1:0,format=yuv420p';
     return [
       '-c:v', 'libvpx',
       '-b:v', '1000k',
@@ -302,7 +311,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       '-deadline', 'good',
       '-auto-alt-ref', '0',
       '-threads', '0',
-      '-vf', 'yadif=0:-1:0,format=yuv420p',
+      '-vf', vf,
       '-fps_mode', 'cfr',
       '-avoid_negative_ts', 'make_zero',
     ];
@@ -399,7 +408,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         '-t', String(seg.durationSec),
         '-map', '0:v:0',
         '-an',
-        ...libvpxVideoArgs(),
+        ...libvpxVideoArgs(true),
         '-force_key_frames', '0',
         '-y',
         videoOnly,
@@ -479,7 +488,8 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       '-b:a', '128k',
       '-ac', '2',
       '-af', 'aresample=async=1:first_pts=0',
-      '-shortest',
+      // Do not use -shortest: audio shorter than a tpad'd still would shrink
+      // the segment and desync menuCell startSec (Shrek DE menus).
       '-y',
       output,
     ];
@@ -500,7 +510,6 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         '-c:v', 'copy',
         '-c:a', 'libvorbis',
         '-b:a', '64k',
-        '-shortest',
         '-y',
         output,
       ];
@@ -630,7 +639,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         '-t', String(seg.durationSec),
         '-map', '0:v:0',
         '-map', '0:a:0?',
-        ...libvpxVideoArgs(),
+        ...libvpxVideoArgs(true),
         '-c:a', 'libvorbis',
         '-b:a', '128k',
         '-ac', '2',
@@ -883,16 +892,33 @@ function mergeTitlePgcMedia(
     (next && next.stubs) ||
     (existing && existing.stubs) ||
     undefined;
+  var pgcCells =
+    (next && next.pgcCells) ||
+    (existing && existing.pgcCells) ||
+    undefined;
   var out: TitlePgcMedia = {
     includedPgcs: (next && next.includedPgcs) || [],
     pgcTimeline: (next && next.pgcTimeline) || {},
   };
+  if (pgcCells && Object.keys(pgcCells).length) {
+    // Drop cell maps for PGCs that are no longer included.
+    var included = new Set(out.includedPgcs);
+    var keptCells: NonNullable<TitlePgcMedia['pgcCells']> = {};
+    Object.keys(pgcCells).forEach(function (k) {
+      if (included.has(Number(k))) {
+        keptCells[k] = pgcCells[k];
+      }
+    });
+    if (Object.keys(keptCells).length) {
+      out.pgcCells = keptCells;
+    }
+  }
   if (stubs && Object.keys(stubs).length) {
     // Drop stubs for PGCs that are now included as short-cell WebMs.
-    var included = new Set(out.includedPgcs);
+    var included2 = new Set(out.includedPgcs);
     var kept: NonNullable<TitlePgcMedia['stubs']> = {};
     Object.keys(stubs).forEach(function (k) {
-      if (!included.has(Number(k))) {
+      if (!included2.has(Number(k))) {
         kept[k] = stubs[k];
       }
     });

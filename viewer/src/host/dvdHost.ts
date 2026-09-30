@@ -112,6 +112,18 @@ export type XVideoElement = HTMLElement & {
   guardTitleJump: (elementID: string, pgc?: number) => boolean;
   /** Play a title PGC: WebM, interactive stub, or silent skip stub. */
   playTitlePgc: (domain: number, pgc: number) => void;
+  /** Play one title cell/program (LinkPGN inside title domain). */
+  playTitleCell: (opts: {
+    domain: number;
+    pgc: number;
+    cellN?: number;
+    cellID?: number;
+    vobID?: number;
+    still_time?: number;
+    startSec?: number;
+    endSec?: number;
+    onPost?: () => void;
+  }) => void;
   /** Latch button nav + snapshot menu/VM for missing-title restore. */
   beginUserButtonNav: () => void;
   setMenuHighlight: (menu: Element | null, buttonIndex: number) => void;
@@ -566,22 +578,30 @@ function updateMenuCellVisuals(
     domain != null
       ? `menu-${domain}-${opts.cellID}-${opts.vobID}`
       : null;
+  const hasButtons = !!(opts.buttons && opts.buttons.length);
 
   let still = menu.querySelector('img.menu-still') as HTMLImageElement | null;
   let cssHref: string | null = null;
   let stillSrc: string | null = null;
 
-  if (baseDir && prefix) {
-    stillSrc = `${baseDir}${prefix}.png`;
-    cssHref = `${baseDir}${prefix}.css`;
-  }
-
-  // Prefer an already-linked stylesheet for this cell when present.
+  // Prefer an already-linked stylesheet for this cell when present (DvdDisc
+  // only emits <link> when metadata has css).
   const links = document.querySelectorAll(
     `link[href*="menu-${domain}-${opts.cellID}-${opts.vobID}"]`,
   );
   if (links.length) {
-    cssHref = links[0].getAttribute('href') || cssHref;
+    cssHref = links[0].getAttribute('href');
+  } else if (baseDir && prefix && hasButtons) {
+    // Hitbox sheets exist only for cells convert gave buttons/CSS. Pure
+    // wipe cells (still_time 0, no HLI) never write menu-*.css — inventing
+    // the URL fetches the HTML 404 page and Firefox nosniff-blocks it.
+    cssHref = `${baseDir}${prefix}.css`;
+  }
+
+  // Still PNG: only invent a URL when we will show it. Motion/transition
+  // cells omit the file on purpose (viewer holds the WebM frame).
+  if (baseDir && prefix && stillMode === 'show') {
+    stillSrc = `${baseDir}${prefix}.png`;
   }
 
   if (stillMode === 'show' && stillSrc) {
@@ -720,6 +740,9 @@ function updateMenuCellVisuals(
       link.href = cssHref;
       menu.insertBefore(link, menu.firstChild);
     }
+  } else {
+    // Drop the previous cell's sheet — do not point it at a missing wipe CSS.
+    menu.querySelectorAll('link[rel="stylesheet"]').forEach((el) => el.remove());
   }
 
   // Always rebuild hitboxes — empty cells must clear the previous page's buttons.
@@ -1117,7 +1140,13 @@ function playMenuMotionSegment(
             domain,
             opts,
           );
+          const stillTimeFallback =
+            opts.still_time != null ? opts.still_time : 0;
+          const wantsStillFallback =
+            stillTimeFallback > 0 ||
+            !!(opts.buttons && opts.buttons.length);
           if (
+            wantsStillFallback &&
             base &&
             domain != null &&
             opts.cellID != null &&
@@ -1151,6 +1180,17 @@ function playMenuMotionSegment(
     if (!isCurrent()) {
       return;
     }
+    // Truncated menu WebM: segment starts past EOF — finish so PGC post can
+    // advance (Shrek VIDEO_TS.webm ~0.13s vs FP cell at 0.48s).
+    const mediaDur = menuVideo.duration;
+    if (
+      Number.isFinite(mediaDur) &&
+      mediaDur > 0 &&
+      start >= mediaDur - 0.05
+    ) {
+      finishSegment();
+      return;
+    }
     if (host._dvdjsMenuSeeked) {
       menuVideo.removeEventListener('seeked', host._dvdjsMenuSeeked);
       host._dvdjsMenuSeeked = null;
@@ -1166,9 +1206,12 @@ function playMenuMotionSegment(
       if (beginPlayback()) {
         return;
       }
-      // Landed outside the segment — retry seek a few times, then give up
-      // without arming finish (still cover stays; no onPost cascade).
+      // Landed outside the segment after retries. Common when the menu WebM is
+      // shorter than menuCell times (broken / truncated encode): seeking to
+      // startSec past EOF never enters the window. Finish so PGC post can run
+      // (Shrek FP motion → linkPGC) instead of a permanent black screen.
       if (seekAttempts >= 3) {
+        finishSegment();
         return;
       }
       seekAttempts += 1;
@@ -1458,6 +1501,188 @@ class XVideo extends HTMLElement implements XVideoElement {
 
     // Included (or legacy missing): normal playByID path.
     this.playByID(id);
+  }
+
+  /**
+   * Play a single title-domain cell (LinkPGN / LinkCN). Uses remapped WebM
+   * [startSec, endSec) from convert; on end runs onPost (cellCmds → post).
+   */
+  playTitleCell(opts: {
+    domain: number;
+    pgc: number;
+    cellN?: number;
+    cellID?: number;
+    vobID?: number;
+    still_time?: number;
+    startSec?: number;
+    endSec?: number;
+    onPost?: () => void;
+  }): void {
+    this.#refreshPlaylist();
+    const id = `video-${opts.domain}`;
+    const entry = this.playlist.find((e) => e.id === id);
+    const cellN = opts.cellN != null ? opts.cellN : 1;
+
+    // Resolve timeline: explicit opts, else metadata pgcCells, else whole PGC.
+    let startSec = opts.startSec;
+    let endSec = opts.endSec;
+    const media = entry?.titlePgcMedia;
+    if (
+      (startSec == null || endSec == null) &&
+      media &&
+      media.pgcCells &&
+      media.pgcCells[String(opts.pgc)]
+    ) {
+      const cells = media.pgcCells[String(opts.pgc)];
+      const cell = cells[Math.max(0, cellN - 1)];
+      if (cell) {
+        startSec = cell.startSec;
+        endSec = cell.endSec;
+      }
+    }
+    if (
+      (startSec == null || endSec == null) &&
+      media &&
+      media.pgcTimeline &&
+      media.pgcTimeline[String(opts.pgc)]
+    ) {
+      const tl = media.pgcTimeline[String(opts.pgc)];
+      startSec = tl.startSec;
+      endSec = tl.endSec;
+    }
+
+    if (!entry || isTitleMediaMissing(entry, opts.pgc)) {
+      const stub = getTitleStub(entry?.titlePgcMedia, opts.pgc);
+      if (stub) {
+        this.playTitlePgc(opts.domain, opts.pgc);
+        return;
+      }
+      // Missing cell media: still run onPost so trivia can return to menu.
+      if (typeof opts.onPost === 'function') {
+        setTimeout(() => {
+          try {
+            opts.onPost?.();
+          } catch (e) {
+            console.warn('DVD.js title cell post failed', e);
+          }
+        }, 0);
+        return;
+      }
+      showTitleUnavailable(this);
+      return;
+    }
+
+    hideTitleUnavailableOverlay(this);
+    clearUserButtonNav(this as any);
+    clearMissingTitleSkip(this as any);
+    hideAllMenu(this);
+
+    const targetIndex = this.playlist.findIndex((e) => e.id === id);
+    this.videoIndex = targetIndex;
+    const video = entry.video;
+
+    // Clear prior title end handlers.
+    const prevEnded = (this as any)._dvdjsTitleEnded as
+      | ((ev: Event) => void)
+      | null;
+    const prevTime = (this as any)._dvdjsTitleTimeEnd as
+      | ((ev: Event) => void)
+      | null;
+    if (prevEnded) {
+      video.removeEventListener('ended', prevEnded);
+    }
+    if (prevTime) {
+      video.removeEventListener('timeupdate', prevTime);
+    }
+    (this as any)._dvdjsTitleEnded = null;
+    (this as any)._dvdjsTitleTimeEnd = null;
+
+    const seekTo = startSec != null && Number.isFinite(startSec) ? startSec : 0;
+    const finishAt =
+      endSec != null && Number.isFinite(endSec) ? endSec : null;
+
+    const onMeta = () => {
+      video.removeEventListener('loadedmetadata', onMeta);
+      try {
+        video.currentTime = seekTo;
+      } catch {
+        // ignore
+      }
+    };
+    if (video.readyState >= 1) {
+      try {
+        video.currentTime = seekTo;
+      } catch {
+        // ignore
+      }
+    } else {
+      video.addEventListener('loadedmetadata', onMeta);
+    }
+
+    let done = false;
+    const finish = () => {
+      if (done) {
+        return;
+      }
+      done = true;
+      const endedFn = (this as any)._dvdjsTitleEnded;
+      const timeFn = (this as any)._dvdjsTitleTimeEnd;
+      if (endedFn) {
+        video.removeEventListener('ended', endedFn);
+      }
+      if (timeFn) {
+        video.removeEventListener('timeupdate', timeFn);
+      }
+      (this as any)._dvdjsTitleEnded = null;
+      (this as any)._dvdjsTitleTimeEnd = null;
+      try {
+        video.pause();
+      } catch {
+        // ignore
+      }
+      const stillTime = opts.still_time != null ? opts.still_time : 0;
+      const post = () => {
+        if (typeof opts.onPost === 'function') {
+          try {
+            opts.onPost();
+          } catch (e) {
+            console.warn('DVD.js title cell onPost failed', e);
+          }
+        }
+      };
+      if (stillTime > 0 && stillTime < 255) {
+        scheduleMenuPostAfterStill(this as any, stillTime, post);
+      } else if (stillTime === 255) {
+        // Infinite still — wait for user (unusual in title cell games).
+      } else {
+        post();
+      }
+    };
+
+    const onEnded = () => {
+      finish();
+    };
+    (this as any)._dvdjsTitleEnded = onEnded;
+    video.addEventListener('ended', onEnded);
+    if (finishAt != null) {
+      const onTime = () => {
+        if (video.currentTime + 0.05 >= finishAt) {
+          finish();
+        }
+      };
+      video.addEventListener('timeupdate', onTime);
+      (this as any)._dvdjsTitleTimeEnd = onTime;
+    }
+
+    this.playlist.forEach((e, i) => {
+      e.video.style.display = i === this.videoIndex ? 'block' : 'none';
+    });
+    try {
+      void video.play();
+    } catch (e) {
+      console.warn('DVD.js title cell play failed', e);
+      finish();
+    }
   }
 
   playByIndex(videoIndex: number) {
@@ -1763,6 +1988,8 @@ class XVideo extends HTMLElement implements XVideoElement {
       domain: opts.domain ?? menu.dataset.domain,
       cellID: opts.cellID,
       vobID: opts.vobID,
+      still_time: opts.still_time,
+      buttons: opts.buttons,
       baseDir,
     });
 
