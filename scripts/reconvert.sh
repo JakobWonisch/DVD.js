@@ -14,6 +14,7 @@
 #   pnpm reconvert -- "!1"
 #   pnpm reconvert -- --full
 #   pnpm reconvert -- --full "1,3"
+#   pnpm reconvert -- --catalogue-only
 #   DVD_MENU_ARCHIVE_RIPS=/path/to/rips ./scripts/reconvert.sh
 #   ./scripts/reconvert.sh --rips /path/to/rips --verbose
 
@@ -24,6 +25,7 @@ RIPS_DIR="${DVD_MENU_ARCHIVE_RIPS:-$ROOT/dvds}"
 CONVERT_FLAGS=()
 SELECTION_ARG=""
 HAS_SELECTION=0
+CATALOGUE_ONLY=0
 
 usage() {
   cat <<'EOF'
@@ -31,16 +33,33 @@ Reconvert ripped discs from a VIDEO_TS folder tree.
 
 Usage:
   pnpm reconvert [-- <convert-flags>] [selection]
+  pnpm reconvert -- --catalogue-only
   ./scripts/reconvert.sh [--rips DIR] [--full] [--verbose] [-v] [selection]
+  ./scripts/reconvert.sh --catalogue-only
 
 Selection (prompted if omitted):
   empty            all discs
   1,2,5            only those indexes
   !1  or  !1,!3    all except those indexes
 
+Flags:
+  --catalogue-only   rewrite webFolder/dvds.json only (no convert)
+
 Environment:
   DVD_MENU_ARCHIVE_RIPS       override default rip dir (repo dvds/)
 EOF
+}
+
+regenerate_catalogue() {
+  cd "$ROOT"
+  if [[ ! -f "$ROOT/dist/server/convert/generateCatalogue.js" ]]; then
+    echo "Missing dist/ — run pnpm build first." >&2
+    exit 1
+  fi
+  node --input-type=module -e \
+    "import g from './dist/server/convert/generateCatalogue.js'; g(() => {});"
+  echo
+  echo "Catalogue regenerated."
 }
 
 while [[ $# -gt 0 ]]; do
@@ -52,6 +71,10 @@ while [[ $# -gt 0 ]]; do
     --rips)
       RIPS_DIR="$2"
       shift 2
+      ;;
+    --catalogue-only)
+      CATALOGUE_ONLY=1
+      shift
       ;;
     --full|--verbose|-v|--vm-only|--upload)
       CONVERT_FLAGS+=("$1")
@@ -72,6 +95,15 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ $CATALOGUE_ONLY -eq 1 ]]; then
+  if [[ ${#CONVERT_FLAGS[@]} -gt 0 || $HAS_SELECTION -eq 1 ]]; then
+    echo "--catalogue-only cannot be combined with convert flags or a selection." >&2
+    exit 1
+  fi
+  regenerate_catalogue
+  exit 0
+fi
 
 if [[ ! -d "$RIPS_DIR" ]]; then
   echo "Rip directory not found: $RIPS_DIR" >&2

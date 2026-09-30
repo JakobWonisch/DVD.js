@@ -289,6 +289,7 @@ pnpm convert -- --full path/to/DVD/root   # menus + all titles
 pnpm convert -- --vm-only --web discName  # regenerate vm.js only
 pnpm reconvert                            # pick from dvds/*/VIDEO_TS (empty=all, 1,2=include, !1=exclude)
 pnpm reconvert -- --full "1,3"            # non-interactive; convert flags before selection
+pnpm reconvert -- --catalogue-only        # rewrite webFolder/dvds.json only
 ```
 
 Ripped sources for `reconvert` default to `dvds/` (`DVD_MENU_ARCHIVE_RIPS` or `--rips` to override).
