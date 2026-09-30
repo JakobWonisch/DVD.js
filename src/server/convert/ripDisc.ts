@@ -16,6 +16,7 @@ import * as path from 'node:path';
 import * as child_process from 'node:child_process';
 
 import { sanitizeDiscId } from '../discCache.js';
+import { TITLE_INCLUDE_MAX_SEC } from './titleIncludePolicy.js';
 
 /** Options for a decrypting rip. */
 export type RipOptions = {
@@ -24,8 +25,9 @@ export type RipOptions = {
   /** Writable directory that will contain the ripped disc folder. */
   workDir: string;
   /**
-   * When true, after a full mirror remove title VOBs (VTS_*_[1-9].VOB) to
-   * save space. Menu IFOs/VOBs are kept. dvdbackup has no menus-only flag.
+   * When true, rip still keeps title VOBs so encode can extract short cells
+   * (≤ TITLE_INCLUDE_MAX_SEC by VOB PTS). Menu IFOs/VOBs are always kept.
+   * dvdbackup has no menus-only flag.
    */
   menusOnly?: boolean;
 };
@@ -429,25 +431,16 @@ function hasVideoTs(dir: string): boolean {
 }
 
 /**
- * Remove title-domain VOBs; keep VIDEO_TS.VOB and VTS_*_0.VOB (menus).
+ * Title VOBs are kept under menus mode so encode can measure cell durations
+ * from NAV PTS and extract short game/interactive segments from inside
+ * otherwise-long title sets. (Previously pruned all VTS_*_[1-9].VOB.)
  */
 function pruneTitleVobs(videoTsDir: string) {
-  var entries;
-  try {
-    entries = fs.readdirSync(videoTsDir);
-  } catch (e) {
-    return;
-  }
-  for (var i = 0; i < entries.length; i++) {
-    var name = entries[i];
-    if (/^VTS_\d{1,2}_[1-9]\d*\.VOB$/i.test(name)) {
-      var full = path.join(videoTsDir, name);
-      try {
-        fs.unlinkSync(full);
-        process.stdout.write('Pruned title VOB: ' + name + '\n');
-      } catch (e) {
-        console.error('Could not prune ' + full + ':', e);
-      }
-    }
-  }
+  process.stdout.write(
+    'Keeping title VOBs under ' +
+      videoTsDir +
+      ' for short-cell encode (≤ ' +
+      TITLE_INCLUDE_MAX_SEC +
+      's by VOB PTS)\n'
+  );
 }

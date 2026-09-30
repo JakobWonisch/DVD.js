@@ -686,7 +686,6 @@ export function ifoRead_VTS_PTT_SRPT(ifofile) {
 
     vts_ptt_srpt.title[i] = new BinaryParser(ifofile.file.view, ifoTypes.ttu_t()).parse('main');
 
-    console.log('vts_ptt_srpt.title[i].nr_of_ptts', vts_ptt_srpt.title[i].nr_of_ptts, n / 4);
     vts_ptt_srpt.title[i].nr_of_ptts = n / 4;
     if (!vts_ptt_srpt.title[i].ptt) {
       vts_ptt_srpt.title[i].ptt = Array(vts_ptt_srpt.title[i].nr_of_ptts);
@@ -816,8 +815,8 @@ function ifoRead_VTS_TMAPT(ifofile) {
   if (!ifofile || !ifofile.vtsi_mat)
     return null;
 
-  if (ifofile.vtsi_mat.vts_tmapt === 0) { // optional(?)
-    console.error('jsdvdnav: Please send bug report - no VTS_TMAPT ??');
+  if (ifofile.vtsi_mat.vts_tmapt === 0) {
+    // Optional: VOBU time-map for title seeking; many discs omit it.
     ifofile.vts_tmapt = null;
     return ifofile;
   }

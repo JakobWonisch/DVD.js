@@ -585,7 +585,7 @@ function compile_jump_instruction(command) {
       // Jump to a video title.
       // Guard missing title WebMs from menu buttons before leaving the menu.
       code += sprintf(
-        'var vtt = VTT_TABLE[%s]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + vtt.domain)) { return 1; } PGCIUT[vtt.domain][vtt.pgc].run(); return 1;',
+        'var vtt = VTT_TABLE[%s]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + vtt.domain, vtt.pgc)) { return 1; } PGCIUT[vtt.domain][vtt.pgc].run(); return 1;',
         getbits(command, 22, 7)
       );
       break;
@@ -593,7 +593,7 @@ function compile_jump_instruction(command) {
       // JumpVTS_TT x
       // Jump to a video title in the current VTS.
       code += sprintf(
-        'var vtt = PTT_TABLE[domain][%s][0]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + vtt.domain)) { return 1; } PGCIUT[vtt.domain][vtt.pgc].run(); dvd.playChapter(vtt.chapter - 1); return 1;',
+        'var vtt = PTT_TABLE[domain][%s][0]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + vtt.domain, vtt.pgc)) { return 1; } PGCIUT[vtt.domain][vtt.pgc].run(); dvd.playChapter(vtt.chapter - 1); return 1;',
         getbits(command, 22, 7)
       );
       break;
@@ -603,7 +603,7 @@ function compile_jump_instruction(command) {
       // @todo Use a table here
       //code += sprintf('console.log(\'JumpVTS_PTT %s:%s\'); return 1;',
       code += sprintf(
-        'var ptt = PTT_TABLE[domain][%s][%s]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + ptt.domain)) { return 1; } PGCIUT[ptt.domain][ptt.pgc].run(); dvd.playChapter(ptt.chapter - 1); return 1;',
+        'var ptt = PTT_TABLE[domain][%s][%s]; if (typeof dvd !== "undefined" && dvd.guardTitleJump && !dvd.guardTitleJump("video-" + ptt.domain, ptt.pgc)) { return 1; } PGCIUT[ptt.domain][ptt.pgc].run(); dvd.playChapter(ptt.chapter - 1); return 1;',
         getbits(command, 22, 7),
           getbits(command, 41, 10) - 1
       );

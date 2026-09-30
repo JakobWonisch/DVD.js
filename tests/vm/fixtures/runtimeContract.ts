@@ -70,8 +70,8 @@ generateJavaScript runtime contract:
 - Globals: ${RUNTIME_GLOBALS.join(', ')}
 - sprm keys: ${SPRM_KEYS.join(', ')}
 - LinkPGCN: linkPGC(N); return 1 (menu → MPGCIUT, title → PGCIUT via pgcSpace)
-- JumpTT: VTT_TABLE[ttn] → guardTitleJump then PGCIUT[vtt.domain][vtt.pgc].run(); return 1;
-- JumpVTS_*: guardTitleJump then PTT_TABLE + dvd.playChapter
+- JumpTT: VTT_TABLE[ttn] → guardTitleJump(video-domain, pgc) then PGCIUT[vtt.domain][vtt.pgc].run(); return 1;
+- JumpVTS_*: guardTitleJump(video-domain, pgc) then PTT_TABLE + dvd.playChapter
 - JumpSS VMGM menu / VTSM: MENU_TYPES[…] then MPGCIUT[menu.domain][menu.lang][menu.pgc]
 - HL_BTNN at runtime is button_id * 0x0400
 - btnCmd/btnNav: [domain][vob_id][cell_id][buttonIndex] (cell required — same vob_id can host different button sets)

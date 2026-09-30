@@ -17,6 +17,14 @@ import {
   menuForceKeyFrameTimes,
   type MenuEncodeSegment,
 } from './menuEncodeSegments.js';
+import {
+  TITLE_INCLUDE_MAX_SEC,
+} from './titleIncludePolicy.js';
+import {
+  buildShortTitleEncodePlan,
+  type TitleEncodeSegment,
+  type TitlePgcMedia,
+} from './titleCellSegments.js';
 
 type EncodeVideoOptions = {
   full?: boolean;
@@ -65,7 +73,9 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
   process.stdout.write(
     extractMode === 'full'
       ? '\nEncoding VOB files (full):\n'
-      : '\nEncoding VOB files (menus only):\n'
+      : '\nEncoding VOB files (menus + titles ≤ ' +
+          TITLE_INCLUDE_MAX_SEC +
+          's):\n'
   );
 
   var dvdName = serverUtils.getDiscId(dvdPath);
@@ -80,10 +90,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       console.error(err);
     }
 
-    if (!options.full) {
-      vobFilesList = (vobFilesList || []).filter(isMenuVob);
-    }
-
+    // Menus-only still considers title VOBs; duration gate runs per group below.
     if (!vobFilesList || !vobFilesList.length) {
       console.log('No VOB files to encode.');
       stampAndSave([], function() {
@@ -139,6 +146,42 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         return;
       }
 
+      var menuVob = isMenuVob(vobFile[0]);
+      var titlePlan: {
+        segments: TitleEncodeSegment[];
+        titlePgcMedia: TitlePgcMedia;
+      } | null = null;
+
+      if (!menuVob && !options.full) {
+        var ifoJson = readTitleIfoJson(index);
+        titlePlan = buildShortTitleEncodePlan(
+          ifoJson || {},
+          vobFile,
+          TITLE_INCLUDE_MAX_SEC,
+        );
+        if (!titlePlan.segments.length) {
+          console.log(
+            'Skipping title VOB group (no title PGC with all cells ≤ ' +
+              TITLE_INCLUDE_MAX_SEC +
+              's by VOB PTS):',
+            vobFile[0],
+          );
+          finishOne();
+          return;
+        }
+        console.log(
+          'Including short title cell segment(s) (' +
+            titlePlan.segments.length +
+            ' cell(s), PGCs ' +
+            titlePlan.titlePgcMedia.includedPgcs.join(',') +
+            ' ≤ ' +
+            TITLE_INCLUDE_MAX_SEC +
+            's):',
+          path.basename(vobFile[0]),
+        );
+        filesList[index].titlePgcMedia = titlePlan.titlePgcMedia;
+      }
+
       warnIfCssLike(vobFile[0]);
 
       if (getFileSuffix(vobFile[0]) === 0) {
@@ -184,6 +227,42 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
           } else {
             finishOne();
           }
+        });
+        return;
+      }
+
+      // Menus mode: encode only short title cells (VOB PTS ≤ cap) as segments.
+      if (
+        !menuVob &&
+        !options.full &&
+        titlePlan &&
+        titlePlan.segments.length > 0
+      ) {
+        encodeTitleCellSegments(titlePlan.segments, output, function(code) {
+          if (code !== 0) {
+            console.warn(
+              'Short title segment encode failed; omitting title media for',
+              path.basename(vobFile[0]),
+            );
+            // Drop the video path we already pushed — media is missing.
+            filesList[index].video = (filesList[index].video || []).filter(
+              function(p) {
+                return p !== '/' + dvdName + '/' + path.basename(output);
+              },
+            );
+            filesList[index].titlePgcMedia = {
+              includedPgcs: [],
+              pgcTimeline: {},
+            };
+            try {
+              if (fs.existsSync(output)) {
+                fs.unlinkSync(output);
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+          finishOne();
         });
         return;
       }
@@ -440,6 +519,99 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
     });
   }
 
+  /**
+   * Encode short title cells with A/V per segment, then concat.
+   * Sparse cells cannot reuse menu mux-from-whole-VOB (wrong audio).
+   */
+  function encodeTitleCellSegments(
+    segments: TitleEncodeSegment[],
+    output: string,
+    done: (code: number) => void,
+  ) {
+    var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-title-enc-'));
+    var segPaths: string[] = [];
+    var i = 0;
+
+    process.stdout.write(
+      'Encoding ' + segments.length + ' short title cell segment(s):\n',
+    );
+
+    encodeNext();
+
+    function encodeNext() {
+      if (i >= segments.length) {
+        concatSegments(segPaths, output, function(code) {
+          cleanupDir(tmpDir);
+          if (code === 0) {
+            reportOutput(0, segments[0].inputPath, output);
+          }
+          done(code);
+        });
+        return;
+      }
+
+      var seg = segments[i];
+      var segOut = path.join(
+        tmpDir,
+        'seg-' + String(i).padStart(3, '0') + '.webm',
+      );
+      var cmd = [
+        '-hide_banner',
+        ...(options.verbose ? [] : ['-loglevel', 'error', '-stats']),
+        '-analyzeduration', '50M',
+        '-probesize', '20M',
+        '-fflags', '+genpts+discardcorrupt',
+        '-err_detect', 'ignore_err',
+        '-skip_initial_bytes', String(seg.skipBytes),
+        '-i', seg.inputPath,
+        '-t', String(seg.durationSec),
+        '-map', '0:v:0',
+        '-map', '0:a:0?',
+        ...libvpxVideoArgs(),
+        '-c:a', 'libvorbis',
+        '-b:a', '128k',
+        '-ac', '2',
+        '-af', 'aresample=async=1:first_pts=0',
+        '-force_key_frames', '0',
+        '-y',
+        segOut,
+      ];
+
+      console.log(
+        '  title cell ' +
+          seg.label +
+          ' t=' +
+          seg.durationSec.toFixed(3) +
+          's skip=' +
+          seg.skipBytes,
+      );
+
+      runFfmpeg(cmd, function(code) {
+        if (code !== 0) {
+          console.error('ffmpeg title segment failed for cell', seg.label);
+          cleanupDir(tmpDir);
+          done(code);
+          return;
+        }
+        try {
+          if (fs.statSync(segOut).size < 256) {
+            console.error('ffmpeg produced empty title segment for', seg.label);
+            cleanupDir(tmpDir);
+            done(1);
+            return;
+          }
+        } catch (e) {
+          cleanupDir(tmpDir);
+          done(1);
+          return;
+        }
+        segPaths.push(segOut);
+        i++;
+        setTimeout(encodeNext, 0);
+      });
+    }
+  }
+
   function reportOutput(code, input, output) {
     if (code !== 0) {
       console.error('ffmpeg failed (' + code + ') for', input);
@@ -541,10 +713,9 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         if (!Array.isArray(entry.video)) {
           entry.video = [];
         }
-        // Menu-only: never keep stale title paths from a previous --full merge.
-        if (!options.full) {
-          entry.video = [];
-        }
+        // Menus mode: entry.video only lists short titles encoded this run
+        // (long titles were skipped before push). Replacing content[i].video
+        // below clears stale --full paths for domains we touched.
       }
     });
     if (!filesList.length) {
@@ -577,6 +748,12 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       content[i].index = entry.index.slice();
       content[i].video = entry.video.slice();
       content[i].extractMode = entry.extractMode;
+      if (entry.titlePgcMedia) {
+        content[i].titlePgcMedia = entry.titlePgcMedia;
+      } else if (!options.full) {
+        // Menus mode without short titles: clear stale partial-title maps.
+        delete content[i].titlePgcMedia;
+      }
     });
 
     fs.writeFile(metaPath, JSON.stringify(content), function(err) {
@@ -586,6 +763,25 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       process.stdout.write('.');
       done();
     });
+  }
+
+  /**
+   * Load VTS_XX_0.json for title-cell planning (domain 0 = VMGM → null).
+   */
+  function readTitleIfoJson(domainIndex: number): any | null {
+    if (!(domainIndex > 0)) {
+      return null;
+    }
+    var vts = String(domainIndex).padStart(2, '0');
+    var ifoJsonPath = path.join(webPath, 'VTS_' + vts + '_0.json');
+    try {
+      if (!fs.existsSync(ifoJsonPath)) {
+        return null;
+      }
+      return loadJsonFile(ifoJsonPath);
+    } catch (e) {
+      return null;
+    }
   }
 
   function getWebName(name: string): string {

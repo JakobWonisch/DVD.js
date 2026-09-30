@@ -29,11 +29,15 @@ import extractSpu from '../server/convert/extractSpu.js';
 import generateJavaScript from '../server/convert/generateJavaScript.js';
 import encodeVideo from '../server/convert/encodeVideo.js';
 import packConvertedDisc from '../server/convert/packDiscArchive.js';
+import { TITLE_INCLUDE_MAX_SEC } from '../server/convert/titleIncludePolicy.js';
 import { waitUntilDiscReady } from '../server/discCache.js';
 
 /** Options for a convert run. */
 export type ConvertOptions = {
-  /** When true, encode title VOBs (feature/extras) as well as menus. Default: menus only. */
+  /**
+   * When true, encode all title VOBs. Default: menus + title cells whose
+   * VOB NAV PTS duration is ≤ TITLE_INCLUDE_MAX_SEC when the whole PGC is short.
+   */
   full: boolean;
   /**
    * Only regenerate vm.js from existing web JSON (IFO/NAV/metadata).
@@ -143,8 +147,10 @@ With no path: use the sole optical drive (/dev/sr0, …). Errors if none or
 several drives are present — pass an explicit path in those cases.
 
 Default: convert a readable VIDEO_TS tree (or mounted disc) in place — no copy.
-Optical devices and ISOs are ripped via dvdbackup first. Pass --full (or
---titles) to also encode title content (feature, extras).
+Optical devices and ISOs are ripped via dvdbackup first. Default also encodes
+title cells whose VOB NAV PTS duration is ≤ ${TITLE_INCLUDE_MAX_SEC}s when the
+whole title PGC is short (games / interactive). Pass --full (or --titles) for
+all title content (feature, extras).
 
 --vm-only regenerates vm.js only from existing converted JSON under webFolder
 (IFO JSON, NAV JSON, metadata.json). No ffmpeg / stills / SPU re-extract.
@@ -321,7 +327,9 @@ function continueConvert(dvdPath: string, options: ConvertOptions) {
   process.stdout.write(
     options.full
       ? '\nConvert mode: full (menus + titles)\n'
-      : '\nConvert mode: menus only (pass --full for title video)\n'
+      : '\nConvert mode: menus + short title cells ≤ ' +
+          TITLE_INCLUDE_MAX_SEC +
+          's (pass --full for all title video)\n'
   );
 
   // In-place convert cannot decrypt CSS; fail early instead of EIO/corrupt MPEG noise.
