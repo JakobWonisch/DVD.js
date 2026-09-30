@@ -14,6 +14,11 @@ import { mergeMenuCellMaps } from './mergeMenuCellMaps.js';
 import { menuCellAdrCount } from './menuCellAdrCount.js';
 import { buildMenuCellTimingMap } from './buildMenuCellTimingMap.js';
 import { menuFrameHeightFromIfo } from './menuFrameHeight.js';
+import {
+  menuVideoFormat,
+  webColorMetadataArgs,
+  webStillColorFilter,
+} from './dvdColorConvert.js';
 import { writeStillPlaceholder } from './writeStillPlaceholder.js';
 import { capMenuEncodeEndBytes } from './menuEncodeSegments.js';
 import {
@@ -171,26 +176,34 @@ function extractMenu(dvdPath: string, callback) {
         timing: timing,
       });
 
-      extractAuthoredStillPng(inputFile, seek, imgFile, start, end, function (ok) {
-        if (ok) {
-          entry.still = stillUrl;
-          process.stdout.write('.');
-        } else {
-          console.warn(
-            'No usable still for',
-            path.basename(imgFile),
-            '— writing placeholder',
-          );
-          try {
-            fs.unlinkSync(imgFile);
-          } catch (e) {
-            // ignore
+      extractAuthoredStillPng(
+        inputFile,
+        seek,
+        imgFile,
+        start,
+        end,
+        menuVideoFormat(json),
+        function (ok) {
+          if (ok) {
+            entry.still = stillUrl;
+            process.stdout.write('.');
+          } else {
+            console.warn(
+              'No usable still for',
+              path.basename(imgFile),
+              '— writing placeholder',
+            );
+            try {
+              fs.unlinkSync(imgFile);
+            } catch (e) {
+              // ignore
+            }
+            writeStillPlaceholder(imgFile, stillLabel, 720, stillHeight);
+            entry.still = stillUrl;
           }
-          writeStillPlaceholder(imgFile, stillLabel, 720, stillHeight);
-          entry.still = stillUrl;
-        }
-        finishCell();
-      });
+          finishCell();
+        },
+      );
 
       function finishCell() {
         vobPointer++;
@@ -239,6 +252,7 @@ function extractMenu(dvdPath: string, callback) {
     imgFile,
     cellStartBytes,
     cellEndBytes,
+    videoFormat,
     done,
   ) {
     var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvd-menu-archive-still-'));
@@ -294,7 +308,8 @@ function extractMenu(dvdPath: string, callback) {
       '-frames:v',
       String(seek.frameCount || 1),
       '-vf',
-      'yadif=0:-1:0,format=rgb24',
+      webStillColorFilter({ videoFormat: videoFormat }),
+      ...webColorMetadataArgs(),
       '-y',
       outPng,
     ];
@@ -313,7 +328,7 @@ function extractMenu(dvdPath: string, callback) {
       if (!isUsableStillPng(outPng)) {
         // Fall back: first frame of the clipped cell (no HLI skip).
         if (skipBytes !== 0 || (seek.ssSec || 0) !== 0) {
-          tryFallbackFirstFrame(inputFile, outPng, function (ok) {
+          tryFallbackFirstFrame(inputFile, outPng, videoFormat, function (ok) {
             if (ok && isUsableStillPng(outPng)) {
               try {
                 fs.copyFileSync(outPng, imgFile);
@@ -352,7 +367,7 @@ function extractMenu(dvdPath: string, callback) {
     });
   }
 
-  function tryFallbackFirstFrame(cellInput, outPng, done) {
+  function tryFallbackFirstFrame(cellInput, outPng, videoFormat, done) {
     var cmd = [
       '-hide_banner',
       '-loglevel',
@@ -372,7 +387,8 @@ function extractMenu(dvdPath: string, callback) {
       '-frames:v',
       '1',
       '-vf',
-      'yadif=0:-1:0,format=rgb24',
+      webStillColorFilter({ videoFormat: videoFormat }),
+      ...webColorMetadataArgs(),
       '-y',
       outPng,
     ];

@@ -178,6 +178,14 @@ Menu and title video stay **WebM + libvpx (VP8) + Vorbis** (`encodeVideo`). That
 
 Prefer documenting this over inventing a silent HW path. Menus-only converts are usually short; GPU matters most for `--full`. Do not switch away from WebM without an explicit product decision.
 
+### Color normalize / tag (stills + WebM)
+
+DVD MPEG-2 is **BT.601 limited (TV) range**. Untagged limited WebM often looks darker in Chrome (HW decode); untagged PNG stills can look darker in Firefox (CMS) vs VLC. Convert expands TV→PC and tags output via `dvdColorConvert.ts`:
+
+- Filter: `yadif` + `colorspace=iall=smpte170m|bt470bg:all=bt709:irange=tv:range=pc` (NTSC/PAL from IFO `video_format`; menus use VMGM/VTSM, titles use `vts_video_attr`)
+- Metadata: `-color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range pc`
+- Applied to menu/title WebM (`encodeVideo`), menu stills (`generateMenuCellTable`), and title-stub stills (`generateTitleStubs`)
+
 ## Engineering standards
 
 - **Node ≥ 24**, **pnpm 12**, **TypeScript 7**, **Vitest 5**

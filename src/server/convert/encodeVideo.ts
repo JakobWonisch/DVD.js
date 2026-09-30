@@ -26,6 +26,12 @@ import {
   type TitleEncodeSegment,
   type TitlePgcMedia,
 } from './titleCellSegments.js';
+import {
+  menuVideoFormat,
+  titleVideoFormat,
+  webColorMetadataArgs,
+  webVideoColorFilter,
+} from './dvdColorConvert.js';
 
 type EncodeVideoOptions = {
   full?: boolean;
@@ -274,7 +280,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         titlePlan &&
         titlePlan.segments.length > 0
       ) {
-        encodeTitleCellSegments(titlePlan.segments, output, function(code) {
+        encodeTitleCellSegments(titlePlan.segments, output, index, function(code) {
           if (code !== 0) {
             console.warn(
               'Short title segment encode failed; omitting title media for',
@@ -304,7 +310,13 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       }
 
       // --full title VOBs (or menus-mode titles that somehow reached here).
-      encodeWholeVob(input, output, forceKeyFramesTimestamps, finishOne);
+      encodeWholeVob(
+        input,
+        output,
+        forceKeyFramesTimestamps,
+        finishOne,
+        videoFormatForEncode(index, false),
+      );
 
       function finishOne() {
         pointer++;
@@ -325,10 +337,14 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
    *   stills encode as one frame without this → WebM timeline drifts and
    *   German menus seek into the wrong clip).
    */
-  function libvpxVideoArgs(padToDuration?: boolean) {
-    var vf = padToDuration
-      ? 'yadif=0:-1:0,format=yuv420p,tpad=stop_mode=clone:stop_duration=3600'
-      : 'yadif=0:-1:0,format=yuv420p';
+  function libvpxVideoArgs(
+    padToDuration?: boolean,
+    videoFormat?: number | null,
+  ) {
+    var vf = webVideoColorFilter({
+      padToDuration: !!padToDuration,
+      videoFormat: videoFormat,
+    });
     return [
       '-c:v', 'libvpx',
       '-b:v', '1000k',
@@ -339,12 +355,22 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       '-auto-alt-ref', '0',
       '-threads', '0',
       '-vf', vf,
+      ...webColorMetadataArgs(),
       '-fps_mode', 'cfr',
       '-avoid_negative_ts', 'make_zero',
     ];
   }
 
-  function encodeWholeVob(input, output, forceKeyFramesTimestamps, done) {
+  /** Resolve IFO video_format for WebM color normalize (menu vs title attrs). */
+  function videoFormatForEncode(domainIndex: number, forMenu: boolean) {
+    var ifoJson =
+      domainIndex > 0
+        ? readTitleIfoJson(domainIndex)
+        : readVideoTsIfoJson();
+    return forMenu ? menuVideoFormat(ifoJson) : titleVideoFormat(ifoJson);
+  }
+
+  function encodeWholeVob(input, output, forceKeyFramesTimestamps, done, videoFormat) {
     var cmd = [
       '-hide_banner',
       ...(options.verbose ? [] : ['-loglevel', 'error', '-stats']),
@@ -355,7 +381,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       '-i', input,
       '-map', '0:v:0',
       '-map', '0:a:0?',
-      ...libvpxVideoArgs(),
+      ...libvpxVideoArgs(false, videoFormat),
       '-c:a', 'libvorbis',
       '-b:a', '128k',
       '-ac', '2',
@@ -472,7 +498,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         '-t', String(seg.durationSec),
         '-map', '0:v:0',
         '-an',
-        ...libvpxVideoArgs(true),
+        ...libvpxVideoArgs(true, videoFormatForEncode(domainIndex, true)),
         '-force_key_frames', '0',
         '-y',
         videoOnly,
@@ -653,6 +679,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
   function encodeTitleCellSegments(
     segments: TitleEncodeSegment[],
     output: string,
+    domainIndex: number,
     done: (code: number) => void,
   ) {
     var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvd-menu-archive-title-enc-'));
@@ -705,7 +732,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         '-t', String(seg.durationSec),
         '-map', '0:v:0',
         '-map', '0:a:0?',
-        ...libvpxVideoArgs(true),
+        ...libvpxVideoArgs(true, videoFormatForEncode(domainIndex, false)),
         '-c:a', 'libvorbis',
         '-b:a', '128k',
         '-ac', '2',
@@ -946,6 +973,19 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       process.stdout.write('.');
       done();
     });
+  }
+
+  /** Load VIDEO_TS.json (VMGM) when present. */
+  function readVideoTsIfoJson(): any | null {
+    var ifoJsonPath = path.join(webPath, 'VIDEO_TS.json');
+    try {
+      if (!fs.existsSync(ifoJsonPath)) {
+        return null;
+      }
+      return loadJsonFile(ifoJsonPath);
+    } catch (e) {
+      return null;
+    }
   }
 
   /**

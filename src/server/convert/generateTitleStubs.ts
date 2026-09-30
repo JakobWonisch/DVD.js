@@ -31,6 +31,11 @@ import {
 } from './titleCellSegments.js';
 import { TITLE_INCLUDE_MAX_SEC } from './titleIncludePolicy.js';
 import {
+  titleVideoFormat,
+  webColorMetadataArgs,
+  webStillColorFilter,
+} from './dvdColorConvert.js';
+import {
   buildStubButtonsFromNav,
   classifyTitlePgcStubs,
   titleFrameHeightFromIfo,
@@ -300,6 +305,7 @@ function materializeInteractiveStub(
     imgFile,
     cellStartBytes,
     cellEndBytes,
+    titleVideoFormat(opts.ifoJson),
     function (ok) {
       if (!ok) {
         writeStillPlaceholder(imgFile, stillLabel, 720, frameHeight);
@@ -320,6 +326,7 @@ function extractTitleStubStill(
   imgFile: string,
   cellStartBytes: number,
   cellEndBytes: number,
+  videoFormat: number | null,
   done: (ok: boolean) => void,
 ) {
   var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvd-menu-archive-title-stub-'));
@@ -375,7 +382,8 @@ function extractTitleStubStill(
     '-frames:v',
     String(seek.frameCount || 1),
     '-vf',
-    'yadif=0:-1:0,format=rgb24',
+    webStillColorFilter({ videoFormat: videoFormat }),
+    ...webColorMetadataArgs(),
     '-y',
     outPng,
   ];
