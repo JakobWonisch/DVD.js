@@ -19,6 +19,7 @@
     "start": "node ./bin/start.js",
     "start:server": "node ./bin/http-server.js",
     "convert": "node ./bin/convert.js",
+    "reconvert": "bash ./scripts/reconvert.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p viewer/tsconfig.json"

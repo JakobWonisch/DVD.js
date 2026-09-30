@@ -263,7 +263,11 @@ pnpm convert --                        # sole optical drive (errors if 0 or many
 pnpm convert -- path/to/DVD/root          # menus + short title cells ≤ 60s
 pnpm convert -- --full path/to/DVD/root   # menus + all titles
 pnpm convert -- --vm-only --web discName  # regenerate vm.js only
+pnpm reconvert                            # pick from dvds/*/VIDEO_TS (empty=all, 1,2=include, !1=exclude)
+pnpm reconvert -- --full "1,3"            # non-interactive; convert flags before selection
 ```
+
+Ripped sources for `reconvert` default to `dvds/` (`DVDJS_RIPS` or `--rips` to override).
 
 Copy `config/app.example.json` → `config/app.json` and set `webFolder` before convert/start.
 
