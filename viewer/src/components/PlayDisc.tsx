@@ -17,6 +17,16 @@ import {
   setViewerDebug,
 } from '../host/viewerDebug.js';
 import {
+  getSessionLogMeta,
+  getSessionLogText,
+  resetSessionLog,
+} from '../host/sessionLog.js';
+import {
+  clearMediaLoad,
+  subscribeMediaLoad,
+  type MediaLoadState,
+} from '../host/mediaLoadState.js';
+import {
   VIRTUAL_REMOTE_STORAGE_KEY,
   VIRTUAL_REMOTE_STORAGE_KEY_LEGACY,
   readStoragePrefer,
@@ -141,6 +151,27 @@ export const PlayDisc: Component = () => {
     ) === '1',
   );
   const [isFullscreen, setIsFullscreen] = createSignal(false);
+  const [mediaLoad, setMediaLoad] = createSignal<MediaLoadState>({
+    active: false,
+    progress: null,
+    label: '',
+    gen: 0,
+  });
+  const [reportBusy, setReportBusy] = createSignal(false);
+  const [reportMsg, setReportMsg] = createSignal<string | null>(null);
+
+  createEffect(() => {
+    const unsub = subscribeMediaLoad(setMediaLoad);
+    onCleanup(unsub);
+  });
+
+  createEffect(() => {
+    // Fresh ring buffer per disc visit.
+    if (params.dvdId) {
+      resetSessionLog();
+      log('boot', 'session log reset', { dvdId: params.dvdId });
+    }
+  });
 
   createEffect(() => {
     if (consoleDebug()) {
@@ -208,6 +239,7 @@ export const PlayDisc: Component = () => {
       disposed = true;
       host.removeEventListener(AUTOPLAY_BLOCKED_EVENT, onBlocked);
       disposeVm?.();
+      clearMediaLoad();
       setVmError(null);
       setVmReady(false);
       setNeedsStart(!pageHasUserGesture());
@@ -263,56 +295,154 @@ export const PlayDisc: Component = () => {
     startVm(host);
   };
 
+  const onReportProblem = async () => {
+    if (reportBusy()) {
+      return;
+    }
+    setReportBusy(true);
+    setReportMsg(null);
+    const meta = getSessionLogMeta();
+    log('report', 'submitting session log', {
+      entries: meta.entryCount,
+      discId: params.dvdId,
+    });
+    try {
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          discId: params.dvdId,
+          href: typeof location !== 'undefined' ? location.href : null,
+          userAgent:
+            typeof navigator !== 'undefined' ? navigator.userAgent : null,
+          sessionStartedAt: meta.startedAt,
+          entryCount: meta.entryCount,
+          log: getSessionLogText(),
+        }),
+      });
+      let body: { ok?: boolean; error?: string; message?: string; id?: string } =
+        {};
+      try {
+        body = (await res.json()) as typeof body;
+      } catch {
+        // ignore
+      }
+      if (res.status === 507 || body.error === 'storage_full') {
+        setReportMsg('Report storage is full — try again later.');
+        warn('report', 'storage full');
+        return;
+      }
+      if (res.status === 429 || body.error === 'rate_limited') {
+        setReportMsg('Too many reports — try again later.');
+        warn('report', 'rate limited');
+        return;
+      }
+      if (!res.ok || !body.ok) {
+        setReportMsg(body.message || 'Could not send report.');
+        warn('report', 'failed', { status: res.status, body });
+        return;
+      }
+      setReportMsg('Thanks — report sent.');
+      log('report', 'accepted', { id: body.id ?? null });
+    } catch (e) {
+      setReportMsg('Could not send report.');
+      warn('report', 'network error', {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setReportBusy(false);
+    }
+  };
+
+  /** Overlays / media waits on the video surface — toolbar stays visible but inert. */
+  const controlsLocked = () =>
+    !!(
+      mediaLoad().active ||
+      (needsStart() && vmReady() && metadata()) ||
+      (decompressing() && metadata.loading) ||
+      (metadata.loading && !decompressing())
+    );
+
   return (
     <div class="player-stage" ref={setStageEl}>
-      <Show when={decompressing() && metadata.loading}>
-        <div class="decompress-screen" role="status" aria-live="polite">
-          <p class="decompress-screen__title">Decompressing…</p>
-          <p class="decompress-screen__hint">
-            Preparing this disc’s menus. Playback starts when ready.
-          </p>
-        </div>
-      </Show>
-      <Show when={metadata.loading && !decompressing()}>
-        <p class="muted">Loading disc…</p>
-      </Show>
-      <Show when={metadata.error}>
-        <p class="error">
-          {metadata.error instanceof Error
-            ? metadata.error.message
-            : String(metadata.error)}
-        </p>
-      </Show>
-      <Show when={vmError()}>
-        <p class="error">{vmError()}</p>
-      </Show>
-      <Show when={metadata()}>
-        {(meta) => <DvdDisc metadata={meta()} hostRef={setHostEl} />}
-      </Show>
-      <Show when={needsStart() && vmReady() && metadata()}>
-        <div class="dvd-menu-archive-start-overlay">
-          <button
-            type="button"
-            class="dvd-menu-archive-start-overlay__btn"
-            onClick={onStart}
+      <div class="player-surface">
+        <Show when={decompressing() && metadata.loading}>
+          <div class="decompress-screen" role="status" aria-live="polite">
+            <p class="decompress-screen__title">Decompressing…</p>
+            <p class="decompress-screen__hint">
+              Preparing this disc’s menus. Playback starts when ready.
+            </p>
+          </div>
+        </Show>
+        <Show when={metadata.loading && !decompressing()}>
+          <div class="player-surface__status muted" role="status">
+            Loading disc…
+          </div>
+        </Show>
+        <Show when={metadata.error}>
+          <div class="player-surface__status error">
+            {metadata.error instanceof Error
+              ? metadata.error.message
+              : String(metadata.error)}
+          </div>
+        </Show>
+        <Show when={vmError()}>
+          <div class="player-surface__status error">{vmError()}</div>
+        </Show>
+        <Show when={metadata()}>
+          {(meta) => <DvdDisc metadata={meta()} hostRef={setHostEl} />}
+        </Show>
+        <Show when={needsStart() && vmReady() && metadata()}>
+          <div class="dvd-menu-archive-start-overlay">
+            <button
+              type="button"
+              class="dvd-menu-archive-start-overlay__btn"
+              onClick={onStart}
+            >
+              Start disc
+            </button>
+            <p class="dvd-menu-archive-start-overlay__hint">
+              Browsers block video until you interact — press to play the intro.
+            </p>
+          </div>
+        </Show>
+        <Show when={metadata() && showRemote() && !needsStart()}>
+          <VirtualRemote host={hostEl()} />
+        </Show>
+        <Show when={mediaLoad().active}>
+          <div
+            class="player-media-load"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+            title={mediaLoad().label || 'Loading…'}
           >
-            Start disc
-          </button>
-          <p class="dvd-menu-archive-start-overlay__hint">
-            Browsers block video until you interact — press to play the intro.
-          </p>
-        </div>
-      </Show>
-      <Show when={metadata() && showRemote()}>
-        <VirtualRemote host={hostEl()} />
-      </Show>
+            <span class="player-media-load__spinner" aria-hidden="true" />
+            <Show
+              when={
+                mediaLoad().progress != null &&
+                Number.isFinite(mediaLoad().progress as number)
+              }
+            >
+              <span class="player-media-load__pct">
+                {Math.round((mediaLoad().progress as number) * 100)}%
+              </span>
+            </Show>
+          </div>
+        </Show>
+      </div>
       <Show when={metadata()}>
-        <div class="player-toolbar">
+        <div
+          class="player-toolbar"
+          classList={{ 'player-toolbar--locked': controlsLocked() }}
+          aria-disabled={controlsLocked() ? 'true' : undefined}
+        >
           <div class="player-toolbar__toggles">
             <label class="player-toolbar__debug">
               <input
                 type="checkbox"
                 checked={debugHitboxes()}
+                disabled={controlsLocked()}
                 onChange={(e) => setDebugHitboxes(e.currentTarget.checked)}
               />
               Debug button hitboxes
@@ -321,6 +451,7 @@ export const PlayDisc: Component = () => {
               <input
                 type="checkbox"
                 checked={consoleDebug()}
+                disabled={controlsLocked()}
                 onChange={(e) => {
                   const on = e.currentTarget.checked;
                   setConsoleDebug(on);
@@ -336,6 +467,7 @@ export const PlayDisc: Component = () => {
               <input
                 type="checkbox"
                 checked={showRemote()}
+                disabled={controlsLocked()}
                 onChange={(e) => {
                   const on = e.currentTarget.checked;
                   setShowRemote(on);
@@ -348,8 +480,23 @@ export const PlayDisc: Component = () => {
           <div class="player-toolbar__actions">
             <button
               type="button"
+              class="player-toolbar__report"
+              title="Send this session’s diagnostic log to the server"
+              disabled={controlsLocked() || reportBusy()}
+              onClick={() => void onReportProblem()}
+            >
+              {reportBusy() ? 'Sending…' : 'Report a problem'}
+            </button>
+            <Show when={reportMsg()}>
+              <span class="player-toolbar__report-msg" role="status">
+                {reportMsg()}
+              </span>
+            </Show>
+            <button
+              type="button"
               class="player-toolbar__skip"
               title="Skip to end of current clip (N)"
+              disabled={controlsLocked()}
               onClick={() => hostEl()?.skipToEnd?.()}
             >
               Skip to end
@@ -358,6 +505,7 @@ export const PlayDisc: Component = () => {
               type="button"
               class="player-toolbar__menu"
               title="Jump to title/root menu (M)"
+              disabled={controlsLocked()}
               onClick={() => hostEl()?.goToMainMenu?.()}
             >
               Main menu
@@ -365,6 +513,7 @@ export const PlayDisc: Component = () => {
             <button
               type="button"
               class="player-toolbar__fs"
+              disabled={controlsLocked()}
               onClick={() => void toggleFullscreen()}
             >
               {isFullscreen() ? 'Exit fullscreen' : 'Fullscreen'}

@@ -21,6 +21,7 @@ import {
   readStoragePrefer,
   writeStorage,
 } from '../projectId.js';
+import { pushSessionLog } from './sessionLog.js';
 
 export function isViewerDebug(): boolean {
   try {
@@ -59,6 +60,7 @@ function stamp(): string {
 }
 
 export function log(scope: string, message: string, data?: unknown): void {
+  pushSessionLog('log', scope, message, data);
   if (!isViewerDebug()) {
     return;
   }
@@ -71,6 +73,7 @@ export function log(scope: string, message: string, data?: unknown): void {
 }
 
 export function warn(scope: string, message: string, data?: unknown): void {
+  pushSessionLog('warn', scope, message, data);
   if (!isViewerDebug()) {
     return;
   }

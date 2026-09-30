@@ -32,6 +32,15 @@ import {
   videoDebugInfo,
 } from './viewerDebug.js';
 import {
+  beginMediaLoad,
+  endMediaLoad,
+  updateMediaLoadProgress,
+} from './mediaLoadState.js';
+import {
+  cellShouldAutoAdvanceOnMediaFail,
+  recoverAfterMediaFailure,
+} from './safetyNet.js';
+import {
   applyDebugHitboxLabels,
   bindMenuKeys,
 } from './menuKeys.js';
@@ -878,6 +887,25 @@ function playMenuMotionSegment(
   });
   void probeAsset(cellVideoUrl, 'menu WebM');
 
+  const loadToken = beginMediaLoad('Loading video…');
+  host._dvdjsMediaLoadToken = loadToken;
+  const onBufferProgress = () => {
+    try {
+      const dur = menuVideo.duration;
+      if (!Number.isFinite(dur) || dur <= 0 || !menuVideo.buffered.length) {
+        return;
+      }
+      const endBuf = menuVideo.buffered.end(menuVideo.buffered.length - 1);
+      // For per-cell clips, progress toward having the whole clip; for concat, toward finishAt.
+      const target = perCell ? dur : Math.max(finishAt, start + 0.5);
+      updateMediaLoadProgress(loadToken, Math.min(1, endBuf / target));
+    } catch {
+      // ignore
+    }
+  };
+  menuVideo.addEventListener('progress', onBufferProgress);
+  menuVideo.addEventListener('loadeddata', onBufferProgress);
+
   // Assigned below; identity token for stale seek/play/finish guards.
   let finishSegment: () => void = () => {};
 
@@ -934,6 +962,9 @@ function playMenuMotionSegment(
     if (host._dvdjsMenuPlayGen !== playGen) {
       return;
     }
+    endMediaLoad(loadToken);
+    menuVideo.removeEventListener('progress', onBufferProgress);
+    menuVideo.removeEventListener('loadeddata', onBufferProgress);
     log('motion', 'finishSegment', {
       t: Number.isFinite(menuVideo.currentTime)
         ? +menuVideo.currentTime.toFixed(3)
@@ -1169,6 +1200,9 @@ function playMenuMotionSegment(
             // Refresh hold bitmap for the *next* handoff without flashing it now.
             captureMenuHoldFrame(host, menuVideo, { show: false });
             hideMenuHoldFrame(host);
+            endMediaLoad(loadToken);
+            menuVideo.removeEventListener('progress', onBufferProgress);
+            menuVideo.removeEventListener('loadeddata', onBufferProgress);
             log('motion', 'revealed video', {
               t: +menuVideo.currentTime.toFixed(3),
               layers: menuLayerDebugInfo(host),
@@ -1233,6 +1267,9 @@ function playMenuMotionSegment(
         }
         // Autoplay blocked: show a usable still (prefer this cell's PNG when
         // present; motion cover may still be the previous menu).
+        endMediaLoad(loadToken);
+        menuVideo.removeEventListener('progress', onBufferProgress);
+        menuVideo.removeEventListener('loadeddata', onBufferProgress);
         warn('motion', 'autoplay blocked / play failed', {
           ...videoDebugInfo(menuVideo),
           layers: menuLayerDebugInfo(host),
@@ -2183,6 +2220,18 @@ class XVideo extends HTMLElement implements XVideoElement {
 
     if (!menu) {
       console.error('playMenuCell: unknown menu', opts.menuId);
+      warn('safety', 'playMenuCell unknown menu — advancing', {
+        menuId: opts.menuId ?? null,
+      });
+      if (typeof opts.onPost === 'function') {
+        try {
+          opts.onPost();
+        } catch (e) {
+          warn('safety', 'unknown-menu onPost failed', {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
       return;
     }
 
@@ -2428,6 +2477,7 @@ class XVideo extends HTMLElement implements XVideoElement {
     const targetStillSrc =
       nextStillSrc || stillImg?.getAttribute('src') || null;
 
+    let stillHandoffAttempts = 0;
     const finishStillHandoff = (ready: boolean) => {
       if ((this as any)._dvdjsMenuPlayGen !== playGen) {
         return;
@@ -2439,26 +2489,38 @@ class XVideo extends HTMLElement implements XVideoElement {
         return;
       }
       if (!ready) {
+        // One short retry if the browser has not finished the request yet.
         if (
+          stillHandoffAttempts < 1 &&
           stillImg &&
           targetStillSrc &&
           stillImg.getAttribute('src') === targetStillSrc &&
           !stillImg.complete
         ) {
+          stillHandoffAttempts += 1;
           void whenImageReady(stillImg, {
-            timeoutMs: 30_000,
+            timeoutMs: 5_000,
             expectedSrc: targetStillSrc,
           }).then(finishStillHandoff);
-        } else {
-          warn('menu', 'still handoff waiting (no pixels yet)', {
-            src: targetStillSrc,
-            layers: menuLayerDebugInfo(this, menu),
-          });
-          void probeAsset(targetStillSrc, 'menu still (handoff)');
+          return;
         }
-        // Keep hold/video forever if the still never arrives.
+        warn('menu', 'still handoff failed (no pixels)', {
+          src: targetStillSrc,
+          layers: menuLayerDebugInfo(this, menu),
+        });
+        void probeAsset(targetStillSrc, 'menu still (handoff)');
+        endMediaLoad((this as any)._dvdjsMediaLoadToken ?? 0);
+        // Keep hold/video painted so the stage is not black; enable buttons.
+        enableButtons();
+        if (cellShouldAutoAdvanceOnMediaFail(opts)) {
+          recoverAfterMediaFailure(this as any, 'still missing — auto-advance', {
+            src: targetStillSrc,
+            still_time: stillTime,
+          });
+        }
         return;
       }
+      endMediaLoad((this as any)._dvdjsMediaLoadToken ?? 0);
       // Reveal still first, then drop video + hold — never black.
       if (stillImg) {
         stillImg.style.display = '';
@@ -2491,6 +2553,9 @@ class XVideo extends HTMLElement implements XVideoElement {
       }
     };
 
+    const loadToken = beginMediaLoad('Loading menu…');
+    (this as any)._dvdjsMediaLoadToken = loadToken;
+
     const installStillWhenReady = async () => {
       if (!stillImg || !targetStillSrc) {
         finishStillHandoff(imageHasPixels(stillImg));
@@ -2515,8 +2580,11 @@ class XVideo extends HTMLElement implements XVideoElement {
       stillImg.setAttribute('src', targetStillSrc);
       stillImg.style.display = '';
       stillImg.style.opacity = '0';
+      const stillWaitMs = cellShouldAutoAdvanceOnMediaFail(opts)
+        ? 8_000
+        : 30_000;
       const ready = await whenImageReady(stillImg, {
-        timeoutMs: 30_000,
+        timeoutMs: stillWaitMs,
         expectedSrc: targetStillSrc,
       });
       finishStillHandoff(ready);

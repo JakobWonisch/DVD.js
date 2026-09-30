@@ -2,5 +2,9 @@
   "webFolder": "/home/user/dvd/web",
   "staticServerPort": 3000,
   "evictDiscCache": false,
-  "mdns": true
+  "mdns": true,
+  "reportsFolder": "/home/user/dvd/web/.dvd-menu-archive-reports",
+  "reportsMaxCount": 100,
+  "reportsMaxTotalBytes": 52428800,
+  "reportsMaxBodyBytes": 524288
 }

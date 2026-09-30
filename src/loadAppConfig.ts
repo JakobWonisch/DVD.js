@@ -18,6 +18,17 @@ export type AppConfig = {
    * play; disable in Docker / remote hosts (`DVD_MENU_ARCHIVE_MDNS=0`).
    */
   mdns?: boolean;
+  /**
+   * Directory for viewer “Report a problem” session logs.
+   * Default: `<webFolder>/.dvd-menu-archive-reports`.
+   */
+  reportsFolder?: string;
+  /** Max stored report files (default 100). */
+  reportsMaxCount?: number;
+  /** Max total bytes of all reports (default 50MB). */
+  reportsMaxTotalBytes?: number;
+  /** Max single report body (default 512KB). */
+  reportsMaxBodyBytes?: number;
 };
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -28,6 +39,10 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   staticServerPort: 3000,
   evictDiscCache: false,
   mdns: true,
+  reportsFolder: join(ROOT, 'web', '.dvd-menu-archive-reports'),
+  reportsMaxCount: 100,
+  reportsMaxTotalBytes: 50 * 1024 * 1024,
+  reportsMaxBodyBytes: 512 * 1024,
 };
 
 function envBool(suffix: string): boolean | undefined {
@@ -65,7 +80,8 @@ export function resolveAppConfigPath(): string | null {
  *
  * Env keys (prefer `DVD_MENU_ARCHIVE_*`; `DVDJS_*` still accepted):
  * `CONFIG`, `WEB_FOLDER`, `PORT` (or `STATIC_SERVER_PORT`),
- * `EVICT_DISC_CACHE`, `MDNS`.
+ * `EVICT_DISC_CACHE`, `MDNS`, `REPORTS_FOLDER`, `REPORTS_MAX_COUNT`,
+ * `REPORTS_MAX_TOTAL_BYTES`, `REPORTS_MAX_BODY_BYTES`.
  */
 export function loadAppConfig(): AppConfig {
   var configPath = resolveAppConfigPath();
@@ -97,11 +113,38 @@ export function loadAppConfig(): AppConfig {
 
   var mdns = envBool('MDNS') ?? fileCfg.mdns ?? APP_CONFIG_DEFAULTS.mdns;
 
+  var reportsFolderRaw =
+    envRaw('REPORTS_FOLDER') || fileCfg.reportsFolder || null;
+  var reportsFolder = reportsFolderRaw
+    ? isAbsolute(reportsFolderRaw)
+      ? reportsFolderRaw
+      : join(process.cwd(), reportsFolderRaw)
+    : join(webFolder, '.dvd-menu-archive-reports');
+
+  var reportsMaxCount =
+    envInt('REPORTS_MAX_COUNT') ??
+    fileCfg.reportsMaxCount ??
+    APP_CONFIG_DEFAULTS.reportsMaxCount;
+
+  var reportsMaxTotalBytes =
+    envInt('REPORTS_MAX_TOTAL_BYTES') ??
+    fileCfg.reportsMaxTotalBytes ??
+    APP_CONFIG_DEFAULTS.reportsMaxTotalBytes;
+
+  var reportsMaxBodyBytes =
+    envInt('REPORTS_MAX_BODY_BYTES') ??
+    fileCfg.reportsMaxBodyBytes ??
+    APP_CONFIG_DEFAULTS.reportsMaxBodyBytes;
+
   return {
     webFolder: webFolder,
     staticServerPort: staticServerPort,
     evictDiscCache: evictDiscCache,
     mdns: mdns,
+    reportsFolder: reportsFolder,
+    reportsMaxCount: reportsMaxCount,
+    reportsMaxTotalBytes: reportsMaxTotalBytes,
+    reportsMaxBodyBytes: reportsMaxBodyBytes,
   };
 }
 

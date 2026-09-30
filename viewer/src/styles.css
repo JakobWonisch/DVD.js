@@ -42,6 +42,31 @@ a:hover {
   padding: 20px 15px;
 }
 
+.copyright-banner {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  background: #fff8e6;
+  border: 1px solid #e6d9a8;
+  border-radius: 4px;
+  color: #5c4b1a;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.copyright-banner p {
+  margin: 0;
+}
+
+.copyright-banner a {
+  font-weight: 600;
+  color: #3d6f99;
+  text-decoration: underline;
+}
+
+.copyright-banner a:hover {
+  color: #2a6496;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -113,6 +138,79 @@ footer {
   color: var(--muted);
 }
 
+.footer-legal {
+  margin: 0.75rem 0 0;
+  font-size: 13px;
+}
+
+.legal-page {
+  max-width: 42rem;
+  margin: 0 auto 2rem;
+  line-height: 1.55;
+}
+
+.legal-page h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.legal-page h2 {
+  margin: 1.75rem 0 0.5rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.legal-page p,
+.legal-page ol {
+  margin: 0 0 0.85rem;
+}
+
+.legal-page ol {
+  padding-left: 1.35rem;
+}
+
+.legal-page li {
+  margin-bottom: 0.45rem;
+}
+
+.legal-page__lede {
+  font-size: 1.05rem;
+}
+
+.legal-page__contact {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.legal-page__contact dt {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.legal-page__contact dd {
+  margin: 0;
+}
+
+.legal-page__note {
+  font-size: 13px;
+}
+
+.legal-page code {
+  font-size: 0.92em;
+  padding: 0.1em 0.35em;
+  background: var(--panel);
+  border-radius: 3px;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -174,20 +272,76 @@ footer {
 
 .player-stage {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+/*
+ * Video surface only — overlays / spinner / virtual remote are confined here.
+ * Matches the DVD aspect box (same max-width as x-video).
+ */
+.player-surface {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  aspect-ratio: 16 / 9;
+  margin: 0 auto;
+  background: #000;
+  overflow: hidden;
+}
+
+.player-surface > x-video {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  aspect-ratio: auto;
+  margin: 0;
+}
+
+.player-surface__status {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 1rem 1.25rem;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.player-surface__status.muted {
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.player-surface__status.error {
+  background: #f2dede;
+  color: var(--danger);
+  border: none;
+  border-radius: 0;
 }
 
 .decompress-screen {
-  min-height: 12rem;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   padding: 2rem 1rem;
+  margin: 0;
+  min-height: 0;
   background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  border: none;
+  border-radius: 0;
   text-align: center;
+  box-sizing: border-box;
 }
 
 .decompress-screen__title {
@@ -207,6 +361,7 @@ footer {
 .player-stage:fullscreen {
   background: #000;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -218,15 +373,25 @@ footer {
 
 /*
  * Largest DVD rect that fits the viewport (object-fit: contain for the stage).
- * Layers inside x-video still fill this box so still/SPU/buttons stay aligned.
+ * Overlays live on .player-surface so they track this box, not the toolbar.
  */
-.player-stage:fullscreen x-video {
+.player-stage:fullscreen .player-surface {
   --dvd-ar: 16 / 9;
   aspect-ratio: var(--dvd-ar);
   width: min(100%, calc(100vh * 16 / 9));
   height: auto;
   max-width: 100%;
-  max-height: 100%;
+  max-height: calc(100% - 3.25rem);
+  margin: 0;
+  flex: 0 1 auto;
+}
+
+.player-stage:fullscreen .player-surface > x-video {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
   margin: 0;
 }
 
@@ -251,6 +416,63 @@ footer {
   color: #fff;
   border-top-color: #444;
   z-index: 30;
+  flex-shrink: 0;
+}
+
+/* Bottom-left media wait indicator (still/WebM for next menu step). */
+.player-media-load {
+  position: absolute;
+  left: 0.65rem;
+  bottom: 0.65rem;
+  z-index: 28;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #eee;
+  font-size: 0.75rem;
+  pointer-events: none;
+  user-select: none;
+}
+
+.player-media-load__spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: player-media-load-spin 0.7s linear infinite;
+}
+
+.player-media-load__pct {
+  min-width: 2.2em;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
+}
+
+@keyframes player-media-load-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+.player-toolbar--locked {
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+
+.player-toolbar--locked .player-toolbar__report-msg {
+  pointer-events: none;
+}
+
+.player-toolbar button:disabled,
+.player-toolbar input:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .player-toolbar {
@@ -325,9 +547,10 @@ footer {
  * Available on all viewports when the toolbar checkbox is on (not mobile-only).
  */
 .virtual-remote {
+  /* Anchored to .player-surface (video box), not the toolbar. */
   position: absolute;
   left: 50%;
-  bottom: 4.75rem;
+  bottom: 0.75rem;
   transform: translateX(-50%);
   z-index: 35;
   pointer-events: none;
@@ -337,7 +560,7 @@ footer {
 }
 
 .player-stage:fullscreen .virtual-remote {
-  bottom: 3.75rem;
+  bottom: 0.75rem;
 }
 
 .virtual-remote__pad {
@@ -423,9 +646,25 @@ footer {
   gap: 0.5rem;
 }
 
+.player-toolbar__report:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.player-toolbar__report-msg {
+  font-size: 0.8rem;
+  color: #666;
+  max-width: 14rem;
+}
+
+.player-stage:fullscreen .player-toolbar__report-msg {
+  color: #ccc;
+}
+
 .player-toolbar__fs,
 .player-toolbar__skip,
-.player-toolbar__menu {
+.player-toolbar__menu,
+.player-toolbar__report {
   appearance: none;
   border: 1px solid #ccc;
   background: #f7f7f7;
@@ -438,13 +677,15 @@ footer {
 
 .player-toolbar__fs:hover,
 .player-toolbar__skip:hover,
-.player-toolbar__menu:hover {
+.player-toolbar__menu:hover,
+.player-toolbar__report:hover {
   background: #eee;
 }
 
 .player-stage:fullscreen .player-toolbar__fs,
 .player-stage:fullscreen .player-toolbar__skip,
-.player-stage:fullscreen .player-toolbar__menu {
+.player-stage:fullscreen .player-toolbar__menu,
+.player-stage:fullscreen .player-toolbar__report {
   border-color: #666;
   background: #2a2a2a;
   color: #eee;
@@ -452,7 +693,8 @@ footer {
 
 .player-stage:fullscreen .player-toolbar__fs:hover,
 .player-stage:fullscreen .player-toolbar__skip:hover,
-.player-stage:fullscreen .player-toolbar__menu:hover {
+.player-stage:fullscreen .player-toolbar__menu:hover,
+.player-stage:fullscreen .player-toolbar__report:hover {
   background: #3a3a3a;
 }
 
@@ -492,7 +734,8 @@ x-video {
   position: relative;
   width: 100%;
   max-width: 720px;
-  /* DVD display AR (anamorphic 16:9 menus like LOTR). Letterbox is in fullscreen. */
+  /* DVD display AR (anamorphic 16:9 menus like LOTR). Letterbox is in fullscreen.
+   * Inside .player-surface the parent owns the box; see .player-surface > x-video. */
   aspect-ratio: 16 / 9;
   margin: auto;
   display: block;

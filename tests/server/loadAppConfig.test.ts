@@ -76,11 +76,12 @@ describe('loadAppConfig', function () {
     });
     setEnv('DVD_MENU_ARCHIVE_CONFIG', file);
 
-    expect(loadAppConfig()).toEqual({
+    expect(loadAppConfig()).toMatchObject({
       webFolder: '/from/json',
       staticServerPort: 4000,
       evictDiscCache: true,
       mdns: false,
+      reportsFolder: '/from/json/.dvd-menu-archive-reports',
     });
   });
 
@@ -98,11 +99,12 @@ describe('loadAppConfig', function () {
     setEnv('DVD_MENU_ARCHIVE_EVICT_DISC_CACHE', 'true');
     setEnv('DVD_MENU_ARCHIVE_MDNS', '0');
 
-    expect(loadAppConfig()).toEqual({
+    expect(loadAppConfig()).toMatchObject({
       webFolder: '/from/env',
       staticServerPort: 8080,
       evictDiscCache: true,
       mdns: false,
+      reportsFolder: '/from/env/.dvd-menu-archive-reports',
     });
   });
 
