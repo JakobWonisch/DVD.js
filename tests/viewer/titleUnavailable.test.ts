@@ -3,6 +3,7 @@ import {
   TITLE_UNAVAILABLE_HEADING,
   TITLE_UNAVAILABLE_MESSAGE,
   TITLE_UNAVAILABLE_OK_LABEL,
+  alignLangForTitlePost,
   beginUserButtonNav,
   captureMenuResumeState,
   clearMissingTitleSkip,
@@ -220,6 +221,25 @@ describe('tryAutoSkipMissingTitle', () => {
     expect(g.lang).toBe('en');
     expect(rootRun).toHaveBeenCalledOnce();
     expect(host._dvdjsMissingTitleBroken).toBeFalsy();
+  });
+
+  it('alignLangForTitlePost remaps VMGM default onto VTS LUs', () => {
+    const g: any = {
+      domain: 1,
+      lang: 'default',
+      MPGCIUT: {
+        0: { default: { 1: {} } },
+        1: { en: { 1: {} }, de: { 1: {} } },
+      },
+      MENU_TYPES: [
+        { default: [] },
+        { en: [], de: [] },
+      ],
+    };
+    alignLangForTitlePost(g);
+    expect(g.lang).toBe('en');
+    // CallSS Root style access must not throw.
+    expect(g.MENU_TYPES[g.domain][g.lang]).toBeDefined();
   });
 
   it('clearMissingTitleSkip resets the visited set', () => {

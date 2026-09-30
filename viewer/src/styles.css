@@ -747,6 +747,12 @@ x-video > video {
   display: block;
 }
 
+/* Title WebMs sit under the absolute menu-hold canvas unless stacked above it. */
+x-video > video:not(.dvdjs-menu-video) {
+  position: relative;
+  z-index: 1;
+}
+
 /* Author `display:block` would otherwise override the hidden attribute. */
 x-video > video[hidden],
 .dvdjs-menu-video[hidden],

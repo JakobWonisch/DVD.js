@@ -15,6 +15,7 @@ import { menuCellAdrCount } from './menuCellAdrCount.js';
 import { buildMenuCellTimingMap } from './buildMenuCellTimingMap.js';
 import { menuFrameHeightFromIfo } from './menuFrameHeight.js';
 import { writeStillPlaceholder } from './writeStillPlaceholder.js';
+import { capMenuEncodeEndBytes } from './menuEncodeSegments.js';
 import {
   DVD_VIDEO_LB_LEN,
   cellNeedsStillPng,
@@ -88,11 +89,18 @@ function extractMenu(dvdPath: string, callback) {
 
       var vob = json.menu_c_adt.cell_adr_table[vobPointer];
       var start = vob.start_sector * DVD_VIDEO_LB_LEN;
-      var end = (vob.last_sector + 1) * DVD_VIDEO_LB_LEN;
-      var cellBytes = end - start;
+      var cadtEnd = (vob.last_sector + 1) * DVD_VIDEO_LB_LEN;
       var cellID = vob.cell_id;
       var vobID = vob.vob_id;
       var timing = timingByKey[cellID + ':' + vobID];
+      var durationSec =
+        timing && timing.endSec != null && timing.startSec != null
+          ? Math.max(0, timing.endSec - timing.startSec)
+          : 0;
+      // Same byte cap as menu encode — C_ADT last_sector can span the rest of
+      // the VOB for a tiny still (Shrek); Buffer.alloc that OOMs convert.
+      var end = capMenuEncodeEndBytes(start, cadtEnd, durationSec);
+      var cellBytes = end - start;
       var imgFile = path.join(
         webPath,
         'menu-' + pointer + '-' + cellID + '-' + vobID + '.png',

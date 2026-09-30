@@ -51,13 +51,31 @@ describe('mergeMenuCellMaps', () => {
     });
   });
 
-  it('keeps cells only present on one side', () => {
+  it('drops cells only present on the previous side (stale C_ADT)', () => {
     const merged = mergeMenuCellMaps(
       { '1': { '1': { css: '/a.css', btn_nb: 1 } } },
       { '2': { '1': { still: '/b.png' } } },
     );
-    expect(merged['1']['1'].css).toBe('/a.css');
+    expect(merged['1']).toBeUndefined();
     expect(merged['2']['1'].still).toBe('/b.png');
+  });
+
+  it('preserves video URL across still-only rewrites', () => {
+    const merged = mergeMenuCellMaps(
+      {
+        '1': {
+          '1': {
+            video: '/d/menu-0-1-1.webm',
+            still: '/d/old.png',
+            css: '/d/a.css',
+          },
+        },
+      },
+      { '1': { '1': { still: '/d/new.png', startSec: 0, endSec: 1 } } },
+    );
+    expect(merged['1']['1'].video).toBe('/d/menu-0-1-1.webm');
+    expect(merged['1']['1'].still).toBe('/d/new.png');
+    expect(merged['1']['1'].css).toBe('/d/a.css');
   });
 
   it('preserves still when incoming omits it', () => {

@@ -182,6 +182,7 @@ function generateJavaScript(dvdPath: string, callback) {
     '    still_time: (cell.still_time != null ? cell.still_time : menu.still_time) || 0,',
     '    startSec: cell.startSec,',
     '    endSec: cell.endSec,',
+    '    video: cell.video,',
     '    hli_s_ptm: cell.hli_s_ptm,',
     '    buttons: cell.buttons || [],',
     '    spuSelect: cell.spuSelect || [],',
@@ -567,6 +568,7 @@ function generateJavaScript(dvdPath: string, callback) {
             buttons: (menuCell && menuCell.buttons) || [],
             spuSelect: (menuCell && menuCell.spuSelect) || [],
             spuActivate: (menuCell && menuCell.spuActivate) || [],
+            video: menuCell && menuCell.video ? menuCell.video : undefined,
           };
         });
       }

@@ -31,7 +31,7 @@ import generateJavaScript from '../server/convert/generateJavaScript.js';
 import encodeVideo from '../server/convert/encodeVideo.js';
 import packConvertedDisc from '../server/convert/packDiscArchive.js';
 import { TITLE_INCLUDE_MAX_SEC } from '../server/convert/titleIncludePolicy.js';
-import { waitUntilDiscReady } from '../server/discCache.js';
+import { beginDiscConvert, waitUntilDiscReady } from '../server/discCache.js';
 
 /** Options for a convert run. */
 export type ConvertOptions = {
@@ -313,7 +313,9 @@ function continueConvert(dvdPath: string, options: ConvertOptions) {
       process.stdout.write(
         '\nConvert mode: vm-only (regenerate vm.js from existing JSON)\n'
       );
-      process.stdout.write('  web path: ' + serverUtils.getWebPath(dvdPath) + '\n');
+      var webPath = serverUtils.getWebPath(dvdPath);
+      process.stdout.write('  web path: ' + webPath + '\n');
+      beginDiscConvert(path.dirname(webPath), path.basename(webPath));
       generateJavaScript(dvdPath, function () {
         packConvertedDisc(dvdPath, function () {
           generateCatalogue(function () {
@@ -360,9 +362,12 @@ function startConvertPipeline(dvdPath: string, options: ConvertOptions) {
                     generateTitleStubs(dvdPath, options, function () {
                       generateJavaScript(dvdPath, function () {
                         encodeVideo(dvdPath, options, function () {
-                          packConvertedDisc(dvdPath, function () {
-                            generateCatalogue(function () {
-                              afterConvertHooks(dvdPath, options);
+                          // Re-emit vm.js so playMenuCell gets menuCell.video URLs.
+                          generateJavaScript(dvdPath, function () {
+                            packConvertedDisc(dvdPath, function () {
+                              generateCatalogue(function () {
+                                afterConvertHooks(dvdPath, options);
+                              });
                             });
                           });
                         });

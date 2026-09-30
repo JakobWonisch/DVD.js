@@ -46,11 +46,10 @@ type IfoLike = {
 };
 
 /**
- * Map cellID:vobID → start/end seconds on the encoded menu VOB timeline.
- *
- * Times follow menu_c_adt.cell_adr_table order (sector order), not per-PGC
- * playback order. Per-PGC relative times are wrong once many single-cell PGCs
- * share one WebM (every cell would look like startSec=0).
+ * Map cellID:vobID → authored duration windows (IFO playback_time along C_ADT
+ * order). Used for still timing metadata and per-cell WebM `-t` duration.
+ * Absolute startSec values remain useful for legacy concat archives; new
+ * converts play each `menu-d-c-v.webm` from t=0 for `endSec - startSec`.
  */
 export function buildMenuCellTimingMap(json: IfoLike): Record<string, MenuCellTiming> {
   const map: Record<string, MenuCellTiming> = {};

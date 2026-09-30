@@ -12,6 +12,7 @@
 'use strict';
 
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as child_process from 'node:child_process';
 import { promisify } from 'node:util';
@@ -30,13 +31,149 @@ const ACCESS_MARKER = '.dvdjs-accessed';
  */
 const ARCHIVE_MTIME_MARKER = '.dvdjs-archive-mtime';
 
+/**
+ * Convert-in-progress marker. While present, ensure/extract must not rm the
+ * disc folder (that raced with pack and produced archives missing metadata.json
+ * — metadata is packed late in directory order).
+ */
+const CONVERTING_MARKER = '.dvdjs-converting';
+
 /** Safe disc folder / archive stem (no path separators or spaces). */
 const DISC_ID_RE = /^[A-Za-z0-9._-]+$/;
 
 /** Max length for archive stems / dvdbackup `-n` titles. */
 const DISC_ID_MAX_LEN = 32;
 
+/** Large enough for `tar -tzf` listings of per-cell menu packages. */
+const TAR_MAX_BUFFER = 64 * 1024 * 1024;
+
 const inflight = new Map<string, Promise<void>>();
+
+/** Serialize pack + extract per discId so neither rm's the other's tree. */
+const discLocks = new Map<string, Promise<unknown>>();
+
+function withDiscLock<T>(discId: string, fn: () => Promise<T>): Promise<T> {
+  var prev = discLocks.get(discId) || Promise.resolve();
+  var run = prev.catch(function () {}).then(fn);
+  discLocks.set(
+    discId,
+    run.then(
+      function () {},
+      function () {},
+    ),
+  );
+  return run;
+}
+
+function convertingMarkerPath(webFolder: string, discId: string): string {
+  return path.join(discDirPath(webFolder, discId), CONVERTING_MARKER);
+}
+
+/** True while convert owns this disc folder (do not extract over it). */
+export function isDiscConverting(webFolder: string, discId: string): boolean {
+  return fs.existsSync(convertingMarkerPath(webFolder, discId));
+}
+
+/**
+ * Mark a disc folder as owned by convert. Call at pipeline start; clear via
+ * endDiscConvert after pack (success or failure).
+ */
+export function beginDiscConvert(webFolder: string, discId: string): void {
+  if (!isSafeDiscId(discId)) {
+    throw new Error('Invalid disc id: ' + discId);
+  }
+  var dir = discDirPath(webFolder, discId);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    convertingMarkerPath(webFolder, discId),
+    String(Date.now()) + '\n',
+  );
+}
+
+/** Clear the convert-in-progress marker (idempotent). */
+export function endDiscConvert(webFolder: string, discId: string): void {
+  try {
+    fs.unlinkSync(convertingMarkerPath(webFolder, discId));
+  } catch {
+    // ignore
+  }
+}
+
+async function runTar(args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return execFile('tar', args, { maxBuffer: TAR_MAX_BUFFER });
+}
+
+/**
+ * List archive members and require discId/metadata.json (and vm.js when present
+ * in the source folder). Used before deleting the unpacked convert tree.
+ */
+export async function archiveHasRequiredFiles(
+  archive: string,
+  discId: string,
+  opts?: { requireVm?: boolean },
+): Promise<boolean> {
+  var listed = await runTar(['-tzf', archive]);
+  var lines = listed.stdout.split(/\r?\n/);
+  var meta = discId + '/metadata.json';
+  var hasMeta = false;
+  var hasVm = false;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].replace(/^\.?\//, '');
+    if (line === meta || line === meta + '/') {
+      hasMeta = true;
+    }
+    if (line === discId + '/vm.js') {
+      hasVm = true;
+    }
+  }
+  if (!hasMeta) {
+    return false;
+  }
+  if (opts && opts.requireVm && !hasVm) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Build an ordered file list so metadata.json / vm.js are archived first.
+ * Truncated packs then still extract far enough to be usable / diagnosable.
+ */
+function writeOrderedTarFileList(webFolder: string, discId: string): string {
+  var dir = discDirPath(webFolder, discId);
+  var names = fs.readdirSync(dir).filter(function (name) {
+    return (
+      name !== ACCESS_MARKER &&
+      name !== ARCHIVE_MTIME_MARKER &&
+      name !== CONVERTING_MARKER
+    );
+  });
+  var priority = ['metadata.json', 'vm.js', 'cover.jpg'];
+  var ordered: string[] = [];
+  for (var p = 0; p < priority.length; p++) {
+    var hit = priority[p];
+    if (names.indexOf(hit) !== -1) {
+      ordered.push(hit);
+    }
+  }
+  names.sort();
+  for (var i = 0; i < names.length; i++) {
+    if (ordered.indexOf(names[i]) === -1) {
+      ordered.push(names[i]);
+    }
+  }
+  var listPath = path.join(
+    os.tmpdir(),
+    'dvdjs-pack-' + discId + '-' + process.pid + '.txt',
+  );
+  fs.writeFileSync(
+    listPath,
+    ordered.map(function (n) {
+      return discId + '/' + n;
+    }).join('\n') + '\n',
+  );
+  return listPath;
+}
 
 export type DiscReadyStatus = 'ready' | 'decompressing' | 'missing';
 
@@ -254,69 +391,138 @@ export async function packDiscArchive(
   if (!isSafeDiscId(discId)) {
     throw new Error('Invalid disc id: ' + discId);
   }
-  var dir = discDirPath(webFolder, discId);
-  if (!fs.existsSync(path.join(dir, 'metadata.json'))) {
-    throw new Error('Cannot pack ' + discId + ': missing metadata.json');
-  }
-
-  var coverSrc = path.join(dir, 'cover.jpg');
-  var coverDst = coverSidecarPath(webFolder, discId);
-  if (fs.existsSync(coverSrc)) {
-    await fs.promises.copyFile(coverSrc, coverDst);
-  }
-
-  // Drop cache markers so they are not archived.
-  for (var marker of [ACCESS_MARKER, ARCHIVE_MTIME_MARKER]) {
-    try {
-      await fs.promises.unlink(path.join(dir, marker));
-    } catch {
-      // ignore
+  return withDiscLock(discId, async function () {
+    var dir = discDirPath(webFolder, discId);
+    if (!fs.existsSync(path.join(dir, 'metadata.json'))) {
+      throw new Error('Cannot pack ' + discId + ': missing metadata.json');
     }
-  }
+    var requireVm = fs.existsSync(path.join(dir, 'vm.js'));
 
-  var outArchive = archivePath(webFolder, discId);
-  var tmpArchive = outArchive + '.partial';
-  try {
-    await execFile('tar', ['-czf', tmpArchive, '-C', webFolder, discId]);
-    await fs.promises.rename(tmpArchive, outArchive);
-  } catch (err) {
-    try {
-      await fs.promises.unlink(tmpArchive);
-    } catch {
-      // ignore
+    var coverSrc = path.join(dir, 'cover.jpg');
+    var coverDst = coverSidecarPath(webFolder, discId);
+    if (fs.existsSync(coverSrc)) {
+      await fs.promises.copyFile(coverSrc, coverDst);
     }
-    throw err;
-  }
 
-  await fs.promises.rm(dir, { recursive: true, force: true });
+    // Drop cache markers so they are not archived (converting cleared after pack).
+    for (var marker of [ACCESS_MARKER, ARCHIVE_MTIME_MARKER]) {
+      try {
+        await fs.promises.unlink(path.join(dir, marker));
+      } catch {
+        // ignore
+      }
+    }
+
+    var outArchive = archivePath(webFolder, discId);
+    var tmpArchive = outArchive + '.partial';
+    var listPath = writeOrderedTarFileList(webFolder, discId);
+    try {
+      await runTar([
+        '-czf',
+        tmpArchive,
+        '-C',
+        webFolder,
+        '--files-from',
+        listPath,
+      ]);
+      var ok = await archiveHasRequiredFiles(tmpArchive, discId, {
+        requireVm: requireVm,
+      });
+      if (!ok) {
+        throw new Error(
+          'Pack of ' +
+            discId +
+            ' produced an archive missing metadata.json' +
+            (requireVm ? ' or vm.js' : '') +
+            ' — leaving unpacked folder in place',
+        );
+      }
+      await fs.promises.rename(tmpArchive, outArchive);
+    } catch (err) {
+      try {
+        await fs.promises.unlink(tmpArchive);
+      } catch {
+        // ignore
+      }
+      throw err;
+    } finally {
+      try {
+        await fs.promises.unlink(listPath);
+      } catch {
+        // ignore
+      }
+    }
+
+    endDiscConvert(webFolder, discId);
+    await fs.promises.rm(dir, { recursive: true, force: true });
+  });
 }
 
 async function extractArchive(webFolder: string, discId: string): Promise<void> {
-  var archive = archivePath(webFolder, discId);
-  var staging = stagingPath(webFolder, discId);
-  var dest = discDirPath(webFolder, discId);
-  // Capture before extract; rename/touch must not race a mid-flight replace.
-  var sourceMtime = archiveMtimeMs(webFolder, discId);
-
-  await fs.promises.rm(staging, { recursive: true, force: true });
-  await fs.promises.mkdir(staging, { recursive: true });
-
-  try {
-    await execFile('tar', ['-xzf', archive, '-C', staging]);
-    var extracted = path.join(staging, discId);
-    if (!fs.existsSync(path.join(extracted, 'metadata.json'))) {
-      throw new Error(
-        'Archive ' + path.basename(archive) + ' did not contain metadata.json',
-      );
+  return withDiscLock(discId, async function () {
+    // Convert owns this tree — never rm over a live convert/pack.
+    if (isDiscConverting(webFolder, discId)) {
+      return;
     }
-    await fs.promises.rm(dest, { recursive: true, force: true });
-    await fs.promises.rename(extracted, dest);
-  } finally {
-    await fs.promises.rm(staging, { recursive: true, force: true });
-  }
+    // Another pack/extract may have made the folder ready while we waited.
+    if (isDiscReady(webFolder, discId) && !isExtractStale(webFolder, discId)) {
+      touchAccess(webFolder, discId);
+      return;
+    }
 
-  writeArchiveMtimeMarker(webFolder, discId, sourceMtime);
-  touchAccess(webFolder, discId);
+    var archive = archivePath(webFolder, discId);
+    var staging = stagingPath(webFolder, discId);
+    var dest = discDirPath(webFolder, discId);
+    // Capture before extract; rename/touch must not race a mid-flight replace.
+    var sourceMtime = archiveMtimeMs(webFolder, discId);
+
+    await fs.promises.rm(staging, { recursive: true, force: true });
+    await fs.promises.mkdir(staging, { recursive: true });
+
+    try {
+      await runTar(['-xzf', archive, '-C', staging]);
+      var extracted = path.join(staging, discId);
+      if (!fs.existsSync(path.join(extracted, 'metadata.json'))) {
+        var hint = '';
+        try {
+          var stagingEntries = fs.readdirSync(staging);
+          hint =
+            ' (staging had: ' +
+            (stagingEntries.length
+              ? stagingEntries.slice(0, 8).join(', ')
+              : 'empty') +
+            ')';
+          if (fs.existsSync(extracted)) {
+            var top = fs.readdirSync(extracted).slice(0, 12);
+            hint +=
+              '; ' +
+              discId +
+              '/ had: ' +
+              (top.length ? top.join(', ') : 'empty');
+          }
+        } catch {
+          // ignore listing failures
+        }
+        throw new Error(
+          'Archive ' +
+            path.basename(archive) +
+            ' did not contain metadata.json' +
+            hint,
+        );
+      }
+      if (isDiscConverting(webFolder, discId)) {
+        // Convert started while we extracted — discard staging, keep convert tree.
+        return;
+      }
+      await fs.promises.rm(dest, { recursive: true, force: true });
+      await fs.promises.rename(extracted, dest);
+    } finally {
+      await fs.promises.rm(staging, { recursive: true, force: true });
+    }
+
+    writeArchiveMtimeMarker(webFolder, discId, sourceMtime);
+    touchAccess(webFolder, discId);
+  });
 }
 
 /**
@@ -330,6 +536,16 @@ export function ensureDiscReady(
 ): DiscReadyStatus {
   if (!isSafeDiscId(discId)) {
     return 'missing';
+  }
+
+  // Convert owns the folder: never extract/rm over it.
+  if (isDiscConverting(webFolder, discId)) {
+    if (isDiscReady(webFolder, discId)) {
+      touchAccess(webFolder, discId);
+      return 'ready';
+    }
+    // Wait for convert to write metadata — do not unpack the previous archive.
+    return 'decompressing';
   }
 
   if (isDiscReady(webFolder, discId) && !isExtractStale(webFolder, discId)) {
@@ -404,6 +620,23 @@ export async function waitUntilDiscReady(
   if (status !== 'decompressing') {
     return status;
   }
+  // Convert-in-progress without metadata: poll briefly rather than hang forever.
+  if (isDiscConverting(webFolder, discId) && !inflight.has(discId)) {
+    var deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      if (isDiscReady(webFolder, discId)) {
+        touchAccess(webFolder, discId);
+        return 'ready';
+      }
+      if (!isDiscConverting(webFolder, discId)) {
+        break;
+      }
+      await new Promise(function (r) {
+        setTimeout(r, 250);
+      });
+    }
+    return isDiscReady(webFolder, discId) ? 'ready' : 'missing';
+  }
   var job = inflight.get(discId);
   if (job) {
     await job;
@@ -446,6 +679,9 @@ export function evictExpiredDiscCache(webFolder: string): string[] {
       continue;
     }
     if (inflight.has(name)) {
+      continue;
+    }
+    if (isDiscConverting(webFolder, name)) {
       continue;
     }
     if (now - lastAccessMs(webFolder, name) < CACHE_TTL_MS) {

@@ -21,6 +21,19 @@ function editMetadataFile(file, value, callback) {
     // Now, we append the data.
     content = _.merge(content, value);
 
+    // Replace domain `menu` wholesale after merge — _.merge keeps stale PGC /
+    // cell array slots from prior converts (wrong stills / LinkNext targets).
+    if (Array.isArray(content) && Array.isArray(value)) {
+      for (var i = 0; i < value.length; i++) {
+        if (value[i] && value[i].menu && typeof value[i].menu === 'object') {
+          if (!content[i]) {
+            content[i] = {};
+          }
+          content[i].menu = value[i].menu;
+        }
+      }
+    }
+
     fs.writeFile(file, JSON.stringify(content), function(err) {
       if (err) {
         console.error(err);

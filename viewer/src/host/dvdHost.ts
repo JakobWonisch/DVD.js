@@ -5,6 +5,7 @@ import {
   hideTitleUnavailableOverlay,
   restoreMenuResumeState,
   afterLanguageCopyrightPost,
+  alignLangForTitlePost,
   menuCellPrefersStillOnly,
   scheduleMenuPostAfterStill,
   shouldHoldAfterMenuMotion,
@@ -40,6 +41,11 @@ import {
   whenImageReady,
 } from './menuPreload.js';
 import {
+  menuMotionPlaybackWindow,
+  resolveMenuCellVideoUrl,
+} from './menuCellVideo.js';
+import type { DiscMetadata } from '../types/metadata.js';
+import {
   captureMenuHoldFrame,
   captureMenuHoldFromStage,
   hideMenuHoldFrame,
@@ -61,6 +67,8 @@ export type MenuCellPlayOpts = {
   hli_s_ptm?: number;
   startSec?: number;
   endSec?: number;
+  /** Per-cell menu WebM (`menu-d-c-v.webm`); when set, play from t=0. */
+  video?: string | null;
   buttons?: Array<{
     up?: number;
     down?: number;
@@ -140,6 +148,24 @@ function hideAllMenu(host: HTMLElement) {
       m.style.display = 'none';
       m.hidden = true;
     }
+  });
+}
+
+/** Title WebMs must not stay painted over menus (later DOM + z-index 1). */
+function hideAllTitleVideos(host: HTMLElement) {
+  const dvd = host as HTMLElement & {
+    playlist?: { video: HTMLVideoElement }[];
+  };
+  if (Array.isArray(dvd.playlist) && dvd.playlist.length) {
+    dvd.playlist.forEach((entry) => {
+      entry.video.style.display = 'none';
+      entry.video.hidden = true;
+    });
+  }
+  host.querySelectorAll('video:not(.dvdjs-menu-video)').forEach((el) => {
+    const v = el as HTMLVideoElement;
+    v.style.display = 'none';
+    v.hidden = true;
   });
 }
 
@@ -530,6 +556,13 @@ function resolveMenuAssetBase(
     }
   }
 
+  if (opts.video) {
+    const m = opts.video.match(/^(.*\/)menu-\d+-\d+-\d+\.webm/);
+    if (m) {
+      return m[1];
+    }
+  }
+
   const dom = domain != null ? String(domain) : menu.dataset.domain;
   if (dom != null && menu.ownerDocument) {
     const menuVideo = menu.ownerDocument.getElementById(
@@ -789,9 +822,29 @@ function playMenuMotionSegment(
   playGen: number,
   seekCoverSrc: string | null = null,
 ) {
-  const start = opts.startSec || 0;
-  const end = opts.endSec!;
-  const finishAt = motionSegmentFinishAt(start, end);
+  const domain =
+    opts.domain != null ? opts.domain : host._dvdjsActiveMenu?.dataset?.domain;
+  const baseDir = resolveMenuAssetBase(
+    host._dvdjsActiveMenu || menuVideo,
+    domain,
+    opts,
+  );
+  const meta = host._dvdjsMetadata as DiscMetadata | undefined;
+  const domainMeta =
+    domain != null && meta && meta[Number(domain)]
+      ? meta[Number(domain)]
+      : null;
+  const cellVideoUrl = resolveMenuCellVideoUrl(opts, {
+    baseDir,
+    domainMeta,
+    currentSrc:
+      menuVideo.getAttribute('src') || menuVideo.currentSrc || null,
+  });
+  const playbackWindow = menuMotionPlaybackWindow(opts, cellVideoUrl);
+  const start = playbackWindow.start;
+  let end = playbackWindow.end!;
+  const perCell = playbackWindow.perCell;
+  let finishAt = motionSegmentFinishAt(start, end);
   host._dvdjsMenuSegmentEnd = end;
   host._dvdjsMenuSegmentStart = start;
   host._dvdjsMenuMotionVideo = menuVideo;
@@ -911,6 +964,7 @@ function playMenuMotionSegment(
           void whenImageReady(stillEl, { timeoutMs: 2000, expectedSrc: src }).then(
             (ok) => {
               if (!ok || host._dvdjsActiveMenu !== active) return;
+              if (host._dvdjsMenuPlayGen !== playGen) return;
               hideMenuVideoUnderCover(host, menuVideo, active);
               hideMenuHoldFrame(host);
             },
@@ -1181,7 +1235,7 @@ function playMenuMotionSegment(
       return;
     }
     // Truncated menu WebM: segment starts past EOF — finish so PGC post can
-    // advance (Shrek VIDEO_TS.webm ~0.13s vs FP cell at 0.48s).
+    // advance (legacy concat / short per-cell clip).
     const mediaDur = menuVideo.duration;
     if (
       Number.isFinite(mediaDur) &&
@@ -1190,6 +1244,17 @@ function playMenuMotionSegment(
     ) {
       finishSegment();
       return;
+    }
+    // Per-cell: prefer natural duration when metadata duration was a guess.
+    if (
+      perCell &&
+      Number.isFinite(mediaDur) &&
+      mediaDur > 0 &&
+      (!(end > start) || Math.abs(end - mediaDur) > 0.05)
+    ) {
+      end = mediaDur;
+      finishAt = motionSegmentFinishAt(start, end);
+      host._dvdjsMenuSegmentEnd = end;
     }
     if (host._dvdjsMenuSeeked) {
       menuVideo.removeEventListener('seeked', host._dvdjsMenuSeeked);
@@ -1206,10 +1271,6 @@ function playMenuMotionSegment(
       if (beginPlayback()) {
         return;
       }
-      // Landed outside the segment after retries. Common when the menu WebM is
-      // shorter than menuCell times (broken / truncated encode): seeking to
-      // startSec past EOF never enters the window. Finish so PGC post can run
-      // (Shrek FP motion → linkPGC) instead of a permanent black screen.
       if (seekAttempts >= 3) {
         finishSegment();
         return;
@@ -1237,6 +1298,7 @@ function playMenuMotionSegment(
     seekAttempts += 1;
     host._dvdjsMenuSeeked = onSeeked;
     menuVideo.addEventListener('seeked', onSeeked);
+    const ctBefore = menuVideo.currentTime;
     try {
       menuVideo.currentTime = start;
     } catch {
@@ -1245,12 +1307,31 @@ function playMenuMotionSegment(
         host._dvdjsMenuSeeked = null;
       }
       beginPlayback();
+      return;
+    }
+    // Setting currentTime to the same value often skips `seeked` — fall through.
+    if (Math.abs(ctBefore - start) < 0.04) {
+      queueMicrotask(() => {
+        if (!isCurrent()) {
+          return;
+        }
+        if (host._dvdjsMenuSeeked !== onSeeked) {
+          return;
+        }
+        menuVideo.removeEventListener('seeked', onSeeked);
+        host._dvdjsMenuSeeked = null;
+        if (!beginPlayback()) {
+          finishSegment();
+        }
+      });
     }
   };
 
-  if (menuVideo.readyState >= 1) {
-    seekThenPlay();
-  } else {
+  const startAfterSrcReady = () => {
+    if (menuVideo.readyState >= 1) {
+      seekThenPlay();
+      return;
+    }
     if (host._dvdjsMenuLoadedMeta) {
       menuVideo.removeEventListener(
         'loadedmetadata',
@@ -1270,7 +1351,11 @@ function playMenuMotionSegment(
     };
     host._dvdjsMenuLoadedMeta = onMeta;
     menuVideo.addEventListener('loadedmetadata', onMeta);
-    // Avoid load() while preload is already fetching — resets the buffer.
+    // Metadata may have arrived between the readyState check and the listener.
+    if (menuVideo.readyState >= 1) {
+      onMeta();
+      return;
+    }
     const ns = menuVideo.networkState;
     if (
       ns === HTMLMediaElement.NETWORK_EMPTY ||
@@ -1278,7 +1363,47 @@ function playMenuMotionSegment(
     ) {
       menuVideo.load();
     }
+    // Tiny cached per-cell WebMs can miss both checks — don't hang FP forever.
+    if (host._dvdjsMotionWatchdog) {
+      clearTimeout(host._dvdjsMotionWatchdog);
+    }
+    host._dvdjsMotionWatchdog = setTimeout(() => {
+      host._dvdjsMotionWatchdog = null;
+      if (!isCurrent()) {
+        return;
+      }
+      if (menuVideo.readyState >= 1) {
+        seekThenPlay();
+      } else {
+        finishSegment();
+      }
+    }, Math.max(1500, (end - start + 1) * 1000));
+  };
+
+  // Swap to the per-cell WebM when needed (play from t=0, no concat seek).
+  if (cellVideoUrl) {
+    const cur =
+      menuVideo.getAttribute('src') || menuVideo.currentSrc || '';
+    const same =
+      cur === cellVideoUrl ||
+      cur.endsWith(cellVideoUrl) ||
+      (cellVideoUrl.startsWith('/') && cur.endsWith(cellVideoUrl));
+    if (!same) {
+      silenceVideoAudio(menuVideo);
+      try {
+        menuVideo.pause();
+      } catch {
+        // ignore
+      }
+      menuVideo.setAttribute('src', cellVideoUrl);
+      menuVideo.src = cellVideoUrl;
+      menuVideo.load();
+      startAfterSrcReady();
+      return;
+    }
   }
+
+  startAfterSrcReady();
 }
 
 function currentVideo(host: XVideoElement): HTMLVideoElement | null {
@@ -1343,7 +1468,9 @@ class XVideo extends HTMLElement implements XVideoElement {
   #refreshPlaylist() {
     this.playlist = buildPlaylist(this);
     this.playlist.forEach((entry, i) => {
-      entry.video.style.display = i === this.videoIndex ? 'block' : 'none';
+      const on = i === this.videoIndex;
+      entry.video.style.display = on ? 'block' : 'none';
+      entry.video.hidden = !on;
       entry.video.style.width = '100%';
       entry.video.style.height = 'auto';
     });
@@ -1356,7 +1483,9 @@ class XVideo extends HTMLElement implements XVideoElement {
       return;
     }
     this.playlist.forEach((entry, i) => {
-      entry.video.style.display = i === this.videoIndex ? 'block' : 'none';
+      const on = i === this.videoIndex;
+      entry.video.style.display = on ? 'block' : 'none';
+      entry.video.hidden = !on;
     });
     hideAllMenu(this);
     return video.play();
@@ -1576,10 +1705,13 @@ class XVideo extends HTMLElement implements XVideoElement {
     clearUserButtonNav(this as any);
     clearMissingTitleSkip(this as any);
     hideAllMenu(this);
+    hideMenuHoldFrame(this);
 
     const targetIndex = this.playlist.findIndex((e) => e.id === id);
     this.videoIndex = targetIndex;
     const video = entry.video;
+    video.style.position = 'relative';
+    video.style.zIndex = '1';
 
     // Clear prior title end handlers.
     const prevEnded = (this as any)._dvdjsTitleEnded as
@@ -1644,6 +1776,7 @@ class XVideo extends HTMLElement implements XVideoElement {
       const post = () => {
         if (typeof opts.onPost === 'function') {
           try {
+            alignLangForTitlePost(window as any);
             opts.onPost();
           } catch (e) {
             console.warn('DVD.js title cell onPost failed', e);
@@ -1677,12 +1810,12 @@ class XVideo extends HTMLElement implements XVideoElement {
     this.playlist.forEach((e, i) => {
       e.video.style.display = i === this.videoIndex ? 'block' : 'none';
     });
-    try {
-      void video.play();
-    } catch (e) {
-      console.warn('DVD.js title cell play failed', e);
-      finish();
-    }
+    void playWithAutoplayFallback(video, this as AutoplayHost).then((ok) => {
+      if (!ok) {
+        notifyAutoplayBlocked(this as AutoplayHost);
+        finish();
+      }
+    });
   }
 
   playByIndex(videoIndex: number) {
@@ -1737,8 +1870,13 @@ class XVideo extends HTMLElement implements XVideoElement {
     hideTitleUnavailableOverlay(this);
     this.videoIndex = targetElementIndex;
     hideAllMenu(this);
+    // Menu hold is z-index 0 absolute — it covers static title <video> and looks
+    // like a stuck black intro after FP (Shrek PGC6 → JumpTT into VTS_05).
+    hideMenuHoldFrame(this);
 
     const video = this.playlist[this.videoIndex].video;
+    video.style.position = 'relative';
+    video.style.zIndex = '1';
     const timeline =
       entry.titlePgcMedia &&
       entry.titlePgcMedia.pgcTimeline &&
@@ -1782,6 +1920,10 @@ class XVideo extends HTMLElement implements XVideoElement {
     }
     (this as any)._dvdjsTitleEnded = null;
     (this as any)._dvdjsTitleTimeEnd = null;
+    if ((this as any)._dvdjsTitlePlayWatchdog) {
+      clearTimeout((this as any)._dvdjsTitlePlayWatchdog);
+      (this as any)._dvdjsTitlePlayWatchdog = null;
+    }
 
     let titlePostDone = false;
     const runTitlePost = () => {
@@ -1789,6 +1931,10 @@ class XVideo extends HTMLElement implements XVideoElement {
         return;
       }
       titlePostDone = true;
+      if ((this as any)._dvdjsTitlePlayWatchdog) {
+        clearTimeout((this as any)._dvdjsTitlePlayWatchdog);
+        (this as any)._dvdjsTitlePlayWatchdog = null;
+      }
       const endedFn = (this as any)._dvdjsTitleEnded;
       const timeFn = (this as any)._dvdjsTitleTimeEnd;
       if (endedFn) {
@@ -1799,6 +1945,7 @@ class XVideo extends HTMLElement implements XVideoElement {
       }
       (this as any)._dvdjsTitleEnded = null;
       (this as any)._dvdjsTitleTimeEnd = null;
+      hideAllTitleVideos(this);
       const gg = window as any;
       const pgcObj =
         gg.PGCIUT &&
@@ -1808,6 +1955,7 @@ class XVideo extends HTMLElement implements XVideoElement {
         gg.PGCIUT[gg.domain][gg.pgc];
       if (pgcObj && typeof pgcObj.post === 'function') {
         try {
+          alignLangForTitlePost(gg);
           pgcObj.post();
         } catch (e) {
           console.warn('DVD.js title post failed', e);
@@ -1845,7 +1993,31 @@ class XVideo extends HTMLElement implements XVideoElement {
       onMediaError();
       return;
     }
-    this.play();
+
+    // FP uses setTimeout, so unmuted play() is often blocked — use the same
+    // muted→unmute path as menu motion (audio unlocked by Start disc).
+    this.playlist.forEach((e, i) => {
+      const on = i === this.videoIndex;
+      e.video.style.display = on ? 'block' : 'none';
+      e.video.hidden = !on;
+    });
+    void playWithAutoplayFallback(video, this as AutoplayHost).then((ok) => {
+      if (ok) {
+        return;
+      }
+      notifyAutoplayBlocked(this as AutoplayHost);
+      // Still advance eventually so a blocked DreamWorks logo cannot hang FP.
+      const dur =
+        endAt != null && Number.isFinite(endAt)
+          ? Math.max(0.5, endAt)
+          : Number.isFinite(video.duration) && video.duration > 0
+            ? video.duration
+            : 2;
+      (this as any)._dvdjsTitlePlayWatchdog = setTimeout(() => {
+        (this as any)._dvdjsTitlePlayWatchdog = null;
+        runTitlePost();
+      }, dur * 1000);
+    });
   }
 
   playChapter(chapterIndex: number) {
@@ -1937,6 +2109,25 @@ class XVideo extends HTMLElement implements XVideoElement {
       (this as any)._dvdjsLastPaintedStillSrc,
     );
 
+    const domainForVideo =
+      opts.domain != null ? opts.domain : menu.dataset.domain;
+    const menuVideo = this.querySelector(
+      `#menu-video-${domainForVideo}`,
+    ) as HTMLVideoElement | null;
+    if (menuVideo) {
+      menuVideo.loop = false;
+    }
+
+    // Capture outgoing stage BEFORE updateMenuCellVisuals zeros the still for
+    // motion mode (otherwise hold falls back to a stale canvas / wrong language).
+    const outgoingStill = prevMenu?.querySelector(
+      'img.menu-still',
+    ) as HTMLImageElement | null;
+    captureMenuHoldFromStage(this, {
+      menuVideo,
+      still: outgoingStill,
+    });
+
     (this as any)._dvdjsActiveMenu = menu;
     (this as any)._dvdjsMenuPost =
       typeof opts.onPost === 'function' ? opts.onPost : null;
@@ -1964,14 +2155,32 @@ class XVideo extends HTMLElement implements XVideoElement {
       stillTime !== 255 &&
       !preferStillOnly;
 
-    const menuVideo = this.querySelector(
-      `#menu-video-${opts.domain != null ? opts.domain : menu.dataset.domain}`,
-    ) as HTMLVideoElement | null;
-    if (menuVideo) {
-      menuVideo.loop = false;
-    }
+    const baseDirEarly = resolveMenuAssetBase(
+      menu,
+      opts.domain ?? menu.dataset.domain,
+      opts,
+    );
+    const metaEarly = (this as any)._dvdjsMetadata as DiscMetadata | undefined;
+    const domainKey =
+      opts.domain != null ? opts.domain : menu.dataset.domain;
+    const domainMetaEarly =
+      domainKey != null && metaEarly && metaEarly[Number(domainKey)]
+        ? metaEarly[Number(domainKey)]
+        : null;
+    const cellVideoUrl = resolveMenuCellVideoUrl(opts, {
+      baseDir: baseDirEarly,
+      domainMeta: domainMetaEarly,
+      currentSrc:
+        menuVideo?.getAttribute('src') || menuVideo?.currentSrc || null,
+    });
 
-    const playMotion = !!(hasMotion && menuVideo && menuVideo.src);
+    const playMotion = !!(
+      hasMotion &&
+      menuVideo &&
+      (menuVideo.getAttribute('src') ||
+        menuVideo.currentSrc ||
+        cellVideoUrl)
+    );
     // Copyright still-only: install PNG immediately (no defer) so we never sit on
     // a black WebM/hold cover. Other stills still defer for seamless handoff.
     const nextStillSrc = updateMenuCellVisuals(menu, opts, {
@@ -1979,37 +2188,31 @@ class XVideo extends HTMLElement implements XVideoElement {
       deferStillSrc: !playMotion && !preferStillOnly,
     });
 
-    const baseDir = resolveMenuAssetBase(
-      menu,
-      opts.domain ?? menu.dataset.domain,
-      opts,
-    );
     preloadLinkedMenuAssets(this, menu, {
       domain: opts.domain ?? menu.dataset.domain,
       cellID: opts.cellID,
       vobID: opts.vobID,
       still_time: opts.still_time,
       buttons: opts.buttons,
-      baseDir,
+      baseDir: baseDirEarly,
+      domainMeta: domainMetaEarly,
     });
 
     hideAllMenu(this);
     this.pause();
+    // Title WebMs stay `display:block` after playByID and stack above menus
+    // (same z-index, later in DOM) — Shrek FP DreamWorks logo covered language
+    // selection with a frozen black end frame.
+    hideAllTitleVideos(this);
     if (typeof menu.show === 'function') {
       menu.show();
     } else {
       menu.style.display = 'flex';
     }
 
-    // Snapshot whatever is on screen before we change layers.
     const stageStill = menu.querySelector(
       'img.menu-still',
     ) as HTMLImageElement | null;
-    captureMenuHoldFromStage(this, {
-      menuVideo,
-      still: stageStill,
-    });
-
     if (playMotion) {
       // Hold canvas covers the seek; keep still hidden (no cached PNG flash).
       if (stageStill) {
@@ -2072,7 +2275,9 @@ class XVideo extends HTMLElement implements XVideoElement {
       playMenuMotionSegment(
         this,
         menuVideo!,
-        opts,
+        cellVideoUrl && !opts.video
+          ? { ...opts, video: cellVideoUrl }
+          : opts,
         () => {
           if (hliDelay > 0) {
             (this as any)._dvdjsHighlightTimer = setTimeout(
@@ -2161,6 +2366,15 @@ class XVideo extends HTMLElement implements XVideoElement {
         (this as any)._dvdjsMenuSegmentEnd = null;
         (this as any)._dvdjsFinishMenuSegment = null;
       }
+      // Timed still: arm post only after the target PNG is painted — otherwise
+      // still_time can fire while the previous language/cell cover is showing.
+      if (stillTime > 0 && stillTime < 255) {
+        scheduleMenuPostAfterStill(
+          this as any,
+          stillTime,
+          (this as any)._dvdjsMenuPost,
+        );
+      }
     };
 
     const installStillWhenReady = async () => {
@@ -2202,14 +2416,6 @@ class XVideo extends HTMLElement implements XVideoElement {
       );
     } else {
       enableButtons();
-    }
-
-    if (stillTime > 0 && stillTime < 255) {
-      scheduleMenuPostAfterStill(
-        this as any,
-        stillTime,
-        (this as any)._dvdjsMenuPost,
-      );
     }
   }
 

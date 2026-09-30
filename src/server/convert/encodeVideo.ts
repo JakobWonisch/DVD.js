@@ -52,9 +52,10 @@ export default encodeVideo;
  * DVD MPEG-PS often reports nonsense durations; we encode until EOF and do not
  * rely on two-pass stats (pass 1 frequently sees 0 frames on short/misprobed VOBs).
  *
- * Menu VOBs: clip each cell's byte range, encode exact [startSec, endSec) with
- * that cell's audio, then concat — no bleed into the next cell and no whole-VOB
- * audio mux (which paired English audio with later German menu video).
+ * Menu VOBs: clip each cell's byte range, encode exact duration with that
+ * cell's audio, and write one WebM per cell (`menu-{domain}-{cell}-{vob}.webm`).
+ * The viewer plays each clip from t=0 — no concat timeline / mid-file seeks
+ * (those drifted and mixed language clips on Shrek).
  *
  * @param {string} dvdPath
  * @param {ConvertOptions|function} optionsOrCallback  Convert options, or callback (legacy).
@@ -194,8 +195,25 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
 
       warnIfCssLike(vobFile[0]);
 
+      var menuSegments: MenuEncodeSegment[] = [];
+      if (isMenuVob(vobFile[0]) && metadata[index] && metadata[index].menuCell) {
+        menuSegments = buildMenuEncodeSegments(metadata[index].menuCell);
+        if (menuSegments.length) {
+          forceKeyFramesTimestamps = menuForceKeyFrameTimes(menuSegments);
+        }
+      }
+
+      // Domain-wide menu WebM only for title VOBs or menu fallback (legacy concat).
+      var usePerCellMenu =
+        isMenuVob(vobFile[0]) &&
+        menuSegments.length > 0 &&
+        vobFile.length === 1;
       if (getFileSuffix(vobFile[0]) === 0) {
-        filesList[index].index.push('/' + dvdName + '/' + path.basename(output));
+        if (!usePerCellMenu) {
+          filesList[index].index.push(
+            '/' + dvdName + '/' + path.basename(output),
+          );
+        }
       } else {
         filesList[index].video.push('/' + dvdName + '/' + path.basename(output));
       }
@@ -208,33 +226,37 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         }).join('|');
       }
 
-      if (metadata[index] && metadata[index].forceKeyFrames && metadata[index].forceKeyFrames.length) {
+      if (
+        metadata[index] &&
+        metadata[index].forceKeyFrames &&
+        metadata[index].forceKeyFrames.length &&
+        !usePerCellMenu
+      ) {
         forceKeyFramesTimestamps = metadata[index].forceKeyFrames;
       }
 
-      var menuSegments: MenuEncodeSegment[] = [];
-      if (isMenuVob(vobFile[0]) && metadata[index] && metadata[index].menuCell) {
-        menuSegments = buildMenuEncodeSegments(metadata[index].menuCell);
-        if (menuSegments.length) {
-          forceKeyFramesTimestamps = menuForceKeyFrameTimes(menuSegments);
-        }
-      }
-
-      // Menu cells: encode exact duration windows then concat (no seek bleed).
-      if (
-        isMenuVob(vobFile[0]) &&
-        menuSegments.length > 0 &&
-        vobFile.length === 1 &&
-        fs.existsSync(input)
-      ) {
-        encodeMenuSegments(input, output, menuSegments, function(code) {
+      // Menu cells: one WebM per cell (viewer plays from t=0).
+      if (usePerCellMenu && fs.existsSync(input)) {
+        encodeMenuCellWebms(input, index, menuSegments, function(code, cellVideos) {
           if (code !== 0) {
             console.warn(
-              'Menu segment encode failed; falling back to whole-VOB encode for',
+              'Per-cell menu encode failed; falling back to whole-VOB encode for',
               path.basename(input),
+            );
+            filesList[index].index.push(
+              '/' + dvdName + '/' + path.basename(output),
             );
             encodeWholeVob(input, output, forceKeyFramesTimestamps, finishOne);
           } else {
+            filesList[index].menuCellVideos = cellVideos || {};
+            // Drop stale domain concat WebM from older converts.
+            try {
+              if (fs.existsSync(output)) {
+                fs.unlinkSync(output);
+              }
+            } catch (e) {
+              // ignore
+            }
             finishOne();
           }
         });
@@ -347,18 +369,26 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
   }
 
   /**
-   * Encode each menu cell from a byte-clipped VOB slice, mux that cell's audio
-   * (or silence), then concat. Timeline matches menuCell startSec/endSec.
+   * Encode each menu cell to its own WebM under webFolder.
+   * Returns map "cellId:vobId" → "/disc/menu-d-c-v.webm".
    */
-  function encodeMenuSegments(input, output, segments: MenuEncodeSegment[], done) {
+  function encodeMenuCellWebms(
+    input: string,
+    domainIndex: number,
+    segments: MenuEncodeSegment[],
+    done: (
+      code: number,
+      cellVideos?: Record<string, string>,
+    ) => void,
+  ) {
     var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-menu-enc-'));
-    var segPaths: string[] = [];
+    var cellVideos: Record<string, string> = {};
     var i = 0;
 
     process.stdout.write(
       'Encoding ' +
         segments.length +
-        ' menu cell segment(s) for ' +
+        ' per-cell menu WebM(s) for ' +
         path.basename(input) +
         ':\n',
     );
@@ -367,13 +397,8 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
 
     function encodeNext() {
       if (i >= segments.length) {
-        concatSegments(segPaths, output, function(code) {
-          cleanupDir(tmpDir);
-          if (code === 0) {
-            reportOutput(0, input, output);
-          }
-          done(code);
-        });
+        cleanupDir(tmpDir);
+        done(0, cellVideos);
         return;
       }
 
@@ -386,10 +411,10 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         tmpDir,
         'vid-' + String(i).padStart(3, '0') + '.webm',
       );
-      var segOut = path.join(
-        tmpDir,
-        'seg-' + String(i).padStart(3, '0') + '.webm',
-      );
+      var outName =
+        'menu-' + domainIndex + '-' + seg.cellId + '-' + seg.vobId + '.webm';
+      var segOut = path.join(webPath, outName);
+      var url = '/' + dvdName + '/' + outName;
       if (!clipVobByteRange(input, seg.skipBytes, seg.endBytes, cellVob)) {
         console.error('Failed to clip menu cell', seg.label);
         cleanupDir(tmpDir);
@@ -417,11 +442,11 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       console.log(
         '  cell ' +
           seg.label +
-          ' t=' +
-          seg.startSec.toFixed(3) +
-          '-' +
-          seg.endSec.toFixed(3) +
-          's',
+          ' → ' +
+          outName +
+          ' (' +
+          seg.durationSec.toFixed(3) +
+          's)',
       );
 
       runFfmpeg(videoCmd, function(vCode) {
@@ -443,8 +468,6 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
           done(1);
           return;
         }
-        // Audio from the same clipped cell (not the whole VOB — that mixed
-        // English stream-0 under later German menu video on Shrek).
         muxCellAudio(cellVob, videoOnly, segOut, seg.durationSec, function() {
           try {
             fs.unlinkSync(cellVob);
@@ -452,7 +475,20 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
           } catch (e) {
             // ignore
           }
-          segPaths.push(segOut);
+          try {
+            if (fs.statSync(segOut).size < 256) {
+              console.error('ffmpeg produced empty cell WebM', outName);
+              cleanupDir(tmpDir);
+              done(1);
+              return;
+            }
+          } catch (e) {
+            cleanupDir(tmpDir);
+            done(1);
+            return;
+          }
+          cellVideos[seg.cellId + ':' + seg.vobId] = url;
+          process.stdout.write('Wrote ' + segOut + '\n');
           i++;
           setTimeout(encodeNext, 0);
         });
@@ -461,8 +497,8 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
   }
 
   /**
-   * Mux audio from a clipped cell VOB under video. On failure, pad silence so
-   * every segment has the same A/V layout for concat.
+   * Mux audio from a clipped cell VOB under video. Pad audio to the video
+   * length (`apad` + `-shortest`) so Vorbis overrun cannot inflate duration.
    */
   function muxCellAudio(
     cellVob: string,
@@ -480,16 +516,15 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       '-err_detect', 'ignore_err',
       '-i', videoOnly,
       '-i', cellVob,
-      '-t', String(durationSec),
       '-map', '0:v:0',
       '-map', '1:a:0',
       '-c:v', 'copy',
       '-c:a', 'libvorbis',
       '-b:a', '128k',
       '-ac', '2',
-      '-af', 'aresample=async=1:first_pts=0',
-      // Do not use -shortest: audio shorter than a tpad'd still would shrink
-      // the segment and desync menuCell startSec (Shrek DE menus).
+      '-af', 'aresample=async=1:first_pts=0,apad',
+      '-shortest',
+      '-t', String(durationSec),
       '-y',
       output,
     ];
@@ -504,12 +539,13 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         '-i', videoOnly,
         '-f', 'lavfi',
         '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000',
-        '-t', String(durationSec),
         '-map', '0:v:0',
         '-map', '1:a:0',
         '-c:v', 'copy',
         '-c:a', 'libvorbis',
         '-b:a', '64k',
+        '-shortest',
+        '-t', String(durationSec),
         '-y',
         output,
       ];
@@ -518,7 +554,6 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
           done();
           return;
         }
-        // Last resort: video-only (concat may fail if other segs have audio).
         try {
           fs.copyFileSync(videoOnly, output);
         } catch (e) {
@@ -824,6 +859,26 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       content[i].index = entry.index.slice();
       content[i].video = entry.video.slice();
       content[i].extractMode = entry.extractMode;
+      if (entry.menuCellVideos && typeof entry.menuCellVideos === 'object') {
+        if (!content[i].menuCell) {
+          content[i].menuCell = {};
+        }
+        Object.keys(entry.menuCellVideos).forEach(function(key) {
+          var parts = String(key).split(':');
+          var cellId = parts[0];
+          var vobId = parts[1];
+          if (!cellId || !vobId) {
+            return;
+          }
+          if (!content[i].menuCell[cellId]) {
+            content[i].menuCell[cellId] = {};
+          }
+          if (!content[i].menuCell[cellId][vobId]) {
+            content[i].menuCell[cellId][vobId] = {};
+          }
+          content[i].menuCell[cellId][vobId].video = entry.menuCellVideos[key];
+        });
+      }
       if (entry.titlePgcMedia) {
         content[i].titlePgcMedia = mergeTitlePgcMedia(
           content[i].titlePgcMedia,

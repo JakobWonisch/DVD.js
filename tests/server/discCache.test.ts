@@ -7,11 +7,15 @@ import { promisify } from 'node:util';
 
 import {
   CACHE_TTL_MS,
+  archiveHasRequiredFiles,
   archivePath,
+  beginDiscConvert,
   coverSidecarPath,
+  endDiscConvert,
   ensureDiscReady,
   evictExpiredDiscCache,
   hasArchive,
+  isDiscConverting,
   isDiscReady,
   isSafeDiscId,
   migrateLegacyDiscDir,
@@ -44,6 +48,7 @@ describe('packDiscArchive', () => {
     var webFolder = makeTempWebFolder();
     var discId = 'TestDisc';
     seedDisc(webFolder, discId);
+    beginDiscConvert(webFolder, discId);
 
     await packDiscArchive(webFolder, discId);
 
@@ -51,7 +56,88 @@ describe('packDiscArchive', () => {
     expect(fs.existsSync(coverSidecarPath(webFolder, discId))).toBe(true);
     expect(isDiscReady(webFolder, discId)).toBe(false);
     expect(fs.existsSync(path.join(webFolder, discId))).toBe(false);
+    expect(await archiveHasRequiredFiles(archivePath(webFolder, discId), discId, {
+      requireVm: true,
+    })).toBe(true);
+    // Critical files first so truncated packs still have metadata.
+    var { stdout } = await execFile('tar', [
+      '-tzf',
+      archivePath(webFolder, discId),
+    ]);
+    var members = stdout.split(/\r?\n/).filter(Boolean);
+    expect(members[0]).toBe(discId + '/metadata.json');
+    expect(members[1]).toBe(discId + '/vm.js');
 
+    fs.rmSync(webFolder, { recursive: true, force: true });
+  });
+
+  it('refuses to delete the folder when the archive lacks metadata', async () => {
+    var webFolder = makeTempWebFolder();
+    var discId = 'BadPack';
+    seedDisc(webFolder, discId);
+    beginDiscConvert(webFolder, discId);
+
+    var archive = archivePath(webFolder, discId);
+    // Pretend a prior broken pack left a bad archive; spy by replacing tar via
+    // writing a junk archive after a normal pack of a sibling, then packing with
+    // a folder whose metadata is removed mid-flight is hard — instead pack a
+    // folder, strip metadata from the archive, and re-run verify path by packing
+    // an empty-named decoy. Simpler: pack then replace archive with one that
+    // omits metadata and assert ensure fails; for pack itself, remove metadata
+    // before pack should throw before delete.
+    fs.unlinkSync(path.join(webFolder, discId, 'metadata.json'));
+    await expect(packDiscArchive(webFolder, discId)).rejects.toThrow(
+      /missing metadata\.json/,
+    );
+    expect(fs.existsSync(path.join(webFolder, discId))).toBe(true);
+    expect(fs.existsSync(archive)).toBe(false);
+    endDiscConvert(webFolder, discId);
+
+    fs.rmSync(webFolder, { recursive: true, force: true });
+  });
+});
+
+describe('convert-in-progress guard', () => {
+  it('does not extract over a converting folder without metadata', async () => {
+    var webFolder = makeTempWebFolder();
+    var discId = 'LiveConvert';
+    seedDisc(webFolder, discId);
+    await packDiscArchive(webFolder, discId);
+    expect(isDiscReady(webFolder, discId)).toBe(false);
+
+    // Convert starts: empty folder + marker, no metadata yet.
+    beginDiscConvert(webFolder, discId);
+    expect(isDiscConverting(webFolder, discId)).toBe(true);
+    expect(ensureDiscReady(webFolder, discId)).toBe('decompressing');
+    // Give any accidental extract a moment; folder must stay convert-owned.
+    await new Promise(function (r) {
+      setTimeout(r, 100);
+    });
+    expect(fs.existsSync(path.join(webFolder, discId, 'metadata.json'))).toBe(
+      false,
+    );
+    expect(isDiscConverting(webFolder, discId)).toBe(true);
+
+    endDiscConvert(webFolder, discId);
+    fs.rmSync(webFolder, { recursive: true, force: true });
+  });
+
+  it('serves metadata while converting and skips eviction', async () => {
+    var webFolder = makeTempWebFolder();
+    var discId = 'ConvertReady';
+    seedDisc(webFolder, discId);
+    // Keep a stale archive so eviction would otherwise be allowed.
+    await packDiscArchive(webFolder, discId);
+    await waitUntilDiscReady(webFolder, discId);
+    beginDiscConvert(webFolder, discId);
+    expect(ensureDiscReady(webFolder, discId)).toBe('ready');
+
+    var marker = path.join(webFolder, discId, '.dvdjs-accessed');
+    fs.writeFileSync(marker, String(Date.now() - CACHE_TTL_MS - 1000) + '\n');
+    expect(evictExpiredDiscCache(webFolder)).toEqual([]);
+    expect(isDiscReady(webFolder, discId)).toBe(true);
+
+    endDiscConvert(webFolder, discId);
     fs.rmSync(webFolder, { recursive: true, force: true });
   });
 });

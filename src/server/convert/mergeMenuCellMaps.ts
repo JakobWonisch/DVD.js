@@ -11,6 +11,7 @@ export const MENU_CELL_PRESERVE_KEYS = [
   'spuSelect',
   'spuActivate',
   'spuFrameHeight',
+  'video',
 ] as const;
 
 export type MenuCellEntry = Record<string, unknown>;
@@ -18,7 +19,10 @@ export type MenuCellMap = Record<string, Record<string, MenuCellEntry>>;
 
 /**
  * Merge still-table entries into existing menuCell metadata, preserving
- * button/CSS/SPU fields from prior convert steps.
+ * button/CSS/SPU/video fields from prior convert steps for keys still present.
+ *
+ * Only keys from `incoming` (current C_ADT) are kept — prev-only ghost cells
+ * would otherwise stay in encode plans and desync timelines on reconvert.
  *
  * `still` handling:
  * - incoming omits `still` → keep previous URL
@@ -32,17 +36,12 @@ export function mergeMenuCellMaps(
   const prev = existing || {};
   const next = incoming || {};
   const out: MenuCellMap = {};
-  const cellIds = new Set([...Object.keys(prev), ...Object.keys(next)]);
 
-  for (const cellId of cellIds) {
+  for (const cellId of Object.keys(next)) {
     const prevVobs = prev[cellId] || {};
     const nextVobs = next[cellId] || {};
     out[cellId] = {};
-    const vobIds = new Set([
-      ...Object.keys(prevVobs),
-      ...Object.keys(nextVobs),
-    ]);
-    for (const vobId of vobIds) {
+    for (const vobId of Object.keys(nextVobs)) {
       out[cellId][vobId] = mergeMenuCellEntry(prevVobs[vobId], nextVobs[vobId]);
     }
   }

@@ -66,6 +66,19 @@ export type VmNavGlobals = {
 import { domainMenuLangs, menuLangKeys, pickMenuLang } from './menuLanguage.js';
 export { menuLangKeys, pickMenuLang };
 
+/**
+ * Before title PGC post() / CallSS into MENU_TYPES[domain][lang][…], ensure
+ * g.lang exists for that domain. Harry Potter FP leaves lang as VMGM
+ * "default" while VTS1 only has en/de/nl — MENU_TYPES[1][lang][3] then throws.
+ */
+export function alignLangForTitlePost(g: VmNavGlobals): void {
+  const langDomain = typeof g.domain === 'number' ? g.domain : 0;
+  g.lang = pickMenuLang(g, langDomain);
+  if (!domainMenuLangs(g, langDomain).length) {
+    g.lang = pickMenuLang(g, 0);
+  }
+}
+
 /** Clear the menu-button latch once the user is back in a real menu. */
 export function clearUserButtonNav(host: {
   _dvdjsFromButton?: boolean;
@@ -320,16 +333,7 @@ export function tryAutoSkipMissingTitle(
   setTimeout(() => {
     // post() looks up MENU_TYPES[domain][lang] with the *current* title
     // domain still set (Harry Potter: CallSS Root via MENU_TYPES[1][lang][3]).
-    // Prefer a lang that exists on that domain — NOT VMGM's "default"/ÿÿ LU,
-    // which MENU_TYPES[1] does not have (en/de/nl only) and used to throw:
-    // "can't access property 3, MENU_TYPES[domain][lang] is undefined".
-    const langDomain = typeof domain === 'number' ? domain : 0;
-    g.lang = pickMenuLang(g, langDomain);
-    // If this domain has no menu LUs (title-only VTS), fall back to VMGM so
-    // Avatar-style JumpSS into MPGCIUT[0][lang] still resolves.
-    if (!domainMenuLangs(g, langDomain).length) {
-      g.lang = pickMenuLang(g, 0);
-    }
+    alignLangForTitlePost(g);
     try {
       pgcObj.post();
     } catch (e) {

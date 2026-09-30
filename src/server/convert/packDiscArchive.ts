@@ -4,7 +4,7 @@
 
 import * as path from 'node:path';
 
-import { migrateLegacyDiscDir, packDiscArchive } from '../discCache.js';
+import { endDiscConvert, migrateLegacyDiscDir, packDiscArchive } from '../discCache.js';
 import * as serverUtils from '../utils/index.js';
 
 export default packConvertedDisc;
@@ -26,6 +26,7 @@ function packConvertedDisc(dvdPath: string, callback: () => void): void {
     }
   } catch (err) {
     console.error(err);
+    endDiscConvert(webFolder, discId);
     callback();
     return;
   }
@@ -38,6 +39,7 @@ function packConvertedDisc(dvdPath: string, callback: () => void): void {
     .catch(function (err) {
       console.error(err);
       // Leave the unpacked folder so the convert is still usable.
+      endDiscConvert(webFolder, discId);
       callback();
     });
 }

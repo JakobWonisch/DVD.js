@@ -101,6 +101,8 @@ export const PlayDisc: Component = () => {
       return;
     }
 
+    (host as any)._dvdjsMetadata = meta;
+
     let disposed = false;
     let disposeVm: (() => void) | undefined;
 

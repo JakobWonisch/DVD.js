@@ -1,4 +1,9 @@
 import { fadeInVideoAudio, silenceVideoAudio } from './autoplay.js';
+import {
+  domainHasPerCellMenuVideos,
+  domainLegacyConcatMenuSrc,
+  type DiscMenuCellLookup,
+} from './menuCellVideo.js';
 
 /**
  * Warm menu stills / WebMs so motion→still handoffs do not flash black or
@@ -217,6 +222,9 @@ export function preloadLinkedMenuAssets(
     still_time?: number;
     buttons?: unknown[];
     baseDir?: string | null;
+    domainMeta?: DiscMenuCellLookup | null;
+    /** Force-skip menu-*.webm fetch (tests / callers that already know). */
+    skipPerCellWebmWarm?: boolean;
   },
 ): string[] {
   const domain =
@@ -243,6 +251,28 @@ export function preloadLinkedMenuAssets(
 
   for (const url of urls) {
     void preloadImageUrl(url);
+  }
+
+  // Warm per-cell WebMs only for per-cell packages. Legacy concat archives
+  // (Harry Potter VTS_01_0.webm) have no menu-d-c-v.webm — fetching 404s.
+  const shouldWarmCellWebm =
+    baseDir &&
+    domain != null &&
+    domain !== '' &&
+    opts.cellID != null &&
+    opts.vobID != null &&
+    typeof fetch === 'function' &&
+    !(
+      opts.skipPerCellWebmWarm ||
+      (opts.domainMeta &&
+        domainLegacyConcatMenuSrc(opts.domainMeta) &&
+        !domainHasPerCellMenuVideos(opts.domainMeta))
+    );
+  if (shouldWarmCellWebm) {
+    void fetch(
+      `${baseDir}menu-${domain}-${opts.cellID}-${opts.vobID}.webm`,
+      { method: 'GET', credentials: 'same-origin' },
+    ).catch(() => undefined);
   }
 
   host.querySelectorAll('video.dvdjs-menu-video').forEach((node) => {

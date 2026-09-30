@@ -24,6 +24,8 @@ export type MenuButtonNav = {
 export type MenuCellMeta = {
   still?: string;
   css?: string;
+  /** Per-cell menu WebM (`/disc/menu-d-c-v.webm`); absent on legacy concat archives. */
+  video?: string;
   btn_nb?: number;
   buttons?: MenuButtonNav[];
   hli_s_ptm?: number;
@@ -56,7 +58,7 @@ export type MenuPgcEntry = {
 export type DomainMetadata = {
   menu?: Record<string, MenuPgcEntry[]>;
   menuCell?: MenuCellMap;
-  /** Menu VOB WebMs */
+  /** Menu VOB WebMs (legacy concat). Prefer menuCell[].video per-cell clips. */
   index?: string[];
   /** Title VOB WebMs (absent or partial on menus-mode rips) */
   video?: string[];

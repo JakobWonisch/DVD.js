@@ -157,6 +157,12 @@ const DomainVideos: Component<{ domain: DomainMetadata; id: number }> = (
     props.domain.index && props.domain.index.length
       ? props.domain.index[0]
       : undefined;
+  const hasMenuDomain = () =>
+    !!(
+      menuSrc() ||
+      props.domain.menuCell ||
+      (props.domain.menu && Object.keys(props.domain.menu).length)
+    );
   const titleSrc = () =>
     props.domain.video && props.domain.video.length
       ? props.domain.video[0]
@@ -165,7 +171,7 @@ const DomainVideos: Component<{ domain: DomainMetadata; id: number }> = (
 
   return (
     <>
-      <Show when={menuSrc()}>
+      <Show when={hasMenuDomain()}>
         <video
           id={`menu-video-${props.id}`}
           class="dvdjs-menu-video"

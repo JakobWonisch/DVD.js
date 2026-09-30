@@ -157,7 +157,7 @@ export function captureMenuHoldFromStage(
   if (
     still &&
     still.style.display !== 'none' &&
-    still.style.opacity !== '0' &&
+    // Opacity 0 is common as a seek cover — still has the outgoing pixels.
     still.complete &&
     still.naturalWidth > 0
   ) {

@@ -9,6 +9,7 @@ import {
   escapeToVmgmTitleMenu,
   hideTitleUnavailableOverlay,
 } from './titleUnavailable.js';
+import { hideMenuHoldFrame } from './menuHoldFrame.js';
 
 export type GoToMainMenuHost = {
   onmenu?: ((event: object) => void) | null;
@@ -24,6 +25,7 @@ export type GoToMainMenuHost = {
   _dvdjsMenuSegmentEnd?: number | null;
   _dvdjsMenuTimeUpdate?: ((this: HTMLVideoElement, ev: Event) => void) | null;
   _dvdjsActiveMenu?: HTMLElement | null;
+  _dvdjsLastPaintedStillSrc?: string | null;
   _dvdjsTitleUnavailableDismiss?: (() => void) | null;
   _dvdjsTitleUnavailableKeyHandler?: ((ev: KeyboardEvent) => void) | null;
 };
@@ -87,6 +89,10 @@ export function goToMainMenu(host: GoToMainMenuHost): boolean {
   cancelPendingMenuAdvance(host);
   hideTitleUnavailableOverlay(host);
   clearUserButtonNav(host);
+  // Drop previous-language still/hold so the next playMenuCell does not cover
+  // with a stale English (etc.) frame during LU switches.
+  host._dvdjsLastPaintedStillSrc = null;
+  hideMenuHoldFrame(host as HTMLElement);
   try {
     const g =
       typeof globalThis !== 'undefined' && (globalThis as any).window
