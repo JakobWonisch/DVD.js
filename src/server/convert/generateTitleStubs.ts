@@ -322,7 +322,7 @@ function extractTitleStubStill(
   cellEndBytes: number,
   done: (ok: boolean) => void,
 ) {
-  var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-title-stub-'));
+  var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvd-menu-archive-title-stub-'));
   var outPng = path.join(tmpDir, 'still.png');
   var cellFile = path.join(tmpDir, 'cell.vob');
   var inputFile = vobFile;

@@ -107,7 +107,7 @@ class Player {
 
     if (!this.unavailableEl) {
       this.unavailableEl = document.createElement('div');
-      this.unavailableEl.className = 'dvdjs-title-unavailable';
+      this.unavailableEl.className = 'dvd-menu-archive-title-unavailable';
       this.unavailableEl.setAttribute('role', 'status');
       this.unavailableEl.style.cssText =
         'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +

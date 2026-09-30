@@ -11,8 +11,12 @@
  */
 
 import type { DiscMetadata } from '../types/metadata.js';
+import {
+  MENU_LANG_STORAGE_KEY,
+  MENU_LANG_STORAGE_KEY_LEGACY,
+} from '../projectId.js';
 
-export const MENU_LANG_STORAGE_KEY = 'dvdjs.menuLang';
+export { MENU_LANG_STORAGE_KEY };
 
 /** DVD lang_code 0xFFFF (bit2str → "ÿÿ") — unspecified VMGM LU. */
 export const UNSPECIFIED_MENU_LANG = 'default';
@@ -72,11 +76,13 @@ export function getStoredMenuLang(
     return null;
   }
   try {
-    const v = storage.getItem(MENU_LANG_STORAGE_KEY);
-    if (!v || typeof v !== 'string') {
+    const raw =
+      storage.getItem(MENU_LANG_STORAGE_KEY) ??
+      storage.getItem(MENU_LANG_STORAGE_KEY_LEGACY);
+    if (!raw || typeof raw !== 'string') {
       return null;
     }
-    const lang = normalizeMenuLangCode(v.trim().toLowerCase());
+    const lang = normalizeMenuLangCode(raw.trim().toLowerCase());
     if (lang === UNSPECIFIED_MENU_LANG) {
       return lang;
     }

@@ -54,7 +54,7 @@ describe('goToMainMenu', () => {
     const host = fakeHost({
       onmenu,
       querySelector: (sel: string) =>
-        sel === '.dvdjs-title-unavailable' ? overlay : null,
+        sel === '.dvd-menu-archive-title-unavailable' ? overlay : null,
     });
 
     expect(goToMainMenu(host)).toBe(true);

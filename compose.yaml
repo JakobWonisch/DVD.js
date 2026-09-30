@@ -1,7 +1,7 @@
 # DVD.js HTTP server — serve converted disc archives + Solid viewer.
 #
-# Convert discs on the host (`pnpm convert`), then point DVDJS_WEB_FOLDER at
-# the folder that holds `<discId>.tar.gz` (+ cover sidecars).
+# Convert discs on the host (`pnpm convert`), then point DVD_MENU_ARCHIVE_WEB_FOLDER
+# at the folder that holds `<discId>.tar.gz` (+ cover sidecars).
 #
 #   cp .env.example .env   # optional tweaks
 #   docker compose up -d --build
@@ -14,22 +14,22 @@ services:
     image: dvd-menu-archive:local
     container_name: dvd-menu-archive
     restart: unless-stopped
-    # Must match the host owner of DVDJS_WEB_VOLUME so extract/cache markers work.
-    # Defaults assume a typical Linux desktop (id -u / id -g). Override in .env.
-    user: "${DVDJS_UID:-1000}:${DVDJS_GID:-1000}"
+    # Must match the host owner of DVD_MENU_ARCHIVE_WEB_VOLUME so extract/cache
+    # markers work. Defaults assume a typical Linux desktop (id -u / id -g).
+    user: "${DVD_MENU_ARCHIVE_UID:-1000}:${DVD_MENU_ARCHIVE_GID:-1000}"
     ports:
-      - "${DVDJS_HOST_PORT:-3000}:3000"
+      - "${DVD_MENU_ARCHIVE_HOST_PORT:-3000}:3000"
     environment:
-      DVDJS_WEB_FOLDER: /data/web
-      DVDJS_PORT: "3000"
-      DVDJS_EVICT_DISC_CACHE: "${DVDJS_EVICT_DISC_CACHE:-true}"
-      DVDJS_MDNS: "${DVDJS_MDNS:-0}"
-      # Optional: mount a JSON file and set DVDJS_CONFIG=/config/app.json
-      # DVDJS_CONFIG: /config/app.json
+      DVD_MENU_ARCHIVE_WEB_FOLDER: /data/web
+      DVD_MENU_ARCHIVE_PORT: "3000"
+      DVD_MENU_ARCHIVE_EVICT_DISC_CACHE: "${DVD_MENU_ARCHIVE_EVICT_DISC_CACHE:-true}"
+      DVD_MENU_ARCHIVE_MDNS: "${DVD_MENU_ARCHIVE_MDNS:-0}"
+      # Optional: mount a JSON file and set DVD_MENU_ARCHIVE_CONFIG=/config/app.json
+      # DVD_MENU_ARCHIVE_CONFIG: /config/app.json
     volumes:
-      - "${DVDJS_WEB_VOLUME:-./web}:/data/web"
-      # Optional mounted JSON (uncomment + set DVDJS_CONFIG above):
-      # - ${DVDJS_CONFIG_FILE:-./config/app.json}:/config/app.json:ro
+      - "${DVD_MENU_ARCHIVE_WEB_VOLUME:-./web}:/data/web"
+      # Optional mounted JSON (uncomment + set DVD_MENU_ARCHIVE_CONFIG above):
+      # - ${DVD_MENU_ARCHIVE_CONFIG_FILE:-./config/app.json}:/config/app.json:ro
     networks:
       - proxy
     healthcheck:

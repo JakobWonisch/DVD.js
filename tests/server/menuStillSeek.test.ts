@@ -4,6 +4,7 @@ import {
   SRI_END_OF_CELL,
   cellNeedsStillPng,
   cellRelativeSkipBytes,
+  hliDelaySecFromCell,
   hliOffsetSecFromNav,
   listNavSectorsForBasename,
   nextVobuSectorFromNav,
@@ -52,6 +53,27 @@ describe('hliOffsetSecFromNav', () => {
     expect(
       hliOffsetSecFromNav(
         navWith({ btn_ns: 2, hli_s_ptm: 180000, vobu_s_ptm: 90000 }),
+      ),
+    ).toBe(1);
+  });
+});
+
+describe('hliDelaySecFromCell', () => {
+  it('uses cell-start PTS so late cells are not absolute-PTS − IFO startSec', () => {
+    const cellStart = navWith({ vobu_s_ptm: 90000 * 120 });
+    const highlight = navWith({
+      btn_ns: 2,
+      hli_s_ptm: 90000 * 122,
+      vobu_s_ptm: 90000 * 122,
+    });
+    expect(hliDelaySecFromCell(cellStart, highlight)).toBe(2);
+  });
+
+  it('falls back to HLI-within-VOBU when cell-start NAV is missing', () => {
+    expect(
+      hliDelaySecFromCell(
+        null,
+        navWith({ btn_ns: 1, hli_s_ptm: 180000, vobu_s_ptm: 90000 }),
       ),
     ).toBe(1);
   });

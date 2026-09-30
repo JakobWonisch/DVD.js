@@ -82,7 +82,7 @@ export function showTitleUnavailable(
   hideAllMenus(host);
   try {
     const video = host.querySelector(
-      'video:not(.dvdjs-menu-video)',
+      'video:not(.dvd-menu-archive-menu-video)',
     ) as HTMLVideoElement | null;
     video?.pause();
   } catch {
@@ -101,7 +101,7 @@ export function showTitleUnavailable(
         try {
           pgcObj.post();
         } catch (e) {
-          console.warn('DVD.js missing-title post failed', e);
+          console.warn('dvd-menu-archive missing-title post failed', e);
           host.onmenu?.({});
         }
       }, 0);
@@ -114,11 +114,11 @@ export function showTitleUnavailable(
   }
 
   let el = host.querySelector(
-    '.dvdjs-title-unavailable',
+    '.dvd-menu-archive-title-unavailable',
   ) as HTMLElement | null;
   if (!el) {
     el = document.createElement('div');
-    el.className = 'dvdjs-title-unavailable';
+    el.className = 'dvd-menu-archive-title-unavailable';
     el.setAttribute('role', 'status');
     host.appendChild(el);
   }
@@ -132,7 +132,7 @@ export function showTitleUnavailable(
       try {
         host.onmenu?.({});
       } catch (e) {
-        console.warn('DVD.js menu fallback failed', e);
+        console.warn('dvd-menu-archive menu fallback failed', e);
       } finally {
         host._dvdjsMenuFallback = false;
       }
@@ -142,7 +142,7 @@ export function showTitleUnavailable(
 
 export function hideTitleUnavailable(host: HTMLElement): void {
   const el = host.querySelector(
-    '.dvdjs-title-unavailable',
+    '.dvd-menu-archive-title-unavailable',
   ) as HTMLElement | null;
   if (el) {
     el.hidden = true;
@@ -442,7 +442,7 @@ export function playMenuMotionSegment(
         try {
           post();
         } catch (e) {
-          console.warn('DVD.js menu post failed', e);
+          console.warn('dvd-menu-archive menu post failed', e);
         }
       }
     }

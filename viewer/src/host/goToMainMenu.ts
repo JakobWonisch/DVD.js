@@ -102,7 +102,7 @@ export function goToMainMenu(host: GoToMainMenuHost): boolean {
           : {};
     return escapeToVmgmTitleMenu(host, g);
   } catch (e) {
-    console.warn('DVD.js goToMainMenu failed', e);
+    console.warn('dvd-menu-archive goToMainMenu failed', e);
     return false;
   }
 }

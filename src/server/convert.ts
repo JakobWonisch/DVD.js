@@ -278,7 +278,7 @@ async function runRipIfNeeded(
     opts.workDir ||
     (opts.keepRip || opts.ripOnly
       ? path.join(appConfig.webFolder, '.rip-work')
-      : fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-rip-')));
+      : fs.mkdtempSync(path.join(os.tmpdir(), 'dvd-menu-archive-rip-')));
 
   var rip = await ripDisc({
     source: dvdPathArg,

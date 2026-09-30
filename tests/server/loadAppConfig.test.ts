@@ -9,6 +9,12 @@ import {
 } from '../../src/loadAppConfig.js';
 
 const ENV_KEYS = [
+  'DVD_MENU_ARCHIVE_CONFIG',
+  'DVD_MENU_ARCHIVE_WEB_FOLDER',
+  'DVD_MENU_ARCHIVE_PORT',
+  'DVD_MENU_ARCHIVE_STATIC_SERVER_PORT',
+  'DVD_MENU_ARCHIVE_EVICT_DISC_CACHE',
+  'DVD_MENU_ARCHIVE_MDNS',
   'DVDJS_CONFIG',
   'DVDJS_WEB_FOLDER',
   'DVDJS_PORT',
@@ -46,27 +52,29 @@ function setEnv(key: (typeof ENV_KEYS)[number], value: string | undefined) {
   }
 }
 
+function clearAllEnv() {
+  for (var i = 0; i < ENV_KEYS.length; i++) {
+    setEnv(ENV_KEYS[i], undefined);
+  }
+}
+
 function writeTempConfig(body: object): string {
-  var dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-cfg-'));
+  var dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvd-menu-archive-cfg-'));
   var file = path.join(dir, 'app.json');
   fs.writeFileSync(file, JSON.stringify(body));
   return file;
 }
 
 describe('loadAppConfig', function () {
-  it('loads values from DVDJS_CONFIG JSON', function () {
+  it('loads values from DVD_MENU_ARCHIVE_CONFIG JSON', function () {
+    clearAllEnv();
     var file = writeTempConfig({
       webFolder: '/from/json',
       staticServerPort: 4000,
       evictDiscCache: true,
       mdns: false,
     });
-    setEnv('DVDJS_CONFIG', file);
-    setEnv('DVDJS_WEB_FOLDER', undefined);
-    setEnv('DVDJS_PORT', undefined);
-    setEnv('DVDJS_STATIC_SERVER_PORT', undefined);
-    setEnv('DVDJS_EVICT_DISC_CACHE', undefined);
-    setEnv('DVDJS_MDNS', undefined);
+    setEnv('DVD_MENU_ARCHIVE_CONFIG', file);
 
     expect(loadAppConfig()).toEqual({
       webFolder: '/from/json',
@@ -77,17 +85,18 @@ describe('loadAppConfig', function () {
   });
 
   it('lets environment override JSON', function () {
+    clearAllEnv();
     var file = writeTempConfig({
       webFolder: '/from/json',
       staticServerPort: 4000,
       evictDiscCache: false,
       mdns: true,
     });
-    setEnv('DVDJS_CONFIG', file);
-    setEnv('DVDJS_WEB_FOLDER', '/from/env');
-    setEnv('DVDJS_PORT', '8080');
-    setEnv('DVDJS_EVICT_DISC_CACHE', 'true');
-    setEnv('DVDJS_MDNS', '0');
+    setEnv('DVD_MENU_ARCHIVE_CONFIG', file);
+    setEnv('DVD_MENU_ARCHIVE_WEB_FOLDER', '/from/env');
+    setEnv('DVD_MENU_ARCHIVE_PORT', '8080');
+    setEnv('DVD_MENU_ARCHIVE_EVICT_DISC_CACHE', 'true');
+    setEnv('DVD_MENU_ARCHIVE_MDNS', '0');
 
     expect(loadAppConfig()).toEqual({
       webFolder: '/from/env',
@@ -98,30 +107,47 @@ describe('loadAppConfig', function () {
   });
 
   it('uses defaults when no file and no env', function () {
+    clearAllEnv();
     var missing = path.join(
       os.tmpdir(),
-      'dvdjs-missing-config-' + process.pid + '.json',
+      'dvd-menu-archive-missing-config-' + process.pid + '.json',
     );
-    setEnv('DVDJS_CONFIG', missing);
+    setEnv('DVD_MENU_ARCHIVE_CONFIG', missing);
     expect(function () {
       loadAppConfig();
     }).toThrow(/missing file/);
 
-    setEnv('DVDJS_CONFIG', writeTempConfig({}));
-    setEnv('DVDJS_WEB_FOLDER', undefined);
-    setEnv('DVDJS_PORT', undefined);
-    setEnv('DVDJS_STATIC_SERVER_PORT', undefined);
-    setEnv('DVDJS_EVICT_DISC_CACHE', undefined);
-    setEnv('DVDJS_MDNS', undefined);
+    setEnv('DVD_MENU_ARCHIVE_CONFIG', writeTempConfig({}));
 
     expect(loadAppConfig()).toEqual(APP_CONFIG_DEFAULTS);
   });
 
-  it('accepts DVDJS_STATIC_SERVER_PORT as port alias', function () {
-    setEnv('DVDJS_CONFIG', writeTempConfig({}));
-    setEnv('DVDJS_PORT', undefined);
-    setEnv('DVDJS_STATIC_SERVER_PORT', '9090');
+  it('accepts DVD_MENU_ARCHIVE_STATIC_SERVER_PORT as port alias', function () {
+    clearAllEnv();
+    setEnv('DVD_MENU_ARCHIVE_CONFIG', writeTempConfig({}));
+    setEnv('DVD_MENU_ARCHIVE_STATIC_SERVER_PORT', '9090');
 
     expect(loadAppConfig().staticServerPort).toBe(9090);
+  });
+
+  it('still accepts legacy DVDJS_* env keys', function () {
+    clearAllEnv();
+    setEnv('DVDJS_CONFIG', writeTempConfig({}));
+    setEnv('DVDJS_WEB_FOLDER', '/legacy/web');
+    setEnv('DVDJS_PORT', '7070');
+
+    expect(loadAppConfig()).toMatchObject({
+      webFolder: '/legacy/web',
+      staticServerPort: 7070,
+    });
+  });
+
+  it('prefers DVD_MENU_ARCHIVE_* over legacy DVDJS_*', function () {
+    clearAllEnv();
+    setEnv('DVD_MENU_ARCHIVE_CONFIG', writeTempConfig({}));
+    setEnv('DVD_MENU_ARCHIVE_WEB_FOLDER', '/modern');
+    setEnv('DVDJS_WEB_FOLDER', '/legacy');
+
+    expect(loadAppConfig().webFolder).toBe('/modern');
   });
 });

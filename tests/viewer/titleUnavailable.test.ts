@@ -120,23 +120,23 @@ describe('tryAutoSkipMissingTitle', () => {
           focus() {},
           set innerHTML(_html: string) {
             const heading = {
-              className: 'dvdjs-title-unavailable__heading',
+              className: 'dvd-menu-archive-title-unavailable__heading',
               textContent: '',
               children: [],
             };
             const body = {
-              className: 'dvdjs-title-unavailable__body',
+              className: 'dvd-menu-archive-title-unavailable__body',
               textContent: '',
               children: [],
             };
             const btn = {
-              className: 'dvdjs-title-unavailable__btn',
+              className: 'dvd-menu-archive-title-unavailable__btn',
               children: [],
               addEventListener() {},
               focus() {},
             };
             const card = {
-              className: 'dvdjs-title-unavailable__card',
+              className: 'dvd-menu-archive-title-unavailable__card',
               children: [heading, body, btn],
               querySelector(sel: string) {
                 return (
@@ -179,7 +179,7 @@ describe('tryAutoSkipMissingTitle', () => {
     );
     await vi.runAllTimersAsync();
     expect(post).toHaveBeenCalledOnce();
-    expect(children.some((c) => c.className === 'dvdjs-title-unavailable')).toBe(
+    expect(children.some((c) => c.className === 'dvd-menu-archive-title-unavailable')).toBe(
       true,
     );
 
@@ -301,11 +301,11 @@ function fakeEl(tag: string, className = '') {
     set innerHTML(html: string) {
       children.length = 0;
       // Parse the three known nodes from our dialog template.
-      const heading = fakeEl('p', 'dvdjs-title-unavailable__heading');
-      heading.id = 'dvdjs-title-unavailable-heading';
-      const body = fakeEl('p', 'dvdjs-title-unavailable__body');
-      const btn = fakeEl('button', 'dvdjs-title-unavailable__btn');
-      const card = fakeEl('div', 'dvdjs-title-unavailable__card');
+      const heading = fakeEl('p', 'dvd-menu-archive-title-unavailable__heading');
+      heading.id = 'dvd-menu-archive-title-unavailable-heading';
+      const body = fakeEl('p', 'dvd-menu-archive-title-unavailable__body');
+      const btn = fakeEl('button', 'dvd-menu-archive-title-unavailable__btn');
+      const card = fakeEl('div', 'dvd-menu-archive-title-unavailable__card');
       card.appendChild(heading);
       card.appendChild(body);
       card.appendChild(btn);
@@ -374,20 +374,20 @@ describe('showTitleUnavailableOverlay', () => {
 
     showTitleUnavailableOverlay(host);
 
-    const dialog = stage.querySelector('.dvdjs-title-unavailable');
+    const dialog = stage.querySelector('.dvd-menu-archive-title-unavailable');
     expect(dialog).toBeTruthy();
     expect(dialog.getAttribute('role')).toBe('dialog');
     expect(dialog.hidden).toBe(false);
     expect(
-      dialog.querySelector('.dvdjs-title-unavailable__heading')?.textContent,
+      dialog.querySelector('.dvd-menu-archive-title-unavailable__heading')?.textContent,
     ).toBe(TITLE_UNAVAILABLE_HEADING);
     expect(
-      dialog.querySelector('.dvdjs-title-unavailable__body')?.textContent,
+      dialog.querySelector('.dvd-menu-archive-title-unavailable__body')?.textContent,
     ).toBe(TITLE_UNAVAILABLE_MESSAGE);
     expect(
-      dialog.querySelector('.dvdjs-title-unavailable__btn')?.textContent,
+      dialog.querySelector('.dvd-menu-archive-title-unavailable__btn')?.textContent,
     ).toBe(TITLE_UNAVAILABLE_OK_LABEL);
-    expect(host.querySelector('.dvdjs-title-unavailable')).toBeNull();
+    expect(host.querySelector('.dvd-menu-archive-title-unavailable')).toBeNull();
   });
 
   it('stays visible until dismissed, then runs onDismiss', () => {
@@ -397,10 +397,10 @@ describe('showTitleUnavailableOverlay', () => {
     const onDismiss = vi.fn();
 
     showTitleUnavailableOverlay(host, { onDismiss });
-    const dialog = host.querySelector('.dvdjs-title-unavailable');
+    const dialog = host.querySelector('.dvd-menu-archive-title-unavailable');
     expect(dialog.hidden).toBe(false);
 
-    dialog.querySelector('.dvdjs-title-unavailable__btn').click();
+    dialog.querySelector('.dvd-menu-archive-title-unavailable__btn').click();
 
     expect(dialog.hidden).toBe(true);
     expect(onDismiss).toHaveBeenCalledOnce();
@@ -415,7 +415,7 @@ describe('showTitleUnavailableOverlay', () => {
 
     doc.dispatchKey('Escape');
 
-    const dialog = host.querySelector('.dvdjs-title-unavailable');
+    const dialog = host.querySelector('.dvd-menu-archive-title-unavailable');
     expect(dialog.hidden).toBe(true);
     expect(onDismiss).toHaveBeenCalledOnce();
   });
@@ -429,7 +429,7 @@ describe('showTitleUnavailableOverlay', () => {
 
     doc.dispatchKey('Enter');
 
-    const dialog = host.querySelector('.dvdjs-title-unavailable');
+    const dialog = host.querySelector('.dvd-menu-archive-title-unavailable');
     expect(dialog.hidden).toBe(true);
     expect(onDismiss).toHaveBeenCalledOnce();
   });
@@ -443,7 +443,7 @@ describe('showTitleUnavailableOverlay', () => {
 
     hideTitleUnavailableOverlay(host);
 
-    const dialog = host.querySelector('.dvdjs-title-unavailable');
+    const dialog = host.querySelector('.dvd-menu-archive-title-unavailable');
     expect(dialog.hidden).toBe(true);
     expect(onDismiss).not.toHaveBeenCalled();
   });

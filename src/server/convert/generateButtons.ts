@@ -12,8 +12,10 @@ import editMetadataFile from '../../server/utils/editMetadataFile.js';
 import { resolveMenuFrameHeight } from './menuFrameHeight.js';
 import { menuCellAdrCount } from './menuCellAdrCount.js';
 import {
+  hliDelaySecFromCell,
   loadNavBySectorForBasename,
   pickHighlightNav,
+  type NavPtsLike,
 } from './menuStillSeek.js';
 
 export default generateButtons;
@@ -77,6 +79,7 @@ function generateButtons(dvdPath: string, callback) {
       var buttons = [];
       var hli_s_ptm = null;
       var hli_e_ptm = null;
+      var hliDelaySec = 0;
 
       if (
         json &&
@@ -87,6 +90,21 @@ function generateButtons(dvdPath: string, callback) {
       ) {
         hli_s_ptm = json.pci.hli.hl_gi.hli_s_ptm;
         hli_e_ptm = json.pci.hli.hl_gi.hli_e_ptm;
+        var cellStartNav: NavPtsLike | null = null;
+        if (navBySector instanceof Map) {
+          cellStartNav = navBySector.get(vob.start_sector) || null;
+        } else if (navBySector && typeof navBySector === 'object') {
+          cellStartNav = (navBySector as Record<number, NavPtsLike>)[
+            vob.start_sector
+          ] || null;
+        }
+        // Nearby pack if C_ADT start is not exactly a NAV sector.
+        if (!cellStartNav && navBySector instanceof Map) {
+          for (var d = 0; d < 8 && !cellStartNav; d++) {
+            cellStartNav = navBySector.get(vob.start_sector + d) || null;
+          }
+        }
+        hliDelaySec = hliDelaySecFromCell(cellStartNav, json);
 
         // Scale PCI y coords by this disc's menu frame (IFO VTSM/VMGM
         // video_format: PAL 576 / NTSC 480). Title vts_video_attr is ignored.
@@ -216,6 +234,11 @@ function generateButtons(dvdPath: string, callback) {
             }
             if (hli_e_ptm != null) {
               entry.hli_e_ptm = hli_e_ptm;
+            }
+            if (hliDelaySec > 0) {
+              entry.hliDelaySec = hliDelaySec;
+            } else {
+              delete entry.hliDelaySec;
             }
           }
 

@@ -9,8 +9,14 @@ import type {
 } from '../types/metadata.js';
 
 function menuCellFor(domain: DomainMetadata, menu: MenuPgcEntry) {
-  const cellID = menu.cellID;
-  const vobID = menu.vobID;
+  // Prefer the first authored cell in menu.cells when present (multi-cell PGCs);
+  // top-level cellID/vobID can drift from cells[0] on older metadata.
+  const cells = Array.isArray(menu.cells) ? menu.cells : null;
+  const first = cells && cells[0] && typeof cells[0] === 'object'
+    ? (cells[0] as { cellID?: number; vobID?: number })
+    : null;
+  const cellID = first?.cellID != null ? first.cellID : menu.cellID;
+  const vobID = first?.vobID != null ? first.vobID : menu.vobID;
   if (cellID == null || vobID == null || !domain.menuCell) {
     return undefined;
   }
@@ -120,12 +126,24 @@ const DomainMenus: Component<{ domain: DomainMetadata; id: number }> = (
                 }
                 lang={lang}
               >
-                {/* Still optional: motion menus swap assets in playMenuCell. */}
+                {/* Still optional: motion menus swap assets in playMenuCell.
+                    Multi-cell PGCs omit the initial still src — wrong cell PNG
+                    would flash until the first playMenuCell. */}
                 <Show when={cell()?.css}>
                   <link rel="stylesheet" href={cell()!.css!} />
                 </Show>
-                <Show when={cell()?.still}>
+                <Show
+                  when={
+                    cell()?.still &&
+                    !(Array.isArray(menu.cells) && menu.cells.length > 1)
+                  }
+                >
                   <img class="menu-still" src={cell()!.still!} alt="" />
+                </Show>
+                <Show
+                  when={Array.isArray(menu.cells) && menu.cells.length > 1}
+                >
+                  <img class="menu-still" alt="" style={{ opacity: 0 }} />
                 </Show>
                 <Show
                   when={
@@ -174,7 +192,7 @@ const DomainVideos: Component<{ domain: DomainMetadata; id: number }> = (
       <Show when={hasMenuDomain()}>
         <video
           id={`menu-video-${props.id}`}
-          class="dvdjs-menu-video"
+          class="dvd-menu-archive-menu-video"
           src={menuSrc()}
           preload="auto"
           loop={false}

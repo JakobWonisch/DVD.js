@@ -1,6 +1,8 @@
 /**
- * Per-cell menu WebMs (`menu-{domain}-{cell}-{vob}.webm`) vs legacy concat
- * domain files (`VIDEO_TS.webm` / `VTS_*_0.webm`) that seek by startSec.
+ * Per-cell menu WebMs (`menu-{domain}-{cell}-{vob}.webm`).
+ * Domain concat files (`VIDEO_TS.webm` / `VTS_*_0.webm`) are not produced or
+ * sought — convert stamps menuCell[].video and the viewer plays each clip
+ * from t=0.
  */
 
 export type MenuCellVideoOpts = {
@@ -18,7 +20,7 @@ export type DiscMenuCellLookup = {
     string,
     Record<string, { video?: string | null } | undefined> | undefined
   >;
-  /** Domain menu WebMs from metadata.index (legacy concat archives). */
+  /** Unused for menus (per-cell only); kept for DiscMetadata shape. */
   index?: string[] | null;
 };
 
@@ -32,68 +34,17 @@ export function menuCellVideoUrl(
   return `${baseDir}menu-${domain}-${cellID}-${vobID}.webm`;
 }
 
-/** True when src is a domain-wide concat menu WebM (pre–per-cell archives). */
-export function isLegacyConcatMenuWebm(
-  src: string | null | undefined,
-): boolean {
-  if (!src) {
-    return false;
-  }
-  const path = src.split('?')[0];
-  const base = path.slice(path.lastIndexOf('/') + 1);
-  return /^(VIDEO_TS|VTS_\d+_0)\.webm$/i.test(base);
-}
-
-/** True when convert stamped at least one menuCell.video (per-cell package). */
-export function domainHasPerCellMenuVideos(
-  domainMeta?: DiscMenuCellLookup | null,
-): boolean {
-  const mc = domainMeta?.menuCell;
-  if (!mc) {
-    return false;
-  }
-  for (const cellId of Object.keys(mc)) {
-    const vobs = mc[cellId];
-    if (!vobs) {
-      continue;
-    }
-    for (const vobId of Object.keys(vobs)) {
-      if (vobs[vobId]?.video) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-/** Legacy domain concat URL from metadata.index, if any. */
-export function domainLegacyConcatMenuSrc(
-  domainMeta?: DiscMenuCellLookup | null,
-): string | null {
-  const index = domainMeta?.index;
-  if (!Array.isArray(index)) {
-    return null;
-  }
-  for (let i = 0; i < index.length; i++) {
-    if (isLegacyConcatMenuWebm(index[i])) {
-      return index[i];
-    }
-  }
-  return null;
-}
-
 /**
  * Resolve the WebM to play for a menu cell.
- * Prefer explicit opts.video → metadata.menuCell.video → constructed path
- * when this domain is a per-cell package. Never invent menu-*.webm for
- * legacy concat archives (Harry Potter pre–per-cell) — that 404s forever.
+ * Prefer explicit opts.video → metadata.menuCell.video only.
+ * Never invent menu-*.webm paths — missing stamps mean still-only / skipped cell.
  */
 export function resolveMenuCellVideoUrl(
   opts: MenuCellVideoOpts,
   ctx: {
     baseDir?: string | null;
     domainMeta?: DiscMenuCellLookup | null;
-    /** Current <video> src — used only to decide legacy fallback. */
+    /** Kept for call-site compat; unused. */
     currentSrc?: string | null;
   } = {},
 ): string | null {
@@ -111,26 +62,12 @@ export function resolveMenuCellVideoUrl(
   if (fromMeta) {
     return fromMeta;
   }
-  if (isLegacyConcatMenuWebm(ctx.currentSrc)) {
-    return null;
-  }
-  // metadata.index still names VTS_*_0.webm / VIDEO_TS.webm and no cell was
-  // stamped with .video → seek on the concat file (do not GET menu-d-c-v.webm).
-  if (
-    domainLegacyConcatMenuSrc(ctx.domainMeta) &&
-    !domainHasPerCellMenuVideos(ctx.domainMeta)
-  ) {
-    return null;
-  }
-  if (!ctx.baseDir) {
-    return null;
-  }
-  return menuCellVideoUrl(ctx.baseDir, domain, cellID, vobID);
+  return null;
 }
 
 /**
- * Map playMenuCell start/end onto the media timeline.
- * Per-cell clips play [0, duration); legacy concat keeps absolute times.
+ * Map playMenuCell start/end onto the per-cell media timeline [0, duration).
+ * Without a cell WebM URL there is no motion window.
  */
 export function menuMotionPlaybackWindow(
   opts: MenuCellVideoOpts,
@@ -142,12 +79,12 @@ export function menuMotionPlaybackWindow(
   const absEnd =
     opts.endSec != null && Number.isFinite(opts.endSec) ? opts.endSec : absStart;
   const duration = absEnd > absStart ? absEnd - absStart : 0;
-  if (cellVideoUrl) {
-    return {
-      start: 0,
-      end: duration > 0 ? duration : absEnd,
-      perCell: true,
-    };
+  if (!cellVideoUrl) {
+    return { start: 0, end: 0, perCell: false };
   }
-  return { start: absStart, end: absEnd, perCell: false };
+  return {
+    start: 0,
+    end: duration > 0 ? duration : 0,
+    perCell: true,
+  };
 }

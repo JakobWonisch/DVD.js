@@ -72,7 +72,7 @@ export function skipPlaybackToEnd(host: SkipToEndHost): boolean {
     try {
       post();
     } catch (e) {
-      console.warn('DVD.js menu post failed', e);
+      console.warn('dvd-menu-archive menu post failed', e);
     }
     return true;
   }

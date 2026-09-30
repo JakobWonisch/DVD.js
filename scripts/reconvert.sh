@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Interactive reconvert of ripped VIDEO_TS trees under dvds/ (or DVDJS_RIPS).
+# Interactive reconvert of ripped VIDEO_TS trees under dvds/ (or DVD_MENU_ARCHIVE_RIPS).
 #
 # Selection prompt:
 #   ""              convert all
@@ -14,13 +14,13 @@
 #   pnpm reconvert -- "!1"
 #   pnpm reconvert -- --full
 #   pnpm reconvert -- --full "1,3"
-#   DVDJS_RIPS=/path/to/rips ./scripts/reconvert.sh
+#   DVD_MENU_ARCHIVE_RIPS=/path/to/rips ./scripts/reconvert.sh
 #   ./scripts/reconvert.sh --rips /path/to/rips --verbose
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RIPS_DIR="${DVDJS_RIPS:-$ROOT/dvds}"
+RIPS_DIR="${DVD_MENU_ARCHIVE_RIPS:-$ROOT/dvds}"
 CONVERT_FLAGS=()
 SELECTION_ARG=""
 HAS_SELECTION=0
@@ -39,7 +39,7 @@ Selection (prompted if omitted):
   !1  or  !1,!3    all except those indexes
 
 Environment:
-  DVDJS_RIPS       override default rip dir (repo dvds/)
+  DVD_MENU_ARCHIVE_RIPS       override default rip dir (repo dvds/)
 EOF
 }
 
@@ -75,7 +75,7 @@ done
 
 if [[ ! -d "$RIPS_DIR" ]]; then
   echo "Rip directory not found: $RIPS_DIR" >&2
-  echo "Set DVDJS_RIPS or pass --rips DIR." >&2
+  echo "Set DVD_MENU_ARCHIVE_RIPS or pass --rips DIR." >&2
   exit 1
 fi
 

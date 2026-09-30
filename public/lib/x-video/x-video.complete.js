@@ -244,7 +244,7 @@
         var playlist = [];
         var videos = xtag.toArray(xVideo.querySelectorAll('x-video > video')).filter(function (video) {
             // Menu motion WebMs are handled separately via playMenuCell.
-            return !video.classList.contains('dvdjs-menu-video');
+            return !video.classList.contains('dvd-menu-archive-menu-video');
         });
         var tracks = [];
         var menus = xtag.toArray(xVideo.querySelectorAll('x-menu'));
@@ -527,10 +527,10 @@
             host.style.position = 'relative';
         }
 
-        var el = xVideo.querySelector('.dvdjs-title-unavailable');
+        var el = xVideo.querySelector('.dvd-menu-archive-title-unavailable');
         if (!el) {
             el = document.createElement('div');
-            el.className = 'dvdjs-title-unavailable';
+            el.className = 'dvd-menu-archive-title-unavailable';
             el.setAttribute('role', 'status');
             el.style.cssText =
                 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
@@ -548,7 +548,7 @@
                 try {
                     xVideo.onmenu({});
                 } catch (e) {
-                    console.warn('DVD.js menu fallback failed', e);
+                    console.warn('dvd-menu-archive menu fallback failed', e);
                 } finally {
                     xVideo._dvdjsMenuFallback = false;
                 }
@@ -560,7 +560,7 @@
      * @param {Object} xVideo
      */
     function hideTitleUnavailable(xVideo) {
-        var el = xVideo.querySelector('.dvdjs-title-unavailable');
+        var el = xVideo.querySelector('.dvd-menu-archive-title-unavailable');
         if (el) {
             el.hidden = true;
         }
@@ -668,7 +668,7 @@
                                 try {
                                     post();
                                 } catch (e) {
-                                    console.warn('DVD.js menu post failed', e);
+                                    console.warn('dvd-menu-archive menu post failed', e);
                                 }
                                 break;
                             }
@@ -1802,7 +1802,7 @@ function playMenuMotionSegment(xVideo, menuVideo, opts, onReady) {
                 try {
                     post();
                 } catch (e) {
-                    console.warn('DVD.js menu post failed', e);
+                    console.warn('dvd-menu-archive menu post failed', e);
                 }
             }
         }

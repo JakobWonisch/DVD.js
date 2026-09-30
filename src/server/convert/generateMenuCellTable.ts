@@ -241,7 +241,7 @@ function extractMenu(dvdPath: string, callback) {
     cellEndBytes,
     done,
   ) {
-    var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-still-'));
+    var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvd-menu-archive-still-'));
     var outPng = path.join(tmpDir, 'still.png');
     var cellFile = path.join(tmpDir, 'cell.vob');
     var inputFile = vobFile;

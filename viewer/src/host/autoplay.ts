@@ -10,7 +10,7 @@
  * blocked).
  */
 
-export const AUTOPLAY_BLOCKED_EVENT = 'dvdjs-autoplay-blocked';
+export const AUTOPLAY_BLOCKED_EVENT = 'dvd-menu-archive-autoplay-blocked';
 
 export type AutoplayHost = HTMLElement & {
   _dvdjsAudioUnlocked?: boolean;

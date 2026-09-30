@@ -3,6 +3,7 @@ import {
   aliasUnspecifiedMenuLangs,
   packMenuLangSprm,
 } from '../host/menuLanguage.js';
+import { log, warn } from '../host/viewerDebug.js';
 import { patchPlayCurrentMenuCellPgN } from './patchMenuPgN.js';
 
 type VmGlobals = {
@@ -178,6 +179,7 @@ export function loadVm(
     };
 
     script.onload = () => {
+      log('vm', `vm.js script onload /${dvdId}/vm.js`);
       console.log('DVD vm.js loaded.');
       (window as any).dvd = host;
       // Allow a fresh init() if this host was used for a previous disc.
@@ -191,11 +193,16 @@ export function loadVm(
         // Mark even when older vm.js has no idempotent guard, so startVm
         // does not stack a second click/keydown listener.
         (host as any)._dvdjsVmInited = true;
+        log('vm', 'init() ran', { lang: g.lang, domain: g.domain });
+      } else {
+        warn('vm', 'vm.js loaded but init() missing');
       }
       pickExistingLang(host);
+      log('vm', 'lang picked', { lang: g.lang });
       resolve(dispose);
     };
     script.onerror = () => {
+      warn('vm', `Failed to load /${dvdId}/vm.js`);
       dispose();
       reject(new Error(`Failed to load /${dvdId}/vm.js`));
     };
@@ -223,7 +230,10 @@ export function startVm(host: HTMLElement) {
   pickExistingLang(host);
   if (typeof g.fp_pgc === 'function') {
     console.log('Start the DVD.');
+    log('vm', 'fp_pgc()', { lang: g.lang, domain: g.domain });
     g.fp_pgc();
+  } else {
+    warn('vm', 'fp_pgc missing — disc will stay black after Start');
   }
 }
 

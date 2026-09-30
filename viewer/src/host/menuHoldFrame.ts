@@ -4,7 +4,7 @@
  * until this hold (or another painted layer) is showing.
  */
 
-export const MENU_HOLD_CLASS = 'dvdjs-menu-hold';
+export const MENU_HOLD_CLASS = 'dvd-menu-archive-menu-hold';
 
 export function ensureMenuHoldCanvas(host: HTMLElement): HTMLCanvasElement {
   let canvas = host.querySelector(

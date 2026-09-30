@@ -16,27 +16,38 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as child_process from 'node:child_process';
 import { promisify } from 'node:util';
+import { MARKER } from '../projectId.js';
 
 const execFile = promisify(child_process.execFile);
 
 /** How long a decompressed disc stays on disk after last access. */
 export const CACHE_TTL_MS = 60 * 60 * 1000;
 
+/**
+ * Convert markers older than this are treated as crashed converts and cleared
+ * so ensure/PlayDisc are not stuck forever. Full --full encodes of large discs
+ * can take hours — keep this well above a worst-case overnight encode.
+ */
+export const CONVERTING_STALE_MS = 12 * 60 * 60 * 1000;
+
 /** Marker file written inside a decompressed disc folder (last access). */
-const ACCESS_MARKER = '.dvdjs-accessed';
+const ACCESS_MARKER = MARKER.accessed;
+const ACCESS_MARKER_LEGACY = MARKER.accessedLegacy;
 
 /**
  * Marker written at extract time: archive mtimeMs when this folder was unpacked.
  * Used to detect reconverted / replaced .tar.gz files.
  */
-const ARCHIVE_MTIME_MARKER = '.dvdjs-archive-mtime';
+const ARCHIVE_MTIME_MARKER = MARKER.archiveMtime;
+const ARCHIVE_MTIME_MARKER_LEGACY = MARKER.archiveMtimeLegacy;
 
 /**
  * Convert-in-progress marker. While present, ensure/extract must not rm the
  * disc folder (that raced with pack and produced archives missing metadata.json
  * — metadata is packed late in directory order).
  */
-const CONVERTING_MARKER = '.dvdjs-converting';
+const CONVERTING_MARKER = MARKER.converting;
+const CONVERTING_MARKER_LEGACY = MARKER.convertingLegacy;
 
 /** Safe disc folder / archive stem (no path separators or spaces). */
 const DISC_ID_RE = /^[A-Za-z0-9._-]+$/;
@@ -69,9 +80,60 @@ function convertingMarkerPath(webFolder: string, discId: string): string {
   return path.join(discDirPath(webFolder, discId), CONVERTING_MARKER);
 }
 
+function convertingMarkerPathLegacy(webFolder: string, discId: string): string {
+  return path.join(discDirPath(webFolder, discId), CONVERTING_MARKER_LEGACY);
+}
+
+/** Path of an existing converting marker (modern or legacy), or null. */
+function findConvertingMarker(
+  webFolder: string,
+  discId: string,
+): string | null {
+  var modern = convertingMarkerPath(webFolder, discId);
+  if (fs.existsSync(modern)) {
+    return modern;
+  }
+  var legacy = convertingMarkerPathLegacy(webFolder, discId);
+  return fs.existsSync(legacy) ? legacy : null;
+}
+
 /** True while convert owns this disc folder (do not extract over it). */
 export function isDiscConverting(webFolder: string, discId: string): boolean {
-  return fs.existsSync(convertingMarkerPath(webFolder, discId));
+  clearStaleConvertingMarker(webFolder, discId);
+  return findConvertingMarker(webFolder, discId) != null;
+}
+
+/**
+ * If the converting marker is older than CONVERTING_STALE_MS, clear it.
+ * Crash / kill mid-convert otherwise leaves ensure stuck on decompressing.
+ */
+export function clearStaleConvertingMarker(
+  webFolder: string,
+  discId: string,
+): boolean {
+  var marker = findConvertingMarker(webFolder, discId);
+  if (!marker) {
+    return false;
+  }
+  var started = NaN;
+  try {
+    var raw = fs.readFileSync(marker, 'utf8').trim();
+    started = parseInt(raw, 10);
+  } catch {
+    started = NaN;
+  }
+  if (!Number.isFinite(started)) {
+    try {
+      started = fs.statSync(marker).mtimeMs;
+    } catch {
+      return false;
+    }
+  }
+  if (Date.now() - started < CONVERTING_STALE_MS) {
+    return false;
+  }
+  endDiscConvert(webFolder, discId);
+  return true;
 }
 
 /**
@@ -90,12 +152,17 @@ export function beginDiscConvert(webFolder: string, discId: string): void {
   );
 }
 
-/** Clear the convert-in-progress marker (idempotent). */
+/** Clear the convert-in-progress marker (idempotent; modern + legacy names). */
 export function endDiscConvert(webFolder: string, discId: string): void {
-  try {
-    fs.unlinkSync(convertingMarkerPath(webFolder, discId));
-  } catch {
-    // ignore
+  for (var marker of [
+    convertingMarkerPath(webFolder, discId),
+    convertingMarkerPathLegacy(webFolder, discId),
+  ]) {
+    try {
+      fs.unlinkSync(marker);
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -144,8 +211,11 @@ function writeOrderedTarFileList(webFolder: string, discId: string): string {
   var names = fs.readdirSync(dir).filter(function (name) {
     return (
       name !== ACCESS_MARKER &&
+      name !== ACCESS_MARKER_LEGACY &&
       name !== ARCHIVE_MTIME_MARKER &&
-      name !== CONVERTING_MARKER
+      name !== ARCHIVE_MTIME_MARKER_LEGACY &&
+      name !== CONVERTING_MARKER &&
+      name !== CONVERTING_MARKER_LEGACY
     );
   });
   var priority = ['metadata.json', 'vm.js', 'cover.jpg'];
@@ -164,7 +234,7 @@ function writeOrderedTarFileList(webFolder: string, discId: string): string {
   }
   var listPath = path.join(
     os.tmpdir(),
-    'dvdjs-pack-' + discId + '-' + process.pid + '.txt',
+    'dvd-menu-archive-pack-' + discId + '-' + process.pid + '.txt',
   );
   fs.writeFileSync(
     listPath,
@@ -252,8 +322,32 @@ function accessMarkerPath(webFolder: string, discId: string): string {
   return path.join(discDirPath(webFolder, discId), ACCESS_MARKER);
 }
 
+function findAccessMarker(webFolder: string, discId: string): string | null {
+  var modern = accessMarkerPath(webFolder, discId);
+  if (fs.existsSync(modern)) {
+    return modern;
+  }
+  var legacy = path.join(discDirPath(webFolder, discId), ACCESS_MARKER_LEGACY);
+  return fs.existsSync(legacy) ? legacy : null;
+}
+
 function archiveMtimeMarkerPath(webFolder: string, discId: string): string {
   return path.join(discDirPath(webFolder, discId), ARCHIVE_MTIME_MARKER);
+}
+
+function findArchiveMtimeMarker(
+  webFolder: string,
+  discId: string,
+): string | null {
+  var modern = archiveMtimeMarkerPath(webFolder, discId);
+  if (fs.existsSync(modern)) {
+    return modern;
+  }
+  var legacy = path.join(
+    discDirPath(webFolder, discId),
+    ARCHIVE_MTIME_MARKER_LEGACY,
+  );
+  return fs.existsSync(legacy) ? legacy : null;
 }
 
 function stagingPath(webFolder: string, discId: string): string {
@@ -272,8 +366,12 @@ function recordedArchiveMtimeMs(
   webFolder: string,
   discId: string,
 ): number | null {
+  var marker = findArchiveMtimeMarker(webFolder, discId);
+  if (!marker) {
+    return null;
+  }
   try {
-    var raw = fs.readFileSync(archiveMtimeMarkerPath(webFolder, discId), 'utf8').trim();
+    var raw = fs.readFileSync(marker, 'utf8').trim();
     var n = Number(raw);
     if (Number.isFinite(n) && n > 0) {
       return n;
@@ -294,6 +392,11 @@ function writeArchiveMtimeMarker(
     return;
   }
   try {
+    try {
+      fs.unlinkSync(path.join(dir, ARCHIVE_MTIME_MARKER_LEGACY));
+    } catch {
+      // ignore
+    }
     fs.writeFileSync(
       archiveMtimeMarkerPath(webFolder, discId),
       String(mtimeMs) + '\n',
@@ -349,6 +452,12 @@ export function touchAccess(webFolder: string, discId: string): void {
     return;
   }
   try {
+    // Drop legacy name once we can write the modern marker.
+    try {
+      fs.unlinkSync(path.join(dir, ACCESS_MARKER_LEGACY));
+    } catch {
+      // ignore
+    }
     fs.writeFileSync(marker, String(Date.now()) + '\n');
   } catch (err) {
     // Ignore read-only volumes so ensure/static serve still works.
@@ -363,15 +472,17 @@ export function touchAccess(webFolder: string, discId: string): void {
 }
 
 function lastAccessMs(webFolder: string, discId: string): number {
-  var marker = accessMarkerPath(webFolder, discId);
-  try {
-    var raw = fs.readFileSync(marker, 'utf8').trim();
-    var n = Number(raw);
-    if (Number.isFinite(n) && n > 0) {
-      return n;
+  var marker = findAccessMarker(webFolder, discId);
+  if (marker) {
+    try {
+      var raw = fs.readFileSync(marker, 'utf8').trim();
+      var n = Number(raw);
+      if (Number.isFinite(n) && n > 0) {
+        return n;
+      }
+    } catch {
+      // fall through to directory mtime
     }
-  } catch {
-    // fall through to directory mtime
   }
   try {
     return fs.statSync(discDirPath(webFolder, discId)).mtimeMs;
@@ -405,7 +516,12 @@ export async function packDiscArchive(
     }
 
     // Drop cache markers so they are not archived (converting cleared after pack).
-    for (var marker of [ACCESS_MARKER, ARCHIVE_MTIME_MARKER]) {
+    for (var marker of [
+      ACCESS_MARKER,
+      ACCESS_MARKER_LEGACY,
+      ARCHIVE_MTIME_MARKER,
+      ARCHIVE_MTIME_MARKER_LEGACY,
+    ]) {
       try {
         await fs.promises.unlink(path.join(dir, marker));
       } catch {
@@ -453,8 +569,23 @@ export async function packDiscArchive(
       }
     }
 
-    endDiscConvert(webFolder, discId);
-    await fs.promises.rm(dir, { recursive: true, force: true });
+    // Rename away first so ensure cannot report ready on a folder we are about
+    // to delete (marker lives inside the dir and goes with it). Concurrent
+    // extract waits on the same disc lock.
+    var removing = dir + '.removing';
+    try {
+      await fs.promises.rename(dir, removing);
+    } catch (err) {
+      // Folder vanished or rename failed — still try to clear a leftover marker.
+      endDiscConvert(webFolder, discId);
+      throw err;
+    }
+    try {
+      await fs.promises.rm(removing, { recursive: true, force: true });
+    } catch (err) {
+      // Leave .removing for manual cleanup; convert marker is gone with rename.
+      throw err;
+    }
   });
 }
 
@@ -607,7 +738,7 @@ export function warnIfWebFolderNotWritable(webFolder: string): void {
   console.warn(
     'webFolder is not writable (' +
       webFolder +
-      '). Archives cannot be extracted. In Docker, set DVDJS_UID/DVDJS_GID to the host owner of the volume (id -u / id -g).',
+      '). Archives cannot be extracted. In Docker, set DVD_MENU_ARCHIVE_UID/DVD_MENU_ARCHIVE_GID to the host owner of the volume (id -u / id -g).',
   );
 }
 

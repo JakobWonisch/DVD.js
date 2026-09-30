@@ -48,8 +48,8 @@ type IfoLike = {
 /**
  * Map cellID:vobID → authored duration windows (IFO playback_time along C_ADT
  * order). Used for still timing metadata and per-cell WebM `-t` duration.
- * Absolute startSec values remain useful for legacy concat archives; new
- * converts play each `menu-d-c-v.webm` from t=0 for `endSec - startSec`.
+ * Absolute startSec values are duration offsets along C_ADT order (IFO
+ * playback_time sums). Per-cell WebMs play [0, endSec - startSec).
  */
 export function buildMenuCellTimingMap(json: IfoLike): Record<string, MenuCellTiming> {
   const map: Record<string, MenuCellTiming> = {};

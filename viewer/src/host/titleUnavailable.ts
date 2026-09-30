@@ -253,7 +253,7 @@ export function isTitleUnavailableOpen(
     if (!qs) {
       return false;
     }
-    const el = qs('.dvdjs-title-unavailable') as HTMLElement | null;
+    const el = qs('.dvd-menu-archive-title-unavailable') as HTMLElement | null;
     if (!el) {
       return false;
     }
@@ -337,7 +337,7 @@ export function tryAutoSkipMissingTitle(
     try {
       pgcObj.post();
     } catch (e) {
-      console.warn('DVD.js missing-title post failed', e);
+      console.warn('dvd-menu-archive missing-title post failed', e);
       host._dvdjsMissingTitleBroken = true;
       // FP auto-skip: land on a real menu when possible. Dialog only if escape
       // cannot find one (so the user is not stuck on a black intro cell).
@@ -522,7 +522,7 @@ export function escapeToVmgmTitleMenu(
       return true;
     }
   } catch (e) {
-    console.warn('DVD.js missing-title menu fallback failed', e);
+    console.warn('dvd-menu-archive missing-title menu fallback failed', e);
   }
   return false;
 }
@@ -585,11 +585,11 @@ export function showTitleUnavailableOverlay(
   unbindTitleUnavailableKeys(host);
 
   let el = root.querySelector(
-    '.dvdjs-title-unavailable',
+    '.dvd-menu-archive-title-unavailable',
   ) as HTMLElement | null;
   if (!el) {
     el = document.createElement('div');
-    el.className = 'dvdjs-title-unavailable';
+    el.className = 'dvd-menu-archive-title-unavailable';
     if (typeof root.appendChild === 'function') {
       root.appendChild(el);
     } else if (host instanceof HTMLElement) {
@@ -599,22 +599,22 @@ export function showTitleUnavailableOverlay(
 
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-modal', 'true');
-  el.setAttribute('aria-labelledby', 'dvdjs-title-unavailable-heading');
+  el.setAttribute('aria-labelledby', 'dvd-menu-archive-title-unavailable-heading');
   el.innerHTML =
-    '<div class="dvdjs-title-unavailable__card">' +
-    '<p class="dvdjs-title-unavailable__heading" id="dvdjs-title-unavailable-heading"></p>' +
-    '<p class="dvdjs-title-unavailable__body"></p>' +
-    '<button type="button" class="dvdjs-title-unavailable__btn"></button>' +
+    '<div class="dvd-menu-archive-title-unavailable__card">' +
+    '<p class="dvd-menu-archive-title-unavailable__heading" id="dvd-menu-archive-title-unavailable-heading"></p>' +
+    '<p class="dvd-menu-archive-title-unavailable__body"></p>' +
+    '<button type="button" class="dvd-menu-archive-title-unavailable__btn"></button>' +
     '</div>';
 
   const heading = el.querySelector(
-    '.dvdjs-title-unavailable__heading',
+    '.dvd-menu-archive-title-unavailable__heading',
   ) as HTMLElement;
   const body = el.querySelector(
-    '.dvdjs-title-unavailable__body',
+    '.dvd-menu-archive-title-unavailable__body',
   ) as HTMLElement;
   const btn = el.querySelector(
-    '.dvdjs-title-unavailable__btn',
+    '.dvd-menu-archive-title-unavailable__btn',
   ) as HTMLButtonElement;
 
   heading.textContent = TITLE_UNAVAILABLE_HEADING;
@@ -626,7 +626,7 @@ export function showTitleUnavailableOverlay(
     try {
       opts.onDismiss?.();
     } catch (e) {
-      console.warn('DVD.js title-unavailable dismiss failed', e);
+      console.warn('dvd-menu-archive title-unavailable dismiss failed', e);
     }
   };
 
@@ -670,8 +670,8 @@ export function hideTitleUnavailableOverlay(
 
   const root = resolveTitleUnavailableRoot(host);
   const el =
-    (root.querySelector('.dvdjs-title-unavailable') as HTMLElement | null) ||
-    (host.querySelector('.dvdjs-title-unavailable') as HTMLElement | null);
+    (root.querySelector('.dvd-menu-archive-title-unavailable') as HTMLElement | null) ||
+    (host.querySelector('.dvd-menu-archive-title-unavailable') as HTMLElement | null);
   if (el) {
     el.hidden = true;
     el.style.display = 'none';
@@ -744,7 +744,7 @@ export function scheduleMenuPostAfterStill(
         try {
           fn();
         } catch (e) {
-          console.warn('DVD.js menu post failed', e);
+          console.warn('dvd-menu-archive menu post failed', e);
         }
       }
     }, stillTime * 1000);
@@ -754,6 +754,6 @@ export function scheduleMenuPostAfterStill(
   try {
     post();
   } catch (e) {
-    console.warn('DVD.js menu post failed', e);
+    console.warn('dvd-menu-archive menu post failed', e);
   }
 }

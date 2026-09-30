@@ -94,6 +94,28 @@ export function hliOffsetSecFromNav(nav: NavPtsLike): number {
 }
 
 /**
+ * Seconds from cell playback start to HLI enable — cell-local, not absolute PTS
+ * minus IFO concat startSec (those clocks disagree).
+ *
+ * Prefer (hli_s_ptm − first cell VOBU PTS) / 90000; fall back to HLI offset
+ * within the highlight VOBU when the cell-start NAV is missing.
+ */
+export function hliDelaySecFromCell(
+  cellStartNav: NavPtsLike | null | undefined,
+  highlightNav: NavPtsLike | null | undefined,
+): number {
+  const hli = highlightNav ? hliStartPts(highlightNav) : null;
+  const cellPts = cellStartNav ? vobuStartPts(cellStartNav) : null;
+  if (hli != null && cellPts != null) {
+    return Math.max(0, (hli - cellPts) / 90000);
+  }
+  if (highlightNav) {
+    return hliOffsetSecFromNav(highlightNav);
+  }
+  return 0;
+}
+
+/**
  * Pick the best NAV for stills/buttons: first in [start, last] with buttons,
  * preferring the earliest sector at/after HLI when possible.
  */

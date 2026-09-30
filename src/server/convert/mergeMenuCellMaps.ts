@@ -7,6 +7,7 @@ export const MENU_CELL_PRESERVE_KEYS = [
   'buttons',
   'hli_s_ptm',
   'hli_e_ptm',
+  'hliDelaySec',
   'spu',
   'spuSelect',
   'spuActivate',

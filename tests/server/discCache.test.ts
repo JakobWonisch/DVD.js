@@ -7,9 +7,11 @@ import { promisify } from 'node:util';
 
 import {
   CACHE_TTL_MS,
+  CONVERTING_STALE_MS,
   archiveHasRequiredFiles,
   archivePath,
   beginDiscConvert,
+  clearStaleConvertingMarker,
   coverSidecarPath,
   endDiscConvert,
   ensureDiscReady,
@@ -27,7 +29,7 @@ import {
 const execFile = promisify(child_process.execFile);
 
 function makeTempWebFolder(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-cache-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'dvd-menu-archive-cache-'));
 }
 
 function seedDisc(webFolder: string, discId: string): string {
@@ -132,12 +134,31 @@ describe('convert-in-progress guard', () => {
     beginDiscConvert(webFolder, discId);
     expect(ensureDiscReady(webFolder, discId)).toBe('ready');
 
-    var marker = path.join(webFolder, discId, '.dvdjs-accessed');
+    var marker = path.join(webFolder, discId, '.dvd-menu-archive-accessed');
     fs.writeFileSync(marker, String(Date.now() - CACHE_TTL_MS - 1000) + '\n');
     expect(evictExpiredDiscCache(webFolder)).toEqual([]);
     expect(isDiscReady(webFolder, discId)).toBe(true);
 
     endDiscConvert(webFolder, discId);
+    fs.rmSync(webFolder, { recursive: true, force: true });
+  });
+
+  it('clears a stale converting marker so ensure can extract again', async () => {
+    var webFolder = makeTempWebFolder();
+    var discId = 'StaleConvert';
+    seedDisc(webFolder, discId);
+    await packDiscArchive(webFolder, discId);
+    beginDiscConvert(webFolder, discId);
+    var marker = path.join(webFolder, discId, '.dvd-menu-archive-converting');
+    fs.writeFileSync(
+      marker,
+      String(Date.now() - CONVERTING_STALE_MS - 1000) + '\n',
+    );
+    expect(clearStaleConvertingMarker(webFolder, discId)).toBe(true);
+    expect(isDiscConverting(webFolder, discId)).toBe(false);
+    expect(ensureDiscReady(webFolder, discId)).toBe('decompressing');
+    expect(await waitUntilDiscReady(webFolder, discId)).toBe('ready');
+
     fs.rmSync(webFolder, { recursive: true, force: true });
   });
 });
@@ -203,11 +224,11 @@ describe('ensureDiscReady', () => {
     seedDisc(webFolder, discId);
     await packDiscArchive(webFolder, discId);
     await waitUntilDiscReady(webFolder, discId);
-    fs.unlinkSync(path.join(webFolder, discId, '.dvdjs-archive-mtime'));
+    fs.unlinkSync(path.join(webFolder, discId, '.dvd-menu-archive-archive-mtime'));
 
     expect(ensureDiscReady(webFolder, discId)).toBe('ready');
     expect(
-      fs.existsSync(path.join(webFolder, discId, '.dvdjs-archive-mtime')),
+      fs.existsSync(path.join(webFolder, discId, '.dvd-menu-archive-archive-mtime')),
     ).toBe(true);
     expect(fs.readFileSync(path.join(webFolder, discId, 'vm.js'), 'utf8')).toBe(
       '// vm\n',
@@ -231,7 +252,7 @@ describe('ensureDiscReady', () => {
 
     // Drop write bits on the extracted folder (owner still readable).
     var dir = path.join(webFolder, discId);
-    fs.unlinkSync(path.join(dir, '.dvdjs-accessed'));
+    fs.unlinkSync(path.join(dir, '.dvd-menu-archive-accessed'));
     fs.chmodSync(dir, 0o555);
 
     expect(ensureDiscReady(webFolder, discId)).toBe('ready');
@@ -250,7 +271,7 @@ describe('evictExpiredDiscCache', () => {
     await packDiscArchive(webFolder, discId);
     await waitUntilDiscReady(webFolder, discId);
 
-    var marker = path.join(webFolder, discId, '.dvdjs-accessed');
+    var marker = path.join(webFolder, discId, '.dvd-menu-archive-accessed');
     fs.writeFileSync(marker, String(Date.now() - CACHE_TTL_MS - 1000) + '\n');
 
     var removed = evictExpiredDiscCache(webFolder);
@@ -265,7 +286,7 @@ describe('evictExpiredDiscCache', () => {
     var webFolder = makeTempWebFolder();
     var discId = 'Legacy';
     seedDisc(webFolder, discId);
-    var marker = path.join(webFolder, discId, '.dvdjs-accessed');
+    var marker = path.join(webFolder, discId, '.dvd-menu-archive-accessed');
     fs.writeFileSync(marker, String(Date.now() - CACHE_TTL_MS - 1000) + '\n');
 
     expect(evictExpiredDiscCache(webFolder)).toEqual([]);

@@ -91,7 +91,7 @@ export function ensureTitleStubMenu(
   if (!menu) {
     menu = document.createElement('x-menu') as HTMLElement;
     menu.id = id;
-    menu.classList.add('dvdjs-title-stub');
+    menu.classList.add('dvd-menu-archive-title-stub');
     host.appendChild(menu);
   }
 
@@ -123,11 +123,11 @@ export function ensureTitleStubMenu(
 
   // Quiet banner
   let banner = menu.querySelector(
-    '.dvdjs-title-stub__banner',
+    '.dvd-menu-archive-title-stub__banner',
   ) as HTMLElement | null;
   if (!banner) {
     banner = document.createElement('p');
-    banner.className = 'dvdjs-title-stub__banner';
+    banner.className = 'dvd-menu-archive-title-stub__banner';
     menu.appendChild(banner);
   }
   banner.textContent = TITLE_STUB_BANNER;

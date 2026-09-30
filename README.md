@@ -75,21 +75,21 @@ Open [http://localhost:3000/](http://localhost:3000/).
 
 `config/app.json` is gitignored; keep `config/app.example.json` as the template.
 
-Precedence: environment → JSON file → defaults. Useful env vars: `DVDJS_CONFIG` (path to JSON), `DVDJS_WEB_FOLDER`, `DVDJS_PORT`, `DVDJS_EVICT_DISC_CACHE`, `DVDJS_MDNS`.
+Precedence: environment → JSON file → defaults. Useful env vars: `DVD_MENU_ARCHIVE_CONFIG` (path to JSON), `DVD_MENU_ARCHIVE_WEB_FOLDER`, `DVD_MENU_ARCHIVE_PORT`, `DVD_MENU_ARCHIVE_EVICT_DISC_CACHE`, `DVD_MENU_ARCHIVE_MDNS`. Legacy `DVDJS_*` names are still accepted.
 
 ### Docker (server host)
 
 The image runs the HTTP server only (`pnpm start:server`). Convert discs on a machine with ffmpeg (`pnpm convert`), then mount the folder that holds `<discId>.tar.gz` archives.
 
 ```bash
-cp .env.example .env          # set DVDJS_WEB_VOLUME + DVDJS_UID/GID (id -u / id -g)
+cp .env.example .env          # set DVD_MENU_ARCHIVE_WEB_VOLUME + DVD_MENU_ARCHIVE_UID/GID (id -u / id -g)
 docker compose up -d --build
 # → http://localhost:3000/
 ```
 
-The container must run as the **host owner** of the web volume (`DVDJS_UID` / `DVDJS_GID`). The image default user (`10001`) cannot write a typical bind mount, so `/api/disc/.../ensure` cannot extract `.tar.gz` archives.
+The container must run as the **host owner** of the web volume (`DVD_MENU_ARCHIVE_UID` / `DVD_MENU_ARCHIVE_GID`). The image default user (`10001`) cannot write a typical bind mount, so `/api/disc/.../ensure` cannot extract `.tar.gz` archives.
 
-`DVDJS_EVICT_DISC_CACHE` defaults to `true` in Compose (good for servers). To use a mounted JSON file instead of env, set `DVDJS_CONFIG=/config/app.json` and uncomment the config volume in `compose.yaml`.
+`DVD_MENU_ARCHIVE_EVICT_DISC_CACHE` defaults to `true` in Compose (good for servers). To use a mounted JSON file instead of env, set `DVD_MENU_ARCHIVE_CONFIG=/config/app.json` and uncomment the config volume in `compose.yaml`.
 
 ## Scripts
 

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadJsonFile } from './server/utils/loadJson.js';
+import { ENV_PREFIX, envName, envRaw } from './projectId.js';
 
 export type AppConfig = {
   webFolder: string;
@@ -14,7 +15,7 @@ export type AppConfig = {
   evictDiscCache?: boolean;
   /**
    * Advertise the HTTP server on the LAN via mDNS. Default true for local
-   * play; disable in Docker / remote hosts (`DVDJS_MDNS=0`).
+   * play; disable in Docker / remote hosts (`DVD_MENU_ARCHIVE_MDNS=0`).
    */
   mdns?: boolean;
 };
@@ -29,16 +30,16 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   mdns: true,
 };
 
-function envBool(name: string): boolean | undefined {
-  var raw = process.env[name];
+function envBool(suffix: string): boolean | undefined {
+  var raw = envRaw(suffix);
   if (raw === undefined || raw === '') {
     return undefined;
   }
   return /^(1|true|yes|on)$/i.test(raw);
 }
 
-function envInt(name: string): number | undefined {
-  var raw = process.env[name];
+function envInt(suffix: string): number | undefined {
+  var raw = envRaw(suffix);
   if (raw === undefined || raw === '') {
     return undefined;
   }
@@ -47,11 +48,11 @@ function envInt(name: string): number | undefined {
 }
 
 /**
- * Resolve JSON config path: `DVDJS_CONFIG` (absolute or cwd-relative), else
- * repo `config/app.json` when it exists.
+ * Resolve JSON config path: `DVD_MENU_ARCHIVE_CONFIG` (or legacy `DVDJS_CONFIG`),
+ * else repo `config/app.json` when it exists.
  */
 export function resolveAppConfigPath(): string | null {
-  var fromEnv = process.env.DVDJS_CONFIG;
+  var fromEnv = envRaw('CONFIG');
   if (fromEnv) {
     return isAbsolute(fromEnv) ? fromEnv : join(process.cwd(), fromEnv);
   }
@@ -62,37 +63,39 @@ export function resolveAppConfigPath(): string | null {
 /**
  * Load app config. Precedence: environment → JSON file → defaults.
  *
- * Env keys: `DVDJS_CONFIG`, `DVDJS_WEB_FOLDER`, `DVDJS_PORT` (or
- * `DVDJS_STATIC_SERVER_PORT`), `DVDJS_EVICT_DISC_CACHE`, `DVDJS_MDNS`.
+ * Env keys (prefer `DVD_MENU_ARCHIVE_*`; `DVDJS_*` still accepted):
+ * `CONFIG`, `WEB_FOLDER`, `PORT` (or `STATIC_SERVER_PORT`),
+ * `EVICT_DISC_CACHE`, `MDNS`.
  */
 export function loadAppConfig(): AppConfig {
   var configPath = resolveAppConfigPath();
   var fileCfg: Partial<AppConfig> = {};
   if (configPath) {
     if (!fs.existsSync(configPath)) {
-      throw new Error('DVDJS_CONFIG points to a missing file: ' + configPath);
+      throw new Error(
+        envName('CONFIG') + ' points to a missing file: ' + configPath,
+      );
     }
     fileCfg = loadJsonFile<Partial<AppConfig>>(configPath);
   }
 
   var webFolder =
-    process.env.DVDJS_WEB_FOLDER ||
+    envRaw('WEB_FOLDER') ||
     fileCfg.webFolder ||
     APP_CONFIG_DEFAULTS.webFolder;
 
   var staticServerPort =
-    envInt('DVDJS_PORT') ??
-    envInt('DVDJS_STATIC_SERVER_PORT') ??
+    envInt('PORT') ??
+    envInt('STATIC_SERVER_PORT') ??
     fileCfg.staticServerPort ??
     APP_CONFIG_DEFAULTS.staticServerPort;
 
   var evictDiscCache =
-    envBool('DVDJS_EVICT_DISC_CACHE') ??
+    envBool('EVICT_DISC_CACHE') ??
     fileCfg.evictDiscCache ??
     APP_CONFIG_DEFAULTS.evictDiscCache;
 
-  var mdns =
-    envBool('DVDJS_MDNS') ?? fileCfg.mdns ?? APP_CONFIG_DEFAULTS.mdns;
+  var mdns = envBool('MDNS') ?? fileCfg.mdns ?? APP_CONFIG_DEFAULTS.mdns;
 
   return {
     webFolder: webFolder,
@@ -104,3 +107,6 @@ export function loadAppConfig(): AppConfig {
 
 const appConfig = loadAppConfig();
 export default appConfig;
+
+// Re-export so callers/docs can mention the prefix without hard-coding.
+export { ENV_PREFIX };

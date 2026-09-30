@@ -312,25 +312,36 @@ function findHighlightNearCellEnd(
   startSector: number,
   lastSector: number,
 ): HighlightNavHit | null {
-  // Sample backward from the end: try every ~N sectors for a NAV with buttons.
+  // Dense scan of the last ~2–3 minutes of packs (feature end-credits prompts
+  // often sit only here). Coarse sampling previously skipped the HLI VOBU and
+  // classified interactive PGCs as silent skip stubs.
   const span = lastSector - startSector;
-  const step = Math.max(1, Math.floor(span / 64));
-  for (let s = lastSector; s >= startSector; s -= step) {
+  const denseWindow = Math.min(span, 2500);
+  const denseStart = Math.max(startSector, lastSector - denseWindow);
+  for (let s = lastSector; s >= denseStart; s--) {
     const nav = readNavAtLogicalSector(extents, s);
     if (nav && btnNs(nav) > 0) {
-      // Walk forward from this hit's VOBU start if we landed mid-cell.
       return { sector: s, nav };
     }
-    // Also try exact sector in case step skipped the HLI pack.
-    if (step > 1) {
-      for (let d = 0; d < Math.min(step, 8); d++) {
-        const t = s - d;
-        if (t < startSector) {
-          break;
-        }
-        const n2 = readNavAtLogicalSector(extents, t);
-        if (n2 && btnNs(n2) > 0) {
-          return { sector: t, nav: n2 };
+  }
+  // Remainder of the cell: coarser backward sample in case HLI is mid-feature.
+  if (denseStart > startSector) {
+    const step = Math.max(1, Math.floor((denseStart - startSector) / 64));
+    for (let s = denseStart - 1; s >= startSector; s -= step) {
+      const nav = readNavAtLogicalSector(extents, s);
+      if (nav && btnNs(nav) > 0) {
+        return { sector: s, nav };
+      }
+      if (step > 1) {
+        for (let d = 0; d < Math.min(step, 8); d++) {
+          const t = s - d;
+          if (t < startSector) {
+            break;
+          }
+          const n2 = readNavAtLogicalSector(extents, t);
+          if (n2 && btnNs(n2) > 0) {
+            return { sector: t, nav: n2 };
+          }
         }
       }
     }

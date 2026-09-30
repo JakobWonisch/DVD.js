@@ -132,7 +132,7 @@ function advertiseService() {
     service.start();
   } catch (err) {
     console.warn(
-      'mDNS advertise failed (set DVDJS_MDNS=0 to silence):',
+      'mDNS advertise failed (set DVD_MENU_ARCHIVE_MDNS=0 to silence):',
       err instanceof Error ? err.message : err,
     );
   }

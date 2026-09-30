@@ -457,8 +457,8 @@ footer {
 }
 
 /* Debug: force visible hitboxes even when btn-spu hides them. */
-x-video.dvdjs-debug-hitboxes input[type='button'].btn,
-x-video.dvdjs-debug-hitboxes input[type='button'].btn.btn-spu {
+x-video.dvd-menu-archive-debug-hitboxes input[type='button'].btn,
+x-video.dvd-menu-archive-debug-hitboxes input[type='button'].btn.btn-spu {
   opacity: 1 !important;
   border: 2px solid #00e676 !important;
   box-shadow: none !important;
@@ -477,10 +477,10 @@ x-video.dvdjs-debug-hitboxes input[type='button'].btn.btn-spu {
  * Current D-pad / HL_BTNN selection.
  * Prefer [data-selected] (set by host) — Solid's class= binding can wipe .selected.
  */
-x-video.dvdjs-debug-hitboxes input[type='button'].btn[data-selected='1'],
-x-video.dvdjs-debug-hitboxes input[type='button'].btn.btn-spu[data-selected='1'],
-x-video.dvdjs-debug-hitboxes input[type='button'].btn.selected,
-x-video.dvdjs-debug-hitboxes input[type='button'].btn.btn-spu.selected {
+x-video.dvd-menu-archive-debug-hitboxes input[type='button'].btn[data-selected='1'],
+x-video.dvd-menu-archive-debug-hitboxes input[type='button'].btn.btn-spu[data-selected='1'],
+x-video.dvd-menu-archive-debug-hitboxes input[type='button'].btn.selected,
+x-video.dvd-menu-archive-debug-hitboxes input[type='button'].btn.btn-spu.selected {
   border-color: #ffea00 !important;
   background: rgba(255, 234, 0, 0.28) !important;
   color: #ffea00 !important;
@@ -582,7 +582,7 @@ input[type='button'].btn.btn-spu.selected {
   box-shadow: none;
 }
 
-.dvdjs-title-unavailable {
+.dvd-menu-archive-title-unavailable {
   position: absolute;
   inset: 0;
   display: flex;
@@ -598,11 +598,11 @@ input[type='button'].btn.btn-spu.selected {
   box-sizing: border-box;
 }
 
-.dvdjs-title-unavailable[hidden] {
+.dvd-menu-archive-title-unavailable[hidden] {
   display: none !important;
 }
 
-.dvdjs-title-unavailable__card {
+.dvd-menu-archive-title-unavailable__card {
   max-width: 22rem;
   padding: 1.35rem 1.5rem 1.25rem;
   background: rgba(18, 18, 18, 0.96);
@@ -611,20 +611,20 @@ input[type='button'].btn.btn-spu.selected {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
-.dvdjs-title-unavailable__heading {
+.dvd-menu-archive-title-unavailable__heading {
   margin: 0 0 0.55rem;
   font-size: 1.15rem;
   font-weight: 650;
   letter-spacing: 0.01em;
 }
 
-.dvdjs-title-unavailable__body {
+.dvd-menu-archive-title-unavailable__body {
   margin: 0 0 1.1rem;
   font-size: 0.95rem;
   color: rgba(255, 255, 255, 0.82);
 }
 
-.dvdjs-title-unavailable__btn {
+.dvd-menu-archive-title-unavailable__btn {
   appearance: none;
   border: 1px solid #ddd;
   background: #f5f5f5;
@@ -635,17 +635,17 @@ input[type='button'].btn.btn-spu.selected {
   cursor: pointer;
 }
 
-.dvdjs-title-unavailable__btn:hover {
+.dvd-menu-archive-title-unavailable__btn:hover {
   background: #fff;
 }
 
-.dvdjs-title-unavailable__btn:focus-visible {
+.dvd-menu-archive-title-unavailable__btn:focus-visible {
   outline: 2px solid #fc0;
   outline-offset: 2px;
 }
 
 /* Interactive title stub (omitted title with end-of-PGC buttons). */
-x-menu.dvdjs-title-stub {
+x-menu.dvd-menu-archive-title-stub {
   position: absolute;
   inset: 0;
   display: flex;
@@ -655,7 +655,7 @@ x-menu.dvdjs-title-stub {
   background: #000;
 }
 
-x-menu.dvdjs-title-stub .menu-still {
+x-menu.dvd-menu-archive-title-stub .menu-still {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -663,8 +663,8 @@ x-menu.dvdjs-title-stub .menu-still {
   object-fit: contain;
 }
 
-x-menu.dvdjs-title-stub__banner,
-.dvdjs-title-stub__banner {
+x-menu.dvd-menu-archive-title-stub__banner,
+.dvd-menu-archive-title-stub__banner {
   position: absolute;
   left: 0;
   right: 0;
@@ -679,7 +679,7 @@ x-menu.dvdjs-title-stub__banner,
   z-index: 2;
 }
 
-.dvdjs-start-overlay {
+.dvd-menu-archive-start-overlay {
   position: absolute;
   inset: 0;
   z-index: 25;
@@ -695,7 +695,7 @@ x-menu.dvdjs-title-stub__banner,
   box-sizing: border-box;
 }
 
-.dvdjs-start-overlay__btn {
+.dvd-menu-archive-start-overlay__btn {
   appearance: none;
   border: 1px solid #ddd;
   background: #f5f5f5;
@@ -706,18 +706,18 @@ x-menu.dvdjs-title-stub__banner,
   cursor: pointer;
 }
 
-.dvdjs-start-overlay__btn:hover {
+.dvd-menu-archive-start-overlay__btn:hover {
   background: #fff;
 }
 
-.dvdjs-start-overlay__hint {
+.dvd-menu-archive-start-overlay__hint {
   margin: 0;
   max-width: 22rem;
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.8);
 }
 
-.dvdjs-menu-video {
+.dvd-menu-archive-menu-video {
   pointer-events: none;
 }
 
@@ -726,7 +726,7 @@ x-menu.dvdjs-title-stub__banner,
  * z-index 0 with video: later in DOM so it covers the WebM; menu stills (z-index 1)
  * and buttons sit above. Never leave the stage without a painted layer.
  */
-x-video > canvas.dvdjs-menu-hold {
+x-video > canvas.dvd-menu-archive-menu-hold {
   position: absolute;
   left: 0;
   top: 0;
@@ -736,7 +736,7 @@ x-video > canvas.dvdjs-menu-hold {
   pointer-events: none;
 }
 
-x-video > canvas.dvdjs-menu-hold[hidden] {
+x-video > canvas.dvd-menu-archive-menu-hold[hidden] {
   display: none !important;
 }
 
@@ -748,14 +748,14 @@ x-video > video {
 }
 
 /* Title WebMs sit under the absolute menu-hold canvas unless stacked above it. */
-x-video > video:not(.dvdjs-menu-video) {
+x-video > video:not(.dvd-menu-archive-menu-video) {
   position: relative;
   z-index: 1;
 }
 
 /* Author `display:block` would otherwise override the hidden attribute. */
 x-video > video[hidden],
-.dvdjs-menu-video[hidden],
+.dvd-menu-archive-menu-video[hidden],
 x-video > video:not([src]),
 x-video > video[src=''] {
   display: none !important;

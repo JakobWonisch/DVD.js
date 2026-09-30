@@ -158,7 +158,7 @@ function buildTag(metadata) {
     return (
       '<video id="menu-video-' +
       id +
-      '" class="dvdjs-menu-video" src="' +
+      '" class="dvd-menu-archive-menu-video" src="' +
       videos.index[0] +
       '" preload="auto" loop="false" hidden></video>'
     );

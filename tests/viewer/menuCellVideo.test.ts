@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  isLegacyConcatMenuWebm,
   menuCellVideoUrl,
   menuMotionPlaybackWindow,
   resolveMenuCellVideoUrl,
@@ -12,21 +11,11 @@ describe('menuCellVideoUrl', () => {
   });
 });
 
-describe('isLegacyConcatMenuWebm', () => {
-  it('detects domain concat files', () => {
-    expect(isLegacyConcatMenuWebm('/Shrek/VIDEO_TS.webm')).toBe(true);
-    expect(isLegacyConcatMenuWebm('/Shrek/VTS_01_0.webm')).toBe(true);
-    expect(isLegacyConcatMenuWebm('/Shrek/menu-1-2-19.webm')).toBe(false);
-    expect(isLegacyConcatMenuWebm(null)).toBe(false);
-  });
-});
-
 describe('resolveMenuCellVideoUrl', () => {
   it('prefers explicit opts.video', () => {
     expect(
       resolveMenuCellVideoUrl(
         { video: '/d/menu-0-1-1.webm', domain: 0, cellID: 1, vobID: 1 },
-        { currentSrc: '/d/VIDEO_TS.webm' },
       ),
     ).toBe('/d/menu-0-1-1.webm');
   });
@@ -39,44 +28,32 @@ describe('resolveMenuCellVideoUrl', () => {
           domainMeta: {
             menuCell: { '2': { '19': { video: '/d/menu-1-2-19.webm' } } },
           },
-          currentSrc: '/d/VTS_01_0.webm',
         },
       ),
     ).toBe('/d/menu-1-2-19.webm');
   });
 
-  it('stays on legacy concat seek when no per-cell stamp', () => {
+  it('returns null when nothing is stamped', () => {
     expect(
       resolveMenuCellVideoUrl(
         { domain: 0, cellID: 1, vobID: 1, startSec: 0, endSec: 2 },
-        { baseDir: '/d/', currentSrc: '/d/VIDEO_TS.webm' },
+        { baseDir: '/d/' },
       ),
     ).toBeNull();
   });
 
-  it('stays on legacy concat when index lists VTS_*_0 even if currentSrc is empty', () => {
+  it('does not invent menu-*.webm when only some cells are stamped', () => {
     expect(
       resolveMenuCellVideoUrl(
-        { domain: 1, cellID: 2, vobID: 1 },
+        { domain: 0, cellID: 2, vobID: 1 },
         {
-          baseDir: '/Harry/',
-          currentSrc: '',
+          baseDir: '/d/',
           domainMeta: {
-            index: ['/Harry/VTS_01_0.webm'],
-            menuCell: { '2': { '1': { video: null } } },
+            menuCell: { '1': { '1': { video: '/d/menu-0-1-1.webm' } } },
           },
         },
       ),
     ).toBeNull();
-  });
-
-  it('constructs per-cell URL when domain video is not a concat archive', () => {
-    expect(
-      resolveMenuCellVideoUrl(
-        { domain: 0, cellID: 1, vobID: 3 },
-        { baseDir: '/d/', currentSrc: '' },
-      ),
-    ).toBe('/d/menu-0-1-3.webm');
   });
 });
 
@@ -91,12 +68,15 @@ describe('menuMotionPlaybackWindow', () => {
     expect(w.end).toBeCloseTo(21.8, 5);
   });
 
-  it('keeps absolute times for legacy concat', () => {
+  it('uses 0 end when per-cell duration is unknown', () => {
     expect(
-      menuMotionPlaybackWindow(
-        { startSec: 729.32, endSec: 751.12 },
-        null,
-      ),
-    ).toEqual({ start: 729.32, end: 751.12, perCell: false });
+      menuMotionPlaybackWindow({ startSec: 10, endSec: 10 }, '/d/menu-0-1-1.webm'),
+    ).toEqual({ start: 0, end: 0, perCell: true });
+  });
+
+  it('returns an empty window without a cell WebM', () => {
+    expect(
+      menuMotionPlaybackWindow({ startSec: 729.32, endSec: 751.12 }, null),
+    ).toEqual({ start: 0, end: 0, perCell: false });
   });
 });

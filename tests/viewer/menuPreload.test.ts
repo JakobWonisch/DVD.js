@@ -219,13 +219,13 @@ describe('imageHasPixels', () => {
 describe('preloadLinkedMenuAssets', () => {
   it('sets menu videos to preload=auto and loop=false without load()', () => {
     const video = {
-      className: 'dvdjs-menu-video',
+      className: 'dvd-menu-archive-menu-video',
       loop: true,
       preload: 'metadata',
       paused: true,
       readyState: 0,
       getAttribute: (name: string) =>
-        name === 'src' ? '/web/VTS_01_0.webm' : name === 'preload' ? 'metadata' : null,
+        name === 'src' ? '/web/menu-1-9-2.webm' : name === 'preload' ? 'metadata' : null,
       load: vi.fn(),
     };
 
@@ -250,7 +250,7 @@ describe('preloadLinkedMenuAssets', () => {
         if (sel === 'img.menu-still[src]') {
           return [still];
         }
-        if (sel === 'video.dvdjs-menu-video') {
+        if (sel === 'video.dvd-menu-archive-menu-video') {
           return [video];
         }
         return [];

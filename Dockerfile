@@ -35,15 +35,15 @@ FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production \
-    DVDJS_WEB_FOLDER=/data/web \
-    DVDJS_PORT=3000 \
-    DVDJS_EVICT_DISC_CACHE=true \
-    DVDJS_MDNS=0
+    DVD_MENU_ARCHIVE_WEB_FOLDER=/data/web \
+    DVD_MENU_ARCHIVE_PORT=3000 \
+    DVD_MENU_ARCHIVE_EVICT_DISC_CACHE=true \
+    DVD_MENU_ARCHIVE_MDNS=0
 
 RUN mkdir -p /data/web \
-  && groupadd --system --gid 10001 dvdjs \
-  && useradd --system --uid 10001 --gid dvdjs --home-dir /app --shell /usr/sbin/nologin dvdjs \
-  && chown dvdjs:dvdjs /data/web
+  && groupadd --system --gid 10001 dvd-menu-archive \
+  && useradd --system --uid 10001 --gid dvd-menu-archive --home-dir /app --shell /usr/sbin/nologin dvd-menu-archive \
+  && chown dvd-menu-archive:dvd-menu-archive /data/web
 
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
@@ -52,13 +52,13 @@ COPY --from=build /app/bin ./bin
 COPY --from=build /app/public ./public
 COPY --from=build /app/config/app.example.json ./config/app.example.json
 
-USER dvdjs
+USER dvd-menu-archive
 
 EXPOSE 3000
 
 VOLUME ["/data/web"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.DVDJS_PORT||3000)+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.DVD_MENU_ARCHIVE_PORT||process.env.DVDJS_PORT||3000)+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "./bin/http-server.js"]

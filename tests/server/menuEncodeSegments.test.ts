@@ -98,7 +98,7 @@ describe('buildMenuEncodeSegments', () => {
 
 describe('clipVobByteRange', () => {
   it('copies only the requested byte window', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvdjs-clip-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvd-menu-archive-clip-'));
     const src = path.join(dir, 'src.vob');
     const out = path.join(dir, 'out.vob');
     const buf = Buffer.alloc(10 * DVD_VIDEO_LB_LEN, 0);
