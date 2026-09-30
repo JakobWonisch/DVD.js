@@ -4,8 +4,10 @@
  * Default order when starting a disc: last selected (localStorage) → en → first
  * available IFO language unit on that disc.
  *
- * Single-LU discs with an on-disc language menu (Avatar EUR) need no host switcher —
- * the disc already offers Deutsch/English/… as menu buttons.
+ * Host toolbar LU picker is hidden for now (confused some discs); keep these
+ * helpers for auto-pick / setMenuLanguage. Single-LU discs with an on-disc
+ * language menu (Avatar EUR) need no host switcher — the disc already offers
+ * Deutsch/English/… as menu buttons.
  */
 
 import type { DiscMetadata } from '../types/metadata.js';

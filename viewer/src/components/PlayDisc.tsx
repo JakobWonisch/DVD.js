@@ -1,5 +1,4 @@
 import {
-  For,
   createEffect,
   createResource,
   createSignal,
@@ -13,15 +12,6 @@ import { VirtualRemote } from './VirtualRemote.js';
 import { AUTOPLAY_BLOCKED_EVENT, pageHasUserGesture, unlockDvdAudio } from '../host/autoplay.js';
 import { loadVm, startVm } from '../vm/loadVm.js';
 import type { DiscMetadata } from '../types/metadata.js';
-import {
-  currentOrDefaultMenuLang,
-  listDiscMenuLanguages,
-  menuLangLabel,
-  normalizeMenuLangCode,
-  packMenuLangSprm,
-  setDiscMenuLanguage,
-  setStoredMenuLang,
-} from '../host/menuLanguage.js';
 
 type PlayerHost = HTMLElement & {
   setDebugHitboxes?: (enabled: boolean) => void;
@@ -102,7 +92,6 @@ export const PlayDisc: Component = () => {
       localStorage.getItem('dvdjs-virtual-remote') === '1',
   );
   const [isFullscreen, setIsFullscreen] = createSignal(false);
-  const [menuLang, setMenuLang] = createSignal('en');
 
   createEffect(() => {
     const id = params.dvdId;
@@ -160,14 +149,6 @@ export const PlayDisc: Component = () => {
   });
 
   createEffect(() => {
-    const meta = metadata();
-    if (!meta) return;
-    // Re-resolve when VM becomes ready so g.lang wins after init.
-    void vmReady();
-    setMenuLang(currentOrDefaultMenuLang(meta));
-  });
-
-  createEffect(() => {
     const stage = stageEl();
     if (!stage) {
       return;
@@ -203,35 +184,6 @@ export const PlayDisc: Component = () => {
     unlockDvdAudio(host);
     setNeedsStart(false);
     startVm(host);
-  };
-
-  const menuLanguages = () => {
-    const meta = metadata();
-    return meta ? listDiscMenuLanguages(meta) : [];
-  };
-
-  const onLanguageChange = (lang: string) => {
-    const host = hostEl();
-    const code = normalizeMenuLangCode(lang.trim().toLowerCase());
-    if (!code) return;
-    setMenuLang(code);
-    setStoredMenuLang(code);
-    const g = window as any;
-    if (g && typeof g === 'object') {
-      g.lang = code;
-      if (g.sprm && typeof g.sprm === 'object') {
-        g.sprm.MENU_LANG = packMenuLangSprm(code);
-      }
-    }
-    // Before Start, only seed preference/lang — do not jump into menus.
-    if (!host || !vmReady() || needsStart()) {
-      return;
-    }
-    if (typeof host.setMenuLanguage === 'function') {
-      host.setMenuLanguage(code);
-    } else {
-      setDiscMenuLanguage(host, code);
-    }
   };
 
   return (
@@ -288,22 +240,6 @@ export const PlayDisc: Component = () => {
               />
               Debug button hitboxes
             </label>
-            <Show when={menuLanguages().length > 1}>
-              <label class="player-toolbar__lang">
-                <span class="player-toolbar__lang-label">Menu language</span>
-                <select
-                  class="player-toolbar__lang-select"
-                  value={menuLang()}
-                  onChange={(e) => onLanguageChange(e.currentTarget.value)}
-                >
-                  <For each={menuLanguages()}>
-                    {(lang) => (
-                      <option value={lang}>{menuLangLabel(lang)}</option>
-                    )}
-                  </For>
-                </select>
-              </label>
-            </Show>
             <label class="player-toolbar__debug">
               <input
                 type="checkbox"
