@@ -3,6 +3,7 @@ import {
   MENU_LANG_STORAGE_KEY,
   UNSPECIFIED_MENU_LANG,
   aliasUnspecifiedMenuLangs,
+  bridgeMenuLangBuckets,
   getStoredMenuLang,
   listDiscMenuLanguages,
   menuLangLabel,
@@ -126,6 +127,34 @@ describe('aliasUnspecifiedMenuLangs', () => {
     expect(g.MPGCIUT[0]['ÿÿ']).toBeUndefined();
     expect(g.MENU_TYPES[0].default[2].lang).toBe('default');
     expect(g.lang).toBe('default');
+  });
+});
+
+describe('bridgeMenuLangBuckets', () => {
+  it('aliases VMGM default ↔ VTS ISO LUs (Thief Lord)', () => {
+    const vmgm = { 1: { run: vi.fn() } };
+    const vtsEn = {
+      1: { cells: [{ still_time: 255 }], run: vi.fn() },
+    };
+    const rootEn = { domain: 1, lang: 'en', pgc: 1 };
+    const g: any = {
+      lang: 'default',
+      MPGCIUT: [
+        { default: vmgm },
+        { en: vtsEn, nl: {}, de: {} },
+      ],
+      MENU_TYPES: [
+        { default: [null, null, { domain: 0, lang: 'default', pgc: 1 }] },
+        { en: [null, null, null, rootEn], nl: [], de: [] },
+      ],
+    };
+    bridgeMenuLangBuckets(g);
+    expect(g.MPGCIUT[0].en).toBe(vmgm);
+    expect(g.MPGCIUT[1].default).toBe(vtsEn);
+    expect(g.MENU_TYPES[1].default[3]).toBe(rootEn);
+    // JumpSS-style access with either lang must resolve.
+    expect(g.MENU_TYPES[1]['default'][3].lang).toBe('en');
+    expect(g.MPGCIUT[0]['en']).toBeDefined();
   });
 });
 

@@ -7,6 +7,7 @@ import {
   applyMenuButtonGeometry,
   stampHitboxStylesFromStylesheet,
 } from './menuButtonHitboxes.js';
+import { runTitlePgcPostWithLangFallback } from './titleUnavailable.js';
 
 export const TITLE_UNAVAILABLE_MESSAGE =
   'This title was intentionally left out of this archive. Only menus were converted.';
@@ -98,10 +99,7 @@ export function showTitleUnavailable(
     if (pgcObj && typeof pgcObj.post === 'function') {
       hideTitleUnavailable(host);
       setTimeout(() => {
-        try {
-          pgcObj.post();
-        } catch (e) {
-          console.warn('dvd-menu-archive missing-title post failed', e);
+        if (!runTitlePgcPostWithLangFallback(g, () => pgcObj.post())) {
           host.onmenu?.({});
         }
       }, 0);

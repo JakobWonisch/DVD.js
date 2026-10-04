@@ -63,7 +63,12 @@ export type VmNavGlobals = {
   gprm?: number[];
 };
 
-import { domainMenuLangs, menuLangKeys, pickMenuLang } from './menuLanguage.js';
+import {
+  bridgeMenuLangBuckets,
+  domainMenuLangs,
+  menuLangKeys,
+  pickMenuLang,
+} from './menuLanguage.js';
 export { menuLangKeys, pickMenuLang };
 
 /**
@@ -77,6 +82,114 @@ export function alignLangForTitlePost(g: VmNavGlobals): void {
   if (!domainMenuLangs(g, langDomain).length) {
     g.lang = pickMenuLang(g, 0);
   }
+}
+
+/** Langs to try when title post() CallSS/JumpSS hits a missing LU bucket. */
+export function titlePostLangCandidates(g: VmNavGlobals): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (code?: string | null) => {
+    if (!code || seen.has(code)) {
+      return;
+    }
+    seen.add(code);
+    out.push(code);
+  };
+
+  const titleDomain = typeof g.domain === 'number' ? g.domain : 0;
+  // Title-domain first (Harry Potter CallSS VTSM Root).
+  add(pickMenuLang(g, titleDomain));
+  // Then VMGM (Thief Lord CallSS VMGM PGC while lang is still a VTS code).
+  add(pickMenuLang(g, 0));
+  add(g.lang);
+
+  const domainIndexes = new Set<number>([titleDomain, 0]);
+  if (Array.isArray(g.MPGCIUT)) {
+    for (let d = 0; d < g.MPGCIUT.length; d++) {
+      domainIndexes.add(d);
+    }
+  } else if (g.MPGCIUT && typeof g.MPGCIUT === 'object') {
+    for (const key of Object.keys(g.MPGCIUT)) {
+      const d = Number(key);
+      if (Number.isFinite(d)) {
+        domainIndexes.add(d);
+      }
+    }
+  }
+  for (const d of domainIndexes) {
+    for (const lang of domainMenuLangs(g, d)) {
+      add(lang);
+    }
+  }
+  return out;
+}
+
+/** Missing `MPGCIUT`/`MENU_TYPES` LU buckets throw TypeError (realm-safe check). */
+export function isMenuLangLookupError(err: unknown): boolean {
+  if (err == null || typeof err !== 'object') {
+    return false;
+  }
+  const name = String((err as { name?: unknown }).name || '');
+  const msg = String((err as { message?: unknown }).message || err);
+  const isType =
+    name === 'TypeError' ||
+    Object.prototype.toString.call(err) === '[object TypeError]' ||
+    (typeof TypeError !== 'undefined' && err instanceof TypeError);
+  if (!isType) {
+    return false;
+  }
+  // Firefox: "can't access property 3, MPGCIUT[0][lang] is undefined"
+  // Chromium: "Cannot read properties of undefined (reading '3')"
+  return (
+    /MPGCIUT|MENU_TYPES/i.test(msg) ||
+    /can't access property|Cannot read propert/i.test(msg)
+  );
+}
+
+/**
+ * Run title PGC post() (or onPost), retrying across menu language units when
+ * generated vm.js does `MPGCIUT[0][lang][…]` / `MENU_TYPES[…][lang][…]` and the
+ * active lang is missing from that domain. Covers existing archives without
+ * reconvert (The Thief Lord: VMGM `default` vs VTS `en`/`nl`/`de`).
+ *
+ * Returns true when post() completed without throwing.
+ */
+export function runTitlePgcPostWithLangFallback(
+  g: VmNavGlobals,
+  post: () => unknown,
+): boolean {
+  bridgeMenuLangBuckets(g);
+  const candidates = titlePostLangCandidates(g);
+  if (!candidates.length) {
+    alignLangForTitlePost(g);
+    try {
+      post();
+      return true;
+    } catch (e) {
+      console.warn('dvd-menu-archive title post failed', e);
+      return false;
+    }
+  }
+
+  let lastErr: unknown;
+  for (const lang of candidates) {
+    g.lang = lang;
+    try {
+      post();
+      return true;
+    } catch (e) {
+      lastErr = e;
+      // Missing LU buckets are TypeErrors; other failures are not lang-fixable.
+      if (!isMenuLangLookupError(e)) {
+        console.warn('dvd-menu-archive title post failed', e);
+        return false;
+      }
+    }
+  }
+  if (lastErr != null) {
+    console.warn('dvd-menu-archive title post failed', lastErr);
+  }
+  return false;
 }
 
 /** Clear the menu-button latch once the user is back in a real menu. */
@@ -332,13 +445,9 @@ export function tryAutoSkipMissingTitle(
   visited.add(key);
 
   setTimeout(() => {
-    // post() looks up MENU_TYPES[domain][lang] with the *current* title
-    // domain still set (Harry Potter: CallSS Root via MENU_TYPES[1][lang][3]).
-    alignLangForTitlePost(g);
-    try {
-      pgcObj.post();
-    } catch (e) {
-      console.warn('dvd-menu-archive missing-title post failed', e);
+    // post() may CallSS VTSM (Harry Potter MENU_TYPES[1][lang]) or VMGM
+    // (Thief Lord MPGCIUT[0][lang]) — retry across LUs when buckets disagree.
+    if (!runTitlePgcPostWithLangFallback(g, () => pgcObj.post())) {
       host._dvdjsMissingTitleBroken = true;
       // FP auto-skip: land on a real menu when possible. Dialog only if escape
       // cannot find one (so the user is not stuck on a black intro cell).
@@ -384,10 +493,27 @@ function runMenu(g: VmNavGlobals, menu: MenuRef): boolean {
   if (!isRunnableMenu(g, menu)) {
     return false;
   }
+  bridgeMenuLangBuckets(g);
+  const pgcObj = g.MPGCIUT![menu.domain][menu.lang][menu.pgc];
   g.domain = menu.domain;
-  g.lang = menu.lang;
-  g.MPGCIUT![menu.domain][menu.lang][menu.pgc].run();
-  return true;
+  const candidates = [
+    menu.lang,
+    ...titlePostLangCandidates({ ...g, lang: menu.lang }),
+  ].filter((lang, i, arr) => lang && arr.indexOf(lang) === i);
+
+  for (const lang of candidates) {
+    g.lang = lang;
+    try {
+      pgcObj.run();
+      return true;
+    } catch (e) {
+      if (!isMenuLangLookupError(e)) {
+        console.warn('dvd-menu-archive menu run failed', e);
+        return false;
+      }
+    }
+  }
+  return false;
 }
 
 
@@ -468,6 +594,7 @@ export function escapeToVmgmTitleMenu(
   g: VmNavGlobals = typeof window !== 'undefined' ? (window as any) : {},
 ): boolean {
   try {
+    bridgeMenuLangBuckets(g);
     const types = g.MENU_TYPES as
       | Array<Record<string, Array<MenuRef | undefined>> | undefined>
       | undefined;

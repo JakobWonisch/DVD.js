@@ -60,6 +60,7 @@ const MenuOverlays: Component<{ cell: MenuCellMeta }> = (props) => {
         <img
           class="menu-spu"
           src={props.cell.spu!}
+          loading="lazy"
           alt=""
           aria-hidden="true"
         />
@@ -71,6 +72,7 @@ const MenuOverlays: Component<{ cell: MenuCellMeta }> = (props) => {
             data-id={i()}
             hidden
             src={src}
+            loading="lazy"
             alt=""
             aria-hidden="true"
           />
@@ -83,6 +85,7 @@ const MenuOverlays: Component<{ cell: MenuCellMeta }> = (props) => {
             data-id={i()}
             hidden
             src={src}
+            loading="lazy"
             alt=""
             aria-hidden="true"
           />
@@ -138,7 +141,12 @@ const DomainMenus: Component<{ domain: DomainMetadata; id: number }> = (
                     !(Array.isArray(menu.cells) && menu.cells.length > 1)
                   }
                 >
-                  <img class="menu-still" src={cell()!.still!} alt="" />
+                  <img
+                    class="menu-still"
+                    src={cell()!.still!}
+                    loading="lazy"
+                    alt=""
+                  />
                 </Show>
                 <Show
                   when={Array.isArray(menu.cells) && menu.cells.length > 1}
@@ -194,7 +202,7 @@ const DomainVideos: Component<{ domain: DomainMetadata; id: number }> = (
           id={`menu-video-${props.id}`}
           class="dvd-menu-archive-menu-video"
           src={menuSrc()}
-          preload="auto"
+          preload="none"
           loop={false}
           hidden
         />
@@ -203,6 +211,7 @@ const DomainVideos: Component<{ domain: DomainMetadata; id: number }> = (
         <video
           id={`video-${props.id}`}
           src={titleSrc()}
+          preload="none"
           attr:data-title-pgc-media={
             props.domain.titlePgcMedia
               ? JSON.stringify(props.domain.titlePgcMedia)

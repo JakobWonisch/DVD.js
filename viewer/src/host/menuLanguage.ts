@@ -319,3 +319,62 @@ export function aliasUnspecifiedMenuLangs(g: VmLangGlobals): void {
     g.lang = normalizeMenuLangCode(g.lang);
   }
 }
+
+/** Actual LU key to reuse when bridging missing codes onto this domain entry. */
+function primaryMenuLangKey(rec: Record<string, unknown>): string | null {
+  const keys = Object.keys(rec).filter(
+    (k) => !/^\d+$/.test(k) && rec[k] != null && typeof rec[k] === 'object',
+  );
+  if (!keys.length) {
+    return null;
+  }
+  const en = keys.find((k) => normalizeMenuLangCode(k) === 'en');
+  if (en) {
+    return en;
+  }
+  const iso = keys.find(
+    (k) => normalizeMenuLangCode(k) !== UNSPECIFIED_MENU_LANG,
+  );
+  return iso || keys[0];
+}
+
+/**
+ * Bridge mismatched menu LUs across domains on a loaded vm.js.
+ *
+ * The Thief Lord: VMGM is unspecified (`default`) while VTS Roots are
+ * `en`/`nl`/`de`. Generated JumpSS/CallSS uses one global `lang`, so
+ * `MENU_TYPES[1][lang]` / `MPGCIUT[0][lang]` throw when the codes disagree.
+ * Alias missing keys onto that domain's primary bucket (same object) so
+ * existing archives recover without reconvert.
+ */
+export function bridgeMenuLangBuckets(g: VmLangGlobals): void {
+  aliasUnspecifiedMenuLangs(g);
+  const tables = [g.MPGCIUT, g.MENU_TYPES];
+  const allLangs = new Set<string>();
+  for (const table of tables) {
+    if (!Array.isArray(table)) continue;
+    for (const entry of table) {
+      for (const lang of menuLangKeys(entry)) {
+        allLangs.add(lang);
+      }
+    }
+  }
+  if (allLangs.size <= 1) {
+    return;
+  }
+
+  for (const table of tables) {
+    if (!Array.isArray(table)) continue;
+    for (const entry of table) {
+      if (!entry || typeof entry !== 'object') continue;
+      const rec = entry as Record<string, unknown>;
+      const primaryKey = primaryMenuLangKey(rec);
+      if (!primaryKey) continue;
+      const primaryBucket = rec[primaryKey];
+      for (const lang of allLangs) {
+        if (Object.prototype.hasOwnProperty.call(rec, lang)) continue;
+        rec[lang] = primaryBucket;
+      }
+    }
+  }
+}

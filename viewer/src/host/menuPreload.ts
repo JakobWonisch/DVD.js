@@ -73,6 +73,112 @@ export function preloadImageUrl(url: string): Promise<void> {
   });
 }
 
+/**
+ * Pause / demote other title <video>s so First Play WebMs are not starved by
+ * N parallel title fetches + hundreds of menu stills on cold disc mount.
+ */
+export function prioritizeTitleVideo(
+  host: ParentNode,
+  active: HTMLVideoElement,
+): void {
+  const nodes = host.querySelectorAll(
+    'video:not(.dvd-menu-archive-menu-video)',
+  );
+  for (let i = 0; i < nodes.length; i++) {
+    const video = nodes[i] as HTMLVideoElement;
+    if (video === active) {
+      video.preload = 'auto';
+      continue;
+    }
+    try {
+      video.pause();
+    } catch {
+      // ignore
+    }
+    if (video.preload !== 'none') {
+      video.preload = 'none';
+    }
+  }
+}
+
+export type WhenVideoReadyOpts = {
+  /** Cap how long we wait for HAVE_CURRENT_DATA / canplay. */
+  timeoutMs?: number;
+};
+
+/**
+ * Ensure a title/menu WebM has buffered enough to paint. Kicks preload=auto
+ * and load() when the element was mounted with preload=none.
+ * Returns false on error or timeout with no usable data.
+ */
+export function whenVideoReadyForPlay(
+  video: HTMLVideoElement | null | undefined,
+  opts: WhenVideoReadyOpts = {},
+): Promise<boolean> {
+  if (!video) {
+    return Promise.resolve(false);
+  }
+  const timeoutMs = opts.timeoutMs ?? 20_000;
+  const src =
+    video.getAttribute('src') || video.currentSrc || video.src || '';
+  if (!src) {
+    return Promise.resolve(false);
+  }
+  if (video.error) {
+    return Promise.resolve(false);
+  }
+  // HAVE_CURRENT_DATA (2) is enough to paint; HAVE_FUTURE_DATA (3) is nicer.
+  if (video.readyState >= 2) {
+    return Promise.resolve(true);
+  }
+
+  video.preload = 'auto';
+  const ns = video.networkState;
+  if (
+    ns === HTMLMediaElement.NETWORK_EMPTY ||
+    (ns === HTMLMediaElement.NETWORK_IDLE && video.readyState === 0)
+  ) {
+    try {
+      video.load();
+    } catch {
+      // ignore
+    }
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      video.removeEventListener('loadeddata', onReady);
+      video.removeEventListener('canplay', onReady);
+      video.removeEventListener('error', onError);
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const onReady = () => {
+      if (video.readyState >= 2) {
+        finish(true);
+      }
+    };
+    const onError = () => finish(false);
+    const timer = setTimeout(() => {
+      finish(video.readyState >= 2 && !video.error);
+    }, timeoutMs);
+    video.addEventListener('loadeddata', onReady);
+    video.addEventListener('canplay', onReady);
+    video.addEventListener('error', onError);
+    // Race: data may have arrived between the readyState check and listeners.
+    if (video.readyState >= 2) {
+      finish(true);
+    } else if (video.error) {
+      finish(false);
+    }
+  });
+}
+
 export type WhenImageReadyOpts = {
   /** Cap how long we wait; on timeout resolve false unless pixels already exist. */
   timeoutMs?: number;

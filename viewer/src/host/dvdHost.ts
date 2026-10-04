@@ -5,7 +5,7 @@ import {
   hideTitleUnavailableOverlay,
   restoreMenuResumeState,
   afterLanguageCopyrightPost,
-  alignLangForTitlePost,
+  runTitlePgcPostWithLangFallback,
   menuCellPrefersStillOnly,
   scheduleMenuPostAfterStill,
   shouldHoldAfterMenuMotion,
@@ -53,9 +53,11 @@ import {
   motionSegmentFinishAt,
   preloadImageUrl,
   preloadLinkedMenuAssets,
+  prioritizeTitleVideo,
   setMenuVideoSeekCover,
   stillCoverUrlFromMenu,
   whenImageReady,
+  whenVideoReadyForPlay,
 } from './menuPreload.js';
 import {
   menuMotionPlaybackWindow,
@@ -1879,6 +1881,11 @@ class XVideo extends HTMLElement implements XVideoElement {
     const video = entry.video;
     video.style.position = 'relative';
     video.style.zIndex = '1';
+    const playGen =
+      ((this as any)._dvdjsTitlePlayGen =
+        ((this as any)._dvdjsTitlePlayGen || 0) + 1);
+    const isCurrentTitlePlay = () =>
+      (this as any)._dvdjsTitlePlayGen === playGen;
 
     // Clear prior title end handlers.
     const prevEnded = (this as any)._dvdjsTitleEnded as
@@ -1895,28 +1902,14 @@ class XVideo extends HTMLElement implements XVideoElement {
     }
     (this as any)._dvdjsTitleEnded = null;
     (this as any)._dvdjsTitleTimeEnd = null;
+    if ((this as any)._dvdjsTitleStallWatchdog) {
+      clearInterval((this as any)._dvdjsTitleStallWatchdog);
+      (this as any)._dvdjsTitleStallWatchdog = null;
+    }
 
     const seekTo = startSec != null && Number.isFinite(startSec) ? startSec : 0;
     const finishAt =
       endSec != null && Number.isFinite(endSec) ? endSec : null;
-
-    const onMeta = () => {
-      video.removeEventListener('loadedmetadata', onMeta);
-      try {
-        video.currentTime = seekTo;
-      } catch {
-        // ignore
-      }
-    };
-    if (video.readyState >= 1) {
-      try {
-        video.currentTime = seekTo;
-      } catch {
-        // ignore
-      }
-    } else {
-      video.addEventListener('loadedmetadata', onMeta);
-    }
 
     let done = false;
     const finish = () => {
@@ -1924,6 +1917,10 @@ class XVideo extends HTMLElement implements XVideoElement {
         return;
       }
       done = true;
+      if ((this as any)._dvdjsTitleStallWatchdog) {
+        clearInterval((this as any)._dvdjsTitleStallWatchdog);
+        (this as any)._dvdjsTitleStallWatchdog = null;
+      }
       const endedFn = (this as any)._dvdjsTitleEnded;
       const timeFn = (this as any)._dvdjsTitleTimeEnd;
       if (endedFn) {
@@ -1942,12 +1939,7 @@ class XVideo extends HTMLElement implements XVideoElement {
       const stillTime = opts.still_time != null ? opts.still_time : 0;
       const post = () => {
         if (typeof opts.onPost === 'function') {
-          try {
-            alignLangForTitlePost(window as any);
-            opts.onPost();
-          } catch (e) {
-            console.warn('dvd-menu-archive title cell onPost failed', e);
-          }
+          runTitlePgcPostWithLangFallback(window as any, () => opts.onPost!());
         }
       };
       if (stillTime > 0 && stillTime < 255) {
@@ -1975,14 +1967,46 @@ class XVideo extends HTMLElement implements XVideoElement {
     }
 
     this.playlist.forEach((e, i) => {
-      e.video.style.display = i === this.videoIndex ? 'block' : 'none';
+      const on = i === this.videoIndex;
+      e.video.style.display = on ? 'block' : 'none';
+      e.video.hidden = !on;
     });
-    void playWithAutoplayFallback(video, this as AutoplayHost).then((ok) => {
+    prioritizeTitleVideo(this, video);
+
+    void (async () => {
+      await whenVideoReadyForPlay(video, { timeoutMs: 20_000 });
+      if (!isCurrentTitlePlay() || done) {
+        return;
+      }
+      try {
+        if (video.readyState >= 1) {
+          video.currentTime = seekTo;
+        } else {
+          const onMeta = () => {
+            video.removeEventListener('loadedmetadata', onMeta);
+            if (!isCurrentTitlePlay()) {
+              return;
+            }
+            try {
+              video.currentTime = seekTo;
+            } catch {
+              // ignore
+            }
+          };
+          video.addEventListener('loadedmetadata', onMeta);
+        }
+      } catch {
+        // ignore
+      }
+      const ok = await playWithAutoplayFallback(video, this as AutoplayHost);
+      if (!isCurrentTitlePlay() || done) {
+        return;
+      }
       if (!ok) {
         notifyAutoplayBlocked(this as AutoplayHost);
         finish();
       }
-    });
+    })();
   }
 
   playByIndex(videoIndex: number) {
@@ -2052,26 +2076,11 @@ class XVideo extends HTMLElement implements XVideoElement {
       pgc != null
         ? entry.titlePgcMedia.pgcTimeline[String(pgc)]
         : null;
-    if (timeline && Number.isFinite(timeline.startSec)) {
-      const seekTo = timeline.startSec;
-      const onMeta = () => {
-        video.removeEventListener('loadedmetadata', onMeta);
-        try {
-          video.currentTime = seekTo;
-        } catch {
-          // ignore
-        }
-      };
-      if (video.readyState >= 1) {
-        try {
-          video.currentTime = seekTo;
-        } catch {
-          // ignore
-        }
-      } else {
-        video.addEventListener('loadedmetadata', onMeta);
-      }
-    }
+    const playGen =
+      ((this as any)._dvdjsTitlePlayGen =
+        ((this as any)._dvdjsTitlePlayGen || 0) + 1);
+    const isCurrentTitlePlay = () =>
+      (this as any)._dvdjsTitlePlayGen === playGen;
 
     // Short included titles: when the clip ends, run title PGC post() so
     // buttonless games / extras auto-advance like on a real player.
@@ -2093,16 +2102,35 @@ class XVideo extends HTMLElement implements XVideoElement {
       clearTimeout((this as any)._dvdjsTitlePlayWatchdog);
       (this as any)._dvdjsTitlePlayWatchdog = null;
     }
+    if ((this as any)._dvdjsTitleStallWatchdog) {
+      clearInterval((this as any)._dvdjsTitleStallWatchdog);
+      (this as any)._dvdjsTitleStallWatchdog = null;
+    }
+    if ((this as any)._dvdjsTitleLoadToken != null) {
+      endMediaLoad((this as any)._dvdjsTitleLoadToken);
+      (this as any)._dvdjsTitleLoadToken = null;
+    }
 
     let titlePostDone = false;
+    const clearTitleStallWatch = () => {
+      if ((this as any)._dvdjsTitleStallWatchdog) {
+        clearInterval((this as any)._dvdjsTitleStallWatchdog);
+        (this as any)._dvdjsTitleStallWatchdog = null;
+      }
+    };
     const runTitlePost = () => {
       if (titlePostDone) {
         return;
       }
       titlePostDone = true;
+      clearTitleStallWatch();
       if ((this as any)._dvdjsTitlePlayWatchdog) {
         clearTimeout((this as any)._dvdjsTitlePlayWatchdog);
         (this as any)._dvdjsTitlePlayWatchdog = null;
+      }
+      if ((this as any)._dvdjsTitleLoadToken != null) {
+        endMediaLoad((this as any)._dvdjsTitleLoadToken);
+        (this as any)._dvdjsTitleLoadToken = null;
       }
       const endedFn = (this as any)._dvdjsTitleEnded;
       const timeFn = (this as any)._dvdjsTitleTimeEnd;
@@ -2123,12 +2151,7 @@ class XVideo extends HTMLElement implements XVideoElement {
         gg.PGCIUT[gg.domain] &&
         gg.PGCIUT[gg.domain][gg.pgc];
       if (pgcObj && typeof pgcObj.post === 'function') {
-        try {
-          alignLangForTitlePost(gg);
-          pgcObj.post();
-        } catch (e) {
-          console.warn('dvd-menu-archive title post failed', e);
-        }
+        runTitlePgcPostWithLangFallback(gg, () => pgcObj.post());
       }
     };
     const onTitleEnded = () => {
@@ -2155,6 +2178,9 @@ class XVideo extends HTMLElement implements XVideoElement {
 
     const onMediaError = () => {
       video.removeEventListener('error', onMediaError);
+      if (!isCurrentTitlePlay()) {
+        return;
+      }
       warn('title', 'title video error', videoDebugInfo(video));
       void probeAsset(
         video.currentSrc || video.getAttribute('src'),
@@ -2175,23 +2201,126 @@ class XVideo extends HTMLElement implements XVideoElement {
       e.video.style.display = on ? 'block' : 'none';
       e.video.hidden = !on;
     });
-    void playWithAutoplayFallback(video, this as AutoplayHost).then((ok) => {
-      if (ok) {
+
+    // Cold disc mounts used to start every title WebM + hundreds of menu
+    // stills at once; FP intros then stalled forever with a black frame and
+    // no post(). Prioritize this clip, wait for paintable data, stall-watch.
+    prioritizeTitleVideo(this, video);
+    const loadTok = beginMediaLoad('Loading title…');
+    (this as any)._dvdjsTitleLoadToken = loadTok;
+    log('title', 'playByID', {
+      id,
+      pgc: pgc ?? null,
+      src: video.getAttribute('src') || video.currentSrc || null,
+      timeline,
+    });
+
+    void (async () => {
+      const ready = await whenVideoReadyForPlay(video, { timeoutMs: 20_000 });
+      if (!isCurrentTitlePlay()) {
         return;
       }
-      notifyAutoplayBlocked(this as AutoplayHost);
-      // Still advance eventually so a blocked DreamWorks logo cannot hang FP.
-      const dur =
-        endAt != null && Number.isFinite(endAt)
-          ? Math.max(0.5, endAt)
-          : Number.isFinite(video.duration) && video.duration > 0
-            ? video.duration
-            : 2;
-      (this as any)._dvdjsTitlePlayWatchdog = setTimeout(() => {
-        (this as any)._dvdjsTitlePlayWatchdog = null;
+      if ((this as any)._dvdjsTitleLoadToken === loadTok) {
+        endMediaLoad(loadTok);
+        (this as any)._dvdjsTitleLoadToken = null;
+      }
+      if (!ready) {
+        warn('title', 'title WebM not ready', videoDebugInfo(video));
+        void probeAsset(
+          video.currentSrc || video.getAttribute('src'),
+          'title WebM (ready timeout)',
+        );
+        if (video.error) {
+          showTitleUnavailable(this);
+          return;
+        }
+        // No fatal error — still try play; stall watchdog can advance FP.
+      }
+
+      if (timeline && Number.isFinite(timeline.startSec)) {
+        const seekTo = timeline.startSec;
+        try {
+          if (video.readyState >= 1) {
+            video.currentTime = seekTo;
+          } else {
+            const onMeta = () => {
+              video.removeEventListener('loadedmetadata', onMeta);
+              if (!isCurrentTitlePlay()) {
+                return;
+              }
+              try {
+                video.currentTime = seekTo;
+              } catch {
+                // ignore
+              }
+            };
+            video.addEventListener('loadedmetadata', onMeta);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const ok = await playWithAutoplayFallback(video, this as AutoplayHost);
+      if (!isCurrentTitlePlay() || titlePostDone) {
+        return;
+      }
+      if (!ok) {
+        notifyAutoplayBlocked(this as AutoplayHost);
+        // Still advance eventually so a blocked DreamWorks logo cannot hang FP.
+        const dur =
+          endAt != null && Number.isFinite(endAt)
+            ? Math.max(0.5, endAt)
+            : Number.isFinite(video.duration) && video.duration > 0
+              ? video.duration
+              : 2;
+        (this as any)._dvdjsTitlePlayWatchdog = setTimeout(() => {
+          (this as any)._dvdjsTitlePlayWatchdog = null;
+          if (isCurrentTitlePlay()) {
+            runTitlePost();
+          }
+        }, dur * 1000);
+        return;
+      }
+
+      // play() resolved but buffer can still stall on a cold cache — advance
+      // rather than leave a permanent black intro (Lotr_See_D4 FP → VTS_12).
+      let lastTime = video.currentTime;
+      let stallMs = 0;
+      let retried = false;
+      clearTitleStallWatch();
+      (this as any)._dvdjsTitleStallWatchdog = setInterval(() => {
+        if (!isCurrentTitlePlay() || titlePostDone) {
+          clearTitleStallWatch();
+          return;
+        }
+        const ct = video.currentTime;
+        if (ct > lastTime + 0.05) {
+          lastTime = ct;
+          stallMs = 0;
+          return;
+        }
+        if (!video.paused && video.readyState >= 2) {
+          // Playing with data — give sparse timeupdate a beat.
+          stallMs += 500;
+        } else {
+          stallMs += 500;
+        }
+        if (stallMs < 4000) {
+          return;
+        }
+        if (!retried) {
+          retried = true;
+          stallMs = 0;
+          warn('title', 'title playback stalled — retry play', videoDebugInfo(video));
+          void playWithAutoplayFallback(video, this as AutoplayHost);
+          return;
+        }
+        warn('title', 'title playback stalled — advancing', videoDebugInfo(video));
+        clearTitleStallWatch();
         runTitlePost();
-      }, dur * 1000);
-    });
+      }, 500);
+    })();
   }
 
   playChapter(chapterIndex: number) {

@@ -1,6 +1,6 @@
 import { menuLangKeys, pickMenuLang } from '../host/titleUnavailable.js';
 import {
-  aliasUnspecifiedMenuLangs,
+  bridgeMenuLangBuckets,
   packMenuLangSprm,
 } from '../host/menuLanguage.js';
 import { log, warn } from '../host/viewerDebug.js';
@@ -21,8 +21,9 @@ function pickExistingLang(host: HTMLElement) {
   if (typeof g.MPGCIUT === 'undefined' || !Array.isArray(g.MPGCIUT)) {
     return;
   }
-  // Older archives emit VMGM unspecified LU as "ÿÿ" (0xFFFF).
-  aliasUnspecifiedMenuLangs(g as any);
+  // Older archives: ÿÿ→default, then bridge VMGM `default` ↔ VTS ISO LUs so
+  // JumpSS/CallSS with one global `lang` does not throw (The Thief Lord).
+  bridgeMenuLangBuckets(g as any);
   // Prefer a lang that exists on VMGM (domain 0). Iterating every domain used
   // to let a later VTS overwrite g.lang with a code missing from MPGCIUT[0],
   // which breaks JumpSS VMGM (MPGCIUT[0][lang] is undefined).

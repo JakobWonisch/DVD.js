@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   collectPreloadStillUrls,
   freezeMenuVideoAtEnd,
@@ -7,6 +7,8 @@ import {
   motionSegmentFinishAt,
   parseMenuCellsFromDataset,
   preloadLinkedMenuAssets,
+  prioritizeTitleVideo,
+  whenVideoReadyForPlay,
   stillCoverUrlFromMenu,
   whenImageReady,
 } from '../../viewer/src/host/menuPreload.ts';
@@ -213,6 +215,75 @@ describe('imageHasPixels', () => {
         naturalWidth: 0,
       } as HTMLImageElement),
     ).toBe(false);
+  });
+});
+
+describe('prioritizeTitleVideo', () => {
+  it('promotes the active title and demotes siblings', () => {
+    const active = {
+      preload: 'none',
+      pause: vi.fn(),
+    } as unknown as HTMLVideoElement;
+    const other = {
+      preload: 'auto',
+      pause: vi.fn(),
+    } as unknown as HTMLVideoElement;
+    const host = {
+      querySelectorAll: () => [active, other],
+    } as unknown as ParentNode;
+    prioritizeTitleVideo(host, active);
+    expect(active.preload).toBe('auto');
+    expect(other.preload).toBe('none');
+    expect(other.pause).toHaveBeenCalledOnce();
+    expect(active.pause).not.toHaveBeenCalled();
+  });
+});
+
+describe('whenVideoReadyForPlay', () => {
+  beforeEach(() => {
+    vi.stubGlobal('HTMLMediaElement', {
+      NETWORK_EMPTY: 0,
+      NETWORK_IDLE: 1,
+      NETWORK_LOADING: 2,
+      NETWORK_NO_SOURCE: 3,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('resolves true immediately when readyState already has data', async () => {
+    const video = {
+      readyState: 2,
+      networkState: 1,
+      error: null,
+      preload: 'none',
+      getAttribute: () => '/disc/VTS_12_1.webm',
+      currentSrc: '/disc/VTS_12_1.webm',
+      src: '/disc/VTS_12_1.webm',
+      load: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as HTMLVideoElement;
+    await expect(whenVideoReadyForPlay(video)).resolves.toBe(true);
+    expect(video.load).not.toHaveBeenCalled();
+  });
+
+  it('resolves false when src is missing', async () => {
+    const video = {
+      readyState: 0,
+      networkState: 0,
+      error: null,
+      preload: 'none',
+      getAttribute: () => '',
+      currentSrc: '',
+      src: '',
+      load: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as HTMLVideoElement;
+    await expect(whenVideoReadyForPlay(video)).resolves.toBe(false);
   });
 });
 

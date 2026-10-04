@@ -14,6 +14,8 @@ import {
   restoreMenuResumeState,
   afterLanguageCopyrightPost,
   menuCellPrefersStillOnly,
+  isMenuLangLookupError,
+  runTitlePgcPostWithLangFallback,
   scheduleMenuPostAfterStill,
   shouldHoldAfterMenuMotion,
   showTitleUnavailableOverlay,
@@ -178,7 +180,8 @@ describe('tryAutoSkipMissingTitle', () => {
       false,
     );
     await vi.runAllTimersAsync();
-    expect(post).toHaveBeenCalledOnce();
+    // Retries across available LUs (en prefer + de on VMGM) before giving up.
+    expect(post.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(children.some((c) => c.className === 'dvd-menu-archive-title-unavailable')).toBe(
       true,
     );
@@ -240,6 +243,45 @@ describe('tryAutoSkipMissingTitle', () => {
     expect(g.lang).toBe('en');
     // CallSS Root style access must not throw.
     expect(g.MENU_TYPES[g.domain][g.lang]).toBeDefined();
+  });
+
+  it('runTitlePgcPostWithLangFallback retries VMGM default after VTS lang miss', () => {
+    const g: any = {
+      domain: 1,
+      lang: 'en',
+      MPGCIUT: {
+        0: { default: { 3: { run: vi.fn() } } },
+        1: { en: { 1: {} }, nl: { 1: {} }, de: { 1: {} } },
+      },
+      MENU_TYPES: [
+        { default: [] },
+        { en: [], nl: [], de: [] },
+      ],
+    };
+    const post = vi.fn(() => {
+      // Thief Lord-style CallSS VMGM PGC — only default exists on domain 0.
+      const pgc = g.MPGCIUT[0][g.lang][3];
+      pgc.run();
+    });
+    expect(runTitlePgcPostWithLangFallback(g, post)).toBe(true);
+    expect(post.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(g.lang).toBe('default');
+    expect(g.MPGCIUT[0].default[3].run).toHaveBeenCalledOnce();
+  });
+
+  it('isMenuLangLookupError matches Firefox and Chromium wording', () => {
+    expect(
+      isMenuLangLookupError(
+        new TypeError("can't access property 3, MPGCIUT[0][lang] is undefined"),
+      ),
+    ).toBe(true);
+    expect(
+      isMenuLangLookupError(
+        new TypeError("Cannot read properties of undefined (reading '3')"),
+      ),
+    ).toBe(true);
+    expect(isMenuLangLookupError(new TypeError('something else'))).toBe(false);
+    expect(isMenuLangLookupError(new Error('MPGCIUT boom'))).toBe(false);
   });
 
   it('clearMissingTitleSkip resets the visited set', () => {
@@ -667,6 +709,67 @@ describe('escapeToVmgmTitleMenu', () => {
     expect(escapeToVmgmTitleMenu(host, g)).toBe(true);
     expect(run).toHaveBeenCalledOnce();
     expect(onmenu).not.toHaveBeenCalled();
+    expect(g.domain).toBe(1);
+  });
+
+  it('runs VMGM Title trampoline that JumpSS into VTS Root (Thief Lord)', () => {
+    const rootRun = vi.fn(function (this: any) {
+      g.domain = 1;
+      g.lang = 'en';
+      g.pgc = 1;
+    });
+    const g: any = {
+      lang: 'default',
+      domain: 0,
+      MENU_TYPES: [
+        {
+          default: [
+            undefined,
+            undefined,
+            { domain: 0, lang: 'default', pgc: 1 },
+          ],
+        },
+        {
+          en: [
+            undefined,
+            undefined,
+            undefined,
+            { domain: 1, lang: 'en', pgc: 1 },
+          ],
+        },
+      ],
+      MPGCIUT: [
+        {
+          default: {
+            1: {
+              cells: [{ still_time: 0 }],
+              run() {},
+              pre() {},
+            },
+          },
+        },
+        {
+          en: {
+            1: { cells: [{ still_time: 255 }], run: rootRun },
+          },
+        },
+      ],
+    };
+    // VMGM Title pre JumpSS VTSM Root — needs MENU_TYPES[1][lang] while
+    // g.lang is still the VMGM code (`default`).
+    g.MPGCIUT[0].default[1].run = function () {
+      g.domain = 0;
+      g.lang = 'default';
+      if (this.pre()) return;
+    };
+    g.MPGCIUT[0].default[1].pre = function () {
+      const menu = g.MENU_TYPES[1][g.lang][3];
+      g.MPGCIUT[menu.domain][menu.lang][menu.pgc].run();
+      return 1;
+    };
+
+    expect(escapeToVmgmTitleMenu({}, g)).toBe(true);
+    expect(rootRun).toHaveBeenCalledOnce();
     expect(g.domain).toBe(1);
   });
 
