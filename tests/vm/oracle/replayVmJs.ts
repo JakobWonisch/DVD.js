@@ -6,7 +6,10 @@ import { sprmObjectToArray } from './sprmMap.ts';
 
 export type ReplayOptions = {
   vmJsPath: string;
-  scriptPath: string;
+  /** Path to .navscript (mutually exclusive with scriptText). */
+  scriptPath?: string;
+  /** Inline navscript body (for explore-generated paths). */
+  scriptText?: string;
 };
 
 type ActiveCell = {
@@ -42,7 +45,14 @@ type TitleMedia = {
  */
 export function replayVmJs(opts: ReplayOptions): NavTraceStep[] {
   const code = fs.readFileSync(opts.vmJsPath, 'utf8');
-  const scriptText = fs.readFileSync(opts.scriptPath, 'utf8');
+  const scriptText =
+    opts.scriptText != null
+      ? opts.scriptText
+      : opts.scriptPath
+        ? fs.readFileSync(opts.scriptPath, 'utf8')
+        : (() => {
+            throw new Error('replayVmJs: need scriptPath or scriptText');
+          })();
   const titleMediaByDomain = loadTitlePgcMedia(opts.vmJsPath);
   const steps: NavTraceStep[] = [];
   let stepI = 0;
@@ -298,18 +308,21 @@ export function replayVmJs(opts: ReplayOptions): NavTraceStep[] {
       emit('cell', { vobID: active.vobID, cellID: active.cellID });
 
       if (active.still_time === 255) {
-        emit('still', { still: 255 });
+        emit('still', { still: 255, buttons: buttons.length });
         return;
       }
       if (active.still_time > 0 && active.still_time < 255) {
         // Finite timed still — leave post pending; pump auto-skips (play.c)
         // after checking until=vts so VTS_CHANGE can stop first (Avatar).
-        emit('still_timed', { still: active.still_time });
+        emit('still_timed', {
+          still: active.still_time,
+          buttons: buttons.length,
+        });
         return;
       }
       if (buttons.length > 0) {
         active.waiting = true;
-        emit('wait');
+        emit('wait', { buttons: buttons.length });
         return;
       }
       runPendingPost();

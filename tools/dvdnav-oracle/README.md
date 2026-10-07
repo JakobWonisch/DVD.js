@@ -65,7 +65,7 @@ menu root
 | `still_skip` / `wait_skip` | Skip still/wait |
 | `menu title\|root\|…` | `dvdnav_menu_call` |
 
-Finite stills auto-skip during pump; infinite stills (`255`) stop the pump so the script can `activate` / `still_skip`.
+Finite stills auto-skip during pump; infinite stills (`255`) stop the pump so the script can `activate` / `still_skip`. Buttonless `WAIT` (VOBU sync) always auto-skips; only waits with PCI buttons settle when `until` includes `wait`.
 
 ### Compare vs converted package
 
@@ -76,7 +76,21 @@ pnpm nav-oracle -- \
   --script tests/vm/oracle/scripts/shrek-smoke.navscript
 ```
 
-Vitest (`tests/vm/oracle/navOracle.test.ts`) runs the Shrek smoke when `dvds/Shrek` + `web/Shrek/vm.js` exist (or `DVDJS_NAV_*` env). Default smoke checks that both sides produce traces; set `DVDJS_NAV_STRICT=1` to require settled-position equality. Shrek + Harry Potter smokes match after harness + JumpSS/`pickLang` fixes — see `tests/vm/oracle/NAV_ORACLE_FINDINGS.md`.
+### Menu-graph explore
+
+BFS every interactive menu screen (libdvdnav), activate each button, compare
+destinations to headless `vm.js`. Titles are recorded as destinations but not
+expanded. Each path is replayed from a cold start.
+
+```bash
+pnpm nav-oracle -- --video-ts dvds/Shrek --web web/Shrek/vm.js --explore
+pnpm nav-oracle -- --video-ts dvds/Shrek --web web/Shrek/vm.js --explore \
+  --max-screens 48 --max-depth 8 --json
+```
+
+Still/wait JSONL events include `"buttons":N` (PCI `btn_ns`) for explore.
+
+Vitest (`tests/vm/oracle/navOracle.test.ts`) runs the Shrek smoke when `dvds/Shrek` + `web/Shrek/vm.js` exist (or `DVDJS_NAV_*` env). Default smoke checks that both sides produce traces; set `DVDJS_NAV_STRICT=1` to require settled-position equality. Set `DVDJS_NAV_EXPLORE=1` for the full menu-graph test (slower). Shrek + Harry Potter smokes match after harness + JumpSS/`pickLang` fixes — see `tests/vm/oracle/NAV_ORACLE_FINDINGS.md`.
 
 ## Vendor notice
 

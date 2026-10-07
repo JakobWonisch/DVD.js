@@ -2,6 +2,8 @@
 
 Disc-path compare: native `dvdnav-oracle play` vs headless `vm.js` replay on shared `.navscript` files. Settled positions = `compareTraces` snapshots after `pump` / `still` / `pos` / `end` (cell chatter collapsed).
 
+**Explore** (`pnpm nav-oracle -- … --explore`): BFS every interactive menu screen (libdvdnav), activate each button, cold-start path-replay vs `vm.js`. Titles are destinations only (not expanded). Caps: `--max-screens` / `--max-depth`. Smokes can pass while explore surfaces deeper JumpTT / button-cmd gaps (e.g. Shrek submenu buttons diverting to the wrong title on ours).
+
 Re-run:
 
 ```bash
@@ -24,6 +26,9 @@ pnpm nav-oracle -- \
   --video-ts "dvds/Avatar Bk1 Vol3 Eur/VIDEO_TS" \
   --web web/Avatar_Bk1_Vol3_Eur/vm.js \
   --script tests/vm/oracle/scripts/avatar-vol3-smoke.navscript
+
+# Full menu graph (every screen + every button):
+pnpm nav-oracle -- --video-ts dvds/Shrek --web web/Shrek/vm.js --explore
 ```
 
 Status legend: **fixed** | open (corpus)

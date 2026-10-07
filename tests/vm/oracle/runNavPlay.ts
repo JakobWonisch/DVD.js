@@ -14,17 +14,33 @@ export type NavPlayOptions = {
   script: string;
 };
 
+export type NavPlayScriptOptions = {
+  videoTs: string;
+  /** Inline navscript body (stdin to dvdnav-oracle play). */
+  scriptText: string;
+};
+
 /**
  * Run native libdvdnav play oracle; return parsed JSONL steps.
  */
 export function runNavPlay(opts: NavPlayOptions): NavTraceStep[] {
+  if (!fs.existsSync(opts.script)) {
+    throw new Error(`navscript not found: ${opts.script}`);
+  }
+  return runNavPlayScript({
+    videoTs: opts.videoTs,
+    scriptText: fs.readFileSync(opts.script, 'utf8'),
+  });
+}
+
+/**
+ * Same as runNavPlay but with an inline script (explore path replay).
+ */
+export function runNavPlayScript(opts: NavPlayScriptOptions): NavTraceStep[] {
   if (!oracleBinaryExists()) {
     throw new Error(
       `dvdnav-oracle missing at ${oracleBinaryPath()}. Run: pnpm build:dvdnav-oracle`,
     );
-  }
-  if (!fs.existsSync(opts.script)) {
-    throw new Error(`navscript not found: ${opts.script}`);
   }
   if (!fs.existsSync(opts.videoTs)) {
     throw new Error(`VIDEO_TS / disc path not found: ${opts.videoTs}`);
@@ -32,8 +48,12 @@ export function runNavPlay(opts: NavPlayOptions): NavTraceStep[] {
 
   const result = spawnSync(
     oracleBinaryPath(),
-    ['play', '--path', opts.videoTs, '--script', opts.script],
-    { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 },
+    ['play', '--path', opts.videoTs],
+    {
+      encoding: 'utf8',
+      maxBuffer: 8 * 1024 * 1024,
+      input: opts.scriptText,
+    },
   );
 
   if (result.error) throw result.error;

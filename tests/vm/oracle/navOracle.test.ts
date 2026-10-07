@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compareTraces } from './compareTraces.ts';
+import { exploreMenuGraph } from './exploreMenuGraph.ts';
 import { oracleBinaryExists } from './runDvdnavOracle.ts';
 import { defaultShrekPaths, runNavPlay } from './runNavPlay.ts';
 import { replayVmJs } from './replayVmJs.ts';
@@ -9,6 +10,7 @@ import { replayVmJs } from './replayVmJs.ts';
  * exists (local Shrek paths, or DVDJS_NAV_CORPUS / DVDJS_NAV_WEB / DVDJS_NAV_SCRIPT).
  *
  * Set DVDJS_NAV_STRICT=0 to only require traces (skip position equality).
+ * Set DVDJS_NAV_EXPLORE=1 to also BFS every menu screen + button (slower).
  */
 function corpusPaths(): {
   videoTs: string;
@@ -28,6 +30,7 @@ function corpusPaths(): {
 const paths = corpusPaths();
 const enabled = oracleBinaryExists() && !!paths;
 const strict = process.env.DVDJS_NAV_STRICT !== '0';
+const explore = process.env.DVDJS_NAV_EXPLORE === '1';
 
 describe.skipIf(!enabled)('vm nav oracle (libdvdnav play vs vm.js replay)', () => {
   it(`${paths?.label ?? 'corpus'} smoke: settled positions match`, () => {
@@ -50,6 +53,30 @@ describe.skipIf(!enabled)('vm nav oracle (libdvdnav play vs vm.js replay)', () =
       expect(result.ok, result.diffs.join('\n')).toBe(true);
     }
   });
+
+  it.skipIf(!explore)(
+    `${paths?.label ?? 'corpus'} explore: every menu screen + button`,
+    () => {
+      const result = exploreMenuGraph({
+        videoTs: paths!.videoTs,
+        vmJsPath: paths!.webVm,
+        maxScreens: 48,
+        maxDepth: 8,
+      });
+      expect(result.screens.length).toBeGreaterThan(0);
+      expect(result.edges.length).toBeGreaterThan(0);
+      if (!result.ok) {
+        console.warn(
+          '[nav-oracle] explore divergence:\n' +
+            result.diffs.map((d) => `  ${d}`).join('\n'),
+        );
+      }
+      if (strict) {
+        expect(result.ok, result.diffs.join('\n')).toBe(true);
+      }
+    },
+    120_000,
+  );
 });
 
 describe.skipIf(enabled)('vm nav oracle (corpus missing)', () => {

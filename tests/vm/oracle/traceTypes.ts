@@ -34,11 +34,14 @@ export type NavTraceStep = {
   cell: number;
   hl: number;
   still?: number;
+  /** PCI / menu button count at settle (explore mode). */
+  buttons?: number;
   button?: number;
   dir?: string;
   blocks?: number;
   hit?: boolean;
   menu?: string;
+  message?: string;
 };
 
 /** Comparable position (sector/block ignored). */

@@ -119,6 +119,8 @@ static int parse_until_mask(const char *s) {
   return m ? m : ((1 << DVDNAV_STILL_FRAME) | (1 << DVDNAV_WAIT) | (1 << DVDNAV_STOP));
 }
 
+static pci_t *pci(dvdnav_t *nav);
+
 static int pump(dvdnav_t *nav, nav_state_t *st, int max_blocks, int until_mask) {
   uint8_t buf[DVD_BLOCK];
   int blocks = 0;
@@ -156,16 +158,21 @@ static int pump(dvdnav_t *nav, nav_state_t *st, int max_blocks, int until_mask) 
       case DVDNAV_STILL_FRAME: {
         dvdnav_still_event_t *ev = (dvdnav_still_event_t *)buf;
         refresh_program(nav, st);
-        char extra[64];
-        snprintf(extra, sizeof(extra), "\"still\":%d", ev->length);
-        /* Finite timed stills are intro/warning holds — auto-skip and keep
-         * pumping. Only infinite stills (0xff) are interactive menu settles. */
-        if (ev->length != 0xff) {
-          emit_pos("still_timed", st, extra);
-          dvdnav_still_skip(nav);
-          break;
+        {
+          pci_t *p = pci(nav);
+          int btns = p ? (p->hli.hl_gi.btn_ns & 0x3f) : 0;
+          char extra[80];
+          snprintf(extra, sizeof(extra), "\"still\":%d,\"buttons\":%d",
+                   ev->length, btns);
+          /* Finite timed stills are intro/warning holds — auto-skip and keep
+           * pumping. Only infinite stills (0xff) are interactive menu settles. */
+          if (ev->length != 0xff) {
+            emit_pos("still_timed", st, extra);
+            dvdnav_still_skip(nav);
+            break;
+          }
+          emit_pos("still", st, extra);
         }
-        emit_pos("still", st, extra);
         if (until_mask & (1 << DVDNAV_STILL_FRAME)) {
           hit = 1;
           goto done;
@@ -173,15 +180,29 @@ static int pump(dvdnav_t *nav, nav_state_t *st, int max_blocks, int until_mask) 
         break;
       }
 
-      case DVDNAV_WAIT:
+      case DVDNAV_WAIT: {
         refresh_program(nav, st);
-        emit_pos("wait", st, NULL);
+        {
+          pci_t *p = pci(nav);
+          int btns = p ? (p->hli.hl_gi.btn_ns & 0x3f) : 0;
+          char extra[48];
+          snprintf(extra, sizeof(extra), "\"buttons\":%d", btns);
+          emit_pos("wait", st, extra);
+          /* Buttonless WAIT is VOBU/motion sync — never an interactive settle.
+           * Always skip so until=still|wait can reach still_time 255 / buttoned
+           * waits (Shrek FP otherwise stops here with buttons:0). */
+          if (btns == 0) {
+            dvdnav_wait_skip(nav);
+            break;
+          }
+        }
         if (until_mask & (1 << DVDNAV_WAIT)) {
           hit = 1;
           goto done;
         }
         dvdnav_wait_skip(nav);
         break;
+      }
 
       case DVDNAV_STOP:
         st->stopped = 1;

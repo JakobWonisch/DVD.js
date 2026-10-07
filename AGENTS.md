@@ -156,7 +156,8 @@ dvd-menu-archive /dev/sr0       # convert using tools.json paths
 **Stay optional.** The recompiled `vm.js` path already covers menus for the MVP. Pull in libdvdnav only if corpus QA keeps hitting nav bugs the hand-ported VM cannot fix cleanly.
 
 - **Single-command eval oracle (implemented):** `tools/dvdnav-oracle/` vendors libdvdnav **6.1.1** `decoder.c` and builds a CLI that runs `vmEval_CMD`. Compare register + link effects against `recompile()` in a stub host via `pnpm test:vm-oracle` (needs headers from the Nix `devShell`). See `tools/dvdnav-oracle/README.md`.
-- **Disc-path nav oracle (implemented):** `dvdnav-oracle play` + headless `vm.js` replay (`pnpm nav-oracle`, `tests/vm/oracle/navOracle.test.ts`). Shared `.navscript` drives button/still actions; JSONL traces compare settled `space/vts/pgc/cell/hl`. Needs a local corpus (`dvds/Shrek` + `web/Shrek/vm.js`, or `DVDJS_NAV_*` env). Default smoke is non-strict; `DVDJS_NAV_STRICT=1` requires position equality. Findings + fix status: `tests/vm/oracle/NAV_ORACLE_FINDINGS.md` (Shrek FP drain + Harry Potter JumpSS `pickLang` / long-title hold).
+- **Disc-path nav oracle (implemented):** `dvdnav-oracle play` + headless `vm.js` replay (`pnpm nav-oracle`, `tests/vm/oracle/navOracle.test.ts`). Shared `.navscript` drives button/still actions; JSONL traces compare settled `space/vts/pgc/cell/hl`. **`--explore`** BFS-visits each menu screen and activates every button (titles = destinations only; cold-start path replay). Needs a local corpus (`dvds/Shrek` + `web/Shrek/vm.js`, or `DVDJS_NAV_*` env). Default smoke is non-strict; `DVDJS_NAV_STRICT=1` requires position equality; `DVDJS_NAV_EXPLORE=1` enables the graph test. Findings + fix status: `tests/vm/oracle/NAV_ORACLE_FINDINGS.md` (Shrek FP drain + Harry Potter JumpSS `pickLang` / long-title hold).
+
 - **Browser WASM (last resort):** drive menus from libdvdnav’s state machine instead of `vm.js`. Higher fidelity, heavier, and fights the “pre-rip + stream” model — only if rip-time checks prove the JS VM is the bottleneck.
 - Opcode fixtures already treat libdvdnav (`decoder.c` / `vmcmd.c`) as the reference for **compile** expects; the eval oracle checks **runtime** parity.
 
@@ -289,6 +290,8 @@ pnpm dev:viewer             # Vite HMR on :5173 (proxies disc assets; run with s
 pnpm test
 pnpm build:dvdnav-oracle && pnpm test:vm-oracle  # libdvdnav eval + nav corpus (if present)
 pnpm nav-oracle -- --video-ts dvds/Shrek --web web/Shrek/vm.js --script tests/vm/oracle/scripts/shrek-smoke.navscript
+pnpm nav-oracle -- --video-ts dvds/Shrek --web web/Shrek/vm.js --explore # full menu graph
+
 pnpm convert --                        # sole optical drive (errors if 0 or many)
 pnpm convert -- path/to/DVD/root          # menus + short title cells ≤ 60s
 pnpm convert -- --full path/to/DVD/root   # menus + all titles
