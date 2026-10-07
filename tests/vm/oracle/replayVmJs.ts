@@ -271,13 +271,34 @@ export function replayVmJs(opts: ReplayOptions): NavTraceStep[] {
 
   const runPendingPost = () => {
     if (!active?.onPost) return false;
+    // Match viewer: afterLanguageCopyrightPost only after language-copyright
+    // stills (menuCellPrefersStillOnly), and only when this post sets the
+    // language cookie and did not already land on an interactive menu.
+    // Unconditional calls steal nav when a later menu pre sets gprm[0x0B]
+    // (Avatar Vol3 PGC17 → dispatcher → PGC18).
+    const copyrightStill =
+      !!active &&
+      active.buttons.length === 0 &&
+      active.still_time >= 3 &&
+      active.still_time < 255;
+    const cookieBefore = (g.gprm?.[0x0b] as number) | 0;
     const post = active.onPost;
     active.onPost = null;
     active.waiting = false;
     safeCall(post);
     flushTimers();
-    afterLanguageCopyrightPost();
-    flushTimers();
+    const landedInteractive =
+      !!active &&
+      (active.waiting || active.still_time === 255) &&
+      active.buttons.length > 0;
+    if (
+      copyrightStill &&
+      !landedInteractive &&
+      ((g.gprm?.[0x0b] as number) | 0) !== cookieBefore
+    ) {
+      afterLanguageCopyrightPost();
+      flushTimers();
+    }
     return true;
   };
 

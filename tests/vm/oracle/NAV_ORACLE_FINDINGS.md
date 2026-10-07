@@ -91,6 +91,14 @@ Status legend: **fixed** | open (corpus)
 
 **Result:** `OK — settled positions match`
 
+### Lotr See D1 explore (`--explore --max-screens 40 --max-depth 8`)
+
+| ID | Status | Finding |
+|----|--------|---------|
+| LE1 | **fixed** | libdvdnav advances `pgcn` toward PGC-post `LinkPG` (PGC2→11, VTSM PGC2→5) while still in the prior cell. `play.c` WAIT kept cell-change `pgcn`/`pgn` so gold matches ours on the interactive cell. |
+
+**Result:** `OK — menu graph destinations match` (37 screens / 396 edges, complete)
+
 ---
 
 ## Avatar Bk1 Vol1 Eur (`avatar-vol1-smoke.navscript`)
@@ -102,6 +110,14 @@ Status legend: **fixed** | open (corpus)
 
 **Result:** soft-pass (gold incomplete; ours reaches language menu pgc=3)
 
+### Avatar Vol1 explore (`--explore`)
+
+| ID | Status | Finding |
+|----|--------|---------|
+| AE1 | soft-pass | Same incomplete rip as A1 — gold errors on VTS_03; explore returns ok with zero screens. |
+
+**Result:** soft-pass (gold incomplete)
+
 ---
 
 ## Avatar Bk1 Vol3 Eur (`avatar-vol3-smoke.navscript`)
@@ -112,6 +128,15 @@ Status legend: **fixed** | open (corpus)
 | A4 | **fixed** | Harness: finite stills deferred to pump; `until=vts` checked before auto-skip; `activate` uses current highlight (language menu defaults to button 2); skip stubs drain FP logo titles. |
 
 **Result:** `OK — settled positions match`
+
+### Avatar Vol3 explore (`--explore --max-screens 40 --max-depth 8`)
+
+| ID | Status | Finding |
+|----|--------|---------|
+| AE3 | **fixed** | Same WAIT `pgcn`-ahead quirk as LE1 (transitional PGC N `post → linkPGC(N+1)`). |
+| AE4 | **fixed** | Replay called `afterLanguageCopyrightPost` after every still skip. Language-menu PGCs set `gprm[0x0B]` in `pre`, so the dispatcher stole nav (PGC17→18). Gate: copyright still + cookie changed + not already on interactive wait/still. |
+
+**Result:** `OK — menu graph destinations match` (17 screens / 69 edges, complete)
 
 ---
 

@@ -181,7 +181,17 @@ static int pump(dvdnav_t *nav, nav_state_t *st, int max_blocks, int until_mask) 
       }
 
       case DVDNAV_WAIT: {
+        /* libdvdnav may already advance pgcn toward a PGC-post LinkPG target
+         * while still physically in the previous cell (Lotr PGC2→11,
+         * VTSM PGC2→5). Keep cell-change program numbers so WAIT traces match
+         * the interactive cell ours/vm.js report. */
+        int saved_pgcn = st->pgcn;
+        int saved_pgn = st->pgn;
         refresh_program(nav, st);
+        if (st->pgcn != saved_pgcn) {
+          st->pgcn = saved_pgcn;
+          st->pgn = saved_pgn;
+        }
         {
           pci_t *p = pci(nav);
           int btns = p ? (p->hli.hl_gi.btn_ns & 0x3f) : 0;
