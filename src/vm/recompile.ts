@@ -619,13 +619,15 @@ function compile_jump_instruction(command) {
         case 1:
           // JumpSS VMGM (menu x)
           // x is the type of menu (Root, Title...)
-          code += sprintf('var menu = MENU_TYPES[0][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
+          // pickLang: VMGM LUs may be "default" not "en" (Harry Potter).
+          code += sprintf('lang = pickLang(0) || lang; var menu = MENU_TYPES[0][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
             getbits(command, 19, 4)
           );
           break;
         case 2:
           // JumpSS VTSM (vts x, title y, menu z)
-          code += sprintf('var menu = MENU_TYPES[%s][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
+          code += sprintf('lang = pickLang(%s) || pickLang(0) || lang; var menu = MENU_TYPES[%s][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
+            getbits(command, 30, 7),
             getbits(command, 30, 7),
             getbits(command, 19, 4)
           );
@@ -633,7 +635,7 @@ function compile_jump_instruction(command) {
         case 3:
           // JumpSS VMGM (pgc x)
           // pgc is entry pgc
-          code += sprintf('clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][%s].run.bind(MPGCIUT[0][lang][%s])); return 1;',
+          code += sprintf('lang = pickLang(0) || lang; clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][%s].run.bind(MPGCIUT[0][lang][%s])); return 1;',
             getbits(command, 46, 15),
             getbits(command, 46, 15)
           );
@@ -653,19 +655,19 @@ function compile_jump_instruction(command) {
         case 1:
           // CallSS VMGM (menu x, rsm_cell y)
           // x is the type of menu (Root, Title...)
-          code += sprintf('saveRSM(%s); var menu = MENU_TYPES[0][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
+          code += sprintf('saveRSM(%s); lang = pickLang(0) || lang; var menu = MENU_TYPES[0][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
             getbits(command, 31, 8), getbits(command, 19, 4));
           break;
         case 2:
           // CallSS VTSM (menu x, rsm_cell y)
-          code += sprintf('saveRSM(%s); var menu = MENU_TYPES[domain][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
+          code += sprintf('saveRSM(%s); lang = pickLang(domain) || pickLang(0) || lang; var menu = MENU_TYPES[domain][lang][%s]; clearTimeout(t); t = setTimeout(MPGCIUT[menu.domain][menu.lang][menu.pgc].run.bind(MPGCIUT[menu.domain][menu.lang][menu.pgc])); return 1;',
             getbits(command, 31, 8),
             getbits(command, 19, 4)
           );
           break;
         case 3:
           // CallSS VMGM (pgc x, rsm_cell y)
-          code += sprintf('saveRSM(%s); clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][%s].run.bind(MPGCIUT[0][lang][%s])); return 1;',
+          code += sprintf('saveRSM(%s); lang = pickLang(0) || lang; clearTimeout(t); t = setTimeout(MPGCIUT[0][lang][%s].run.bind(MPGCIUT[0][lang][%s])); return 1;',
             getbits(command, 31, 8),
             getbits(command, 46, 15),
             getbits(command, 46, 15)

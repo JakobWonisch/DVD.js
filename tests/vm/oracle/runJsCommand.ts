@@ -197,6 +197,10 @@ export function runJsCommands(opts: JsRunOptions): NavEffect {
     return { domain: Number(keys[0]) || startDomain, pgc: 1, chapter: ptt };
   });
 
+  // JumpSS/CallSS recompile emits `lang = pickLang(...) || lang` before
+  // MENU_TYPES / MPGCIUT indexing (VMGM LUs may be "default", not "en").
+  env.pickLang = (_domainIndex?: number) => 'en';
+
   env.MENU_TYPES = nestedProxy(3, (keys) => ({
     domain: Number(keys[0]) || 0,
     lang: 'en',
