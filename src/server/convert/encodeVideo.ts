@@ -29,8 +29,8 @@ import {
 import {
   menuVideoFormat,
   titleVideoFormat,
-  webColorMetadataArgs,
   webVideoColorFilter,
+  webVideoColorMetadataArgs,
 } from './dvdColorConvert.js';
 
 type EncodeVideoOptions = {
@@ -358,7 +358,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
       '-auto-alt-ref', '0',
       '-threads', '0',
       '-vf', vf,
-      ...webColorMetadataArgs(),
+      ...webVideoColorMetadataArgs({ videoFormat: videoFormat }),
       '-fps_mode', 'cfr',
       '-avoid_negative_ts', 'make_zero',
     ];

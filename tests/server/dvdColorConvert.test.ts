@@ -3,9 +3,10 @@ import {
   dvdInputColorSpace,
   menuVideoFormat,
   titleVideoFormat,
-  webColorMetadataArgs,
   webStillColorFilter,
+  webStillColorMetadataArgs,
   webVideoColorFilter,
+  webVideoColorMetadataArgs,
 } from '../../src/server/convert/dvdColorConvert.js';
 
 describe('dvdInputColorSpace', () => {
@@ -45,17 +46,17 @@ describe('menuVideoFormat / titleVideoFormat', () => {
 });
 
 describe('web color filters', () => {
-  it('builds NTSC WebM filter with full-range BT.709 (fast, no gamma)', () => {
+  it('builds WebM filter as yadif-only limited yuv420p (no TV→PC)', () => {
     expect(webVideoColorFilter({ videoFormat: 0 })).toBe(
-      'yadif=0:-1:0,colorspace=iall=smpte170m:all=bt709:irange=tv:range=pc:fast=1:format=yuv420p',
+      'yadif=0:-1:0,format=yuv420p',
     );
   });
 
-  it('builds PAL WebM filter and optional tpad', () => {
+  it('builds WebM filter with optional tpad', () => {
     expect(
       webVideoColorFilter({ videoFormat: 1, padToDuration: true }),
     ).toBe(
-      'yadif=0:-1:0,colorspace=iall=bt470bg:all=bt709:irange=tv:range=pc:fast=1:format=yuv420p,tpad=stop_mode=clone:stop_duration=3600',
+      'yadif=0:-1:0,format=yuv420p,tpad=stop_mode=clone:stop_duration=3600',
     );
   });
 
@@ -65,8 +66,31 @@ describe('web color filters', () => {
     );
   });
 
-  it('tags output as BT.709 full range with sRGB transfer', () => {
-    expect(webColorMetadataArgs()).toEqual([
+  it('tags WebM as limited-range BT.601 matching the disc', () => {
+    expect(webVideoColorMetadataArgs({ videoFormat: 1 })).toEqual([
+      '-color_primaries',
+      'bt470bg',
+      '-color_trc',
+      'bt470bg',
+      '-colorspace',
+      'bt470bg',
+      '-color_range',
+      'tv',
+    ]);
+    expect(webVideoColorMetadataArgs({ videoFormat: 0 })).toEqual([
+      '-color_primaries',
+      'smpte170m',
+      '-color_trc',
+      'smpte170m',
+      '-colorspace',
+      'smpte170m',
+      '-color_range',
+      'tv',
+    ]);
+  });
+
+  it('tags stills as BT.709 full range with sRGB transfer', () => {
+    expect(webStillColorMetadataArgs()).toEqual([
       '-color_primaries',
       'bt709',
       '-color_trc',

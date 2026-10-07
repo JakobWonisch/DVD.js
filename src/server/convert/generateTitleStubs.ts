@@ -37,8 +37,8 @@ import {
 import { TITLE_INCLUDE_MAX_SEC } from './titleIncludePolicy.js';
 import {
   titleVideoFormat,
-  webColorMetadataArgs,
   webStillColorFilter,
+  webStillColorMetadataArgs,
 } from './dvdColorConvert.js';
 import {
   buildStubButtonsFromNav,
@@ -395,7 +395,7 @@ function extractTitleStubStill(
     String(seek.frameCount || 1),
     '-vf',
     webStillColorFilter({ videoFormat: videoFormat }),
-    ...webColorMetadataArgs(),
+    ...webStillColorMetadataArgs(),
     ...stillWebpEncodeArgs(),
     '-y',
     outWebp,

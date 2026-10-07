@@ -16,8 +16,8 @@ import { buildMenuCellTimingMap } from './buildMenuCellTimingMap.js';
 import { menuFrameHeightFromIfo } from './menuFrameHeight.js';
 import {
   menuVideoFormat,
-  webColorMetadataArgs,
   webStillColorFilter,
+  webStillColorMetadataArgs,
 } from './dvdColorConvert.js';
 import { capMenuEncodeEndBytes } from './menuEncodeSegments.js';
 import {
@@ -331,7 +331,7 @@ function extractMenu(dvdPath: string, callback) {
       String(seek.frameCount || 1),
       '-vf',
       webStillColorFilter({ videoFormat: videoFormat }),
-      ...webColorMetadataArgs(),
+      ...webStillColorMetadataArgs(),
       ...stillWebpEncodeArgs(),
       '-y',
       outWebp,
@@ -413,7 +413,7 @@ function extractMenu(dvdPath: string, callback) {
       '1',
       '-vf',
       webStillColorFilter({ videoFormat: videoFormat }),
-      ...webColorMetadataArgs(),
+      ...webStillColorMetadataArgs(),
       ...stillWebpEncodeArgs(),
       '-y',
       outWebp,
