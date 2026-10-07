@@ -206,6 +206,14 @@ export async function archiveHasRequiredFiles(
  * Build an ordered file list so metadata.json / vm.js are archived first.
  * Truncated packs then still extract far enough to be usable / diagnosable.
  */
+/**
+ * IFO / NAV sector JSON written during convert. Needed for --vm-only /
+ * reconvert on the unpacked tree, but not for playback — omit from .tar.gz.
+ */
+export function isConvertScratchJson(name: string): boolean {
+  return /^(VIDEO_TS|VTS_\d{2}_\d+)(-0x[0-9A-Fa-f]+)?\.json$/i.test(name);
+}
+
 function writeOrderedTarFileList(webFolder: string, discId: string): string {
   var dir = discDirPath(webFolder, discId);
   var names = fs.readdirSync(dir).filter(function (name) {
@@ -215,7 +223,8 @@ function writeOrderedTarFileList(webFolder: string, discId: string): string {
       name !== ARCHIVE_MTIME_MARKER &&
       name !== ARCHIVE_MTIME_MARKER_LEGACY &&
       name !== CONVERTING_MARKER &&
-      name !== CONVERTING_MARKER_LEGACY
+      name !== CONVERTING_MARKER_LEGACY &&
+      !isConvertScratchJson(name)
     );
   });
   var priority = ['metadata.json', 'vm.js', 'cover.jpg'];
@@ -491,17 +500,30 @@ function lastAccessMs(webFolder: string, discId: string): number {
   }
 }
 
+export type PackDiscArchiveOptions = {
+  /**
+   * When true (local/dev: `evictDiscCache: false`), leave the convert tree on
+   * disk after packing so IFO/NAV JSON remain for `--vm-only` / iteration.
+   * Stamp archive-mtime so ensure will not re-extract over that tree.
+   * When false (production: `evictDiscCache: true`), delete the folder after
+   * a successful pack (archive-only at rest).
+   */
+  keepUnpacked?: boolean;
+};
+
 /**
- * Pack a converted disc folder into <discId>.tar.gz, keep cover.jpg as a
- * sidecar for the catalogue, and remove the folder.
+ * Pack a converted disc folder into <discId>.tar.gz and keep cover.jpg as a
+ * sidecar. By default removes the folder; pass `keepUnpacked: true` for dev.
  */
 export async function packDiscArchive(
   webFolder: string,
   discId: string,
+  opts?: PackDiscArchiveOptions,
 ): Promise<void> {
   if (!isSafeDiscId(discId)) {
     throw new Error('Invalid disc id: ' + discId);
   }
+  var keepUnpacked = !!(opts && opts.keepUnpacked);
   return withDiscLock(discId, async function () {
     var dir = discDirPath(webFolder, discId);
     if (!fs.existsSync(path.join(dir, 'metadata.json'))) {
@@ -567,6 +589,18 @@ export async function packDiscArchive(
       } catch {
         // ignore
       }
+    }
+
+    if (keepUnpacked) {
+      // Dev: keep convert tree (scratch JSON + media). Mark it current so the
+      // next ensureDiscReady does not re-extract the JSON-less archive over it.
+      endDiscConvert(webFolder, discId);
+      var packedMtime = archiveMtimeMs(webFolder, discId);
+      if (packedMtime > 0) {
+        writeArchiveMtimeMarker(webFolder, discId, packedMtime);
+      }
+      touchAccess(webFolder, discId);
+      return;
     }
 
     // Rename away first so ensure cannot report ready on a folder we are about

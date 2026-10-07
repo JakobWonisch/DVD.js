@@ -30,6 +30,10 @@ import generateTitleStubs from '../server/convert/generateTitleStubs.js';
 import generateJavaScript from '../server/convert/generateJavaScript.js';
 import encodeVideo from '../server/convert/encodeVideo.js';
 import packConvertedDisc from '../server/convert/packDiscArchive.js';
+import {
+  packDiscFolders,
+  resolvePackDiscIds,
+} from '../server/convert/packOnly.js';
 import { TITLE_INCLUDE_MAX_SEC } from '../server/convert/titleIncludePolicy.js';
 import { beginDiscConvert, waitUntilDiscReady } from '../server/discCache.js';
 
@@ -45,6 +49,10 @@ export type ConvertOptions = {
    * Skips IFO parse, stills, SPU, encode, etc.
    */
   vmOnly: boolean;
+  /**
+   * Only rewrite .tar.gz from existing unpacked webFolder discs (no ffmpeg).
+   */
+  packOnly: boolean;
   /**
    * Treat the positional as a disc name (or path) under webFolder
    * instead of a source VIDEO_TS tree.
@@ -90,6 +98,10 @@ const { values, positionals } = parseArgs({
       type: 'boolean',
       default: false,
     },
+    'pack-only': {
+      type: 'boolean',
+      default: false,
+    },
     web: {
       type: 'boolean',
       default: false,
@@ -124,6 +136,7 @@ const { values, positionals } = parseArgs({
 const options: ConvertOptions = {
   full: Boolean(values.full || values.titles),
   vmOnly: Boolean(values['vm-only']),
+  packOnly: Boolean(values['pack-only']),
   web: Boolean(values.web),
   rip: Boolean(values.rip),
   ripOnly: Boolean(values['rip-only']),
@@ -143,6 +156,9 @@ Usage:
   pnpm convert -- --vm-only path/to/DVD/root
   pnpm convert -- --vm-only --web lotr1_part1
   pnpm convert -- --vm-only --web /path/to/webFolder/lotr1_part1
+  pnpm convert -- --pack-only
+  pnpm convert -- --pack-only Shrek Harry_Potter_Philosophers_Ston
+  pnpm pack-discs
 
 With no path: use the sole optical drive (/dev/sr0, …). Errors if none or
 several drives are present — pass an explicit path in those cases.
@@ -158,6 +174,11 @@ all title content (feature, extras).
 With --web, the positional is a disc folder name (or path) under webFolder —
 the original VIDEO_TS tree is not required.
 
+--pack-only rewrites <disc>.tar.gz from existing unpacked webFolder discs
+(no ffmpeg / stills / encode). Omits convert scratch JSON from the archive.
+With no names: pack every folder that has metadata.json. Does not convert
+PNG→WebP or drop still-only WebMs — that needs a full reconvert.
+
 Rip (dvdbackup + libdvdcss):
   --rip [--work-dir DIR]      Decrypt/copy then convert (temp dir if no --work-dir)
   --rip-only --work-dir DIR   Decrypt/copy to DIR and stop
@@ -166,13 +187,27 @@ Rip (dvdbackup + libdvdcss):
   --verbose / -v              Show full ffmpeg stderr (non-monotonic DTS, etc.)
 
 Convert always packs webFolder/<disc>.tar.gz (+ cover sidecar) at the end.
+With evictDiscCache=false (local/dev default), the unpacked folder is kept for
+--vm-only; with true, pack deletes it (archive-only at rest).
 By default ffmpeg encode logs are quiet (errors + progress only).
 
 Use nix develop so ffmpeg-full + dvdbackup + libdvdcss are on PATH.`);
   process.exit(0);
 }
 
-const inputPath = resolveInputPath(positionals[0], options);
+if (options.packOnly) {
+  if (options.vmOnly || options.full || options.rip || options.ripOnly) {
+    console.error('--pack-only cannot be combined with convert/rip flags.');
+    process.exit(1);
+  }
+  var packIds = resolvePackDiscIds(appConfig.webFolder, positionals);
+  packDiscFolders(appConfig.webFolder, packIds).catch(function (err) {
+    console.error(err);
+    process.exit(1);
+  });
+} else {
+  convertDVD(resolveInputPath(positionals[0], options), options);
+}
 
 /**
  * Resolve the convert source: explicit positional, or the sole optical drive.
@@ -411,4 +446,3 @@ function afterConvertHooks(dvdPath: string, opts: ConvertOptions) {
   });
 }
 
-convertDVD(inputPath, options);

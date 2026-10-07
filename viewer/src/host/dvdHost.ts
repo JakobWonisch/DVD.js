@@ -56,6 +56,7 @@ import {
   preloadImageUrl,
   preloadLinkedMenuAssets,
   prioritizeTitleVideo,
+  resolveMenuStillUrl,
   setMenuVideoSeekCover,
   stillCoverUrlFromMenu,
   whenImageReady,
@@ -592,7 +593,7 @@ function resolveMenuAssetBase(
   const still = menu.querySelector('img.menu-still') as HTMLImageElement | null;
   const stillSrc = still?.getAttribute('src');
   if (stillSrc) {
-    const m = stillSrc.match(/^(.*\/)menu-\d+-\d+-\d+\.png/);
+    const m = stillSrc.match(/^(.*\/)menu-\d+-\d+-\d+\.(?:webp|png)/i);
     if (m) {
       return m[1];
     }
@@ -673,10 +674,22 @@ function updateMenuCellVisuals(
     cssHref = `${baseDir}${prefix}.css`;
   }
 
-  // Still PNG: only invent a URL when we will show it. Motion/transition
-  // cells omit the file on purpose (viewer holds the WebM frame).
-  if (baseDir && prefix && stillMode === 'show') {
-    stillSrc = `${baseDir}${prefix}.png`;
+  // Still WebP (legacy PNG): only invent a URL when we will show it.
+  // Motion/transition cells omit the file (viewer holds the WebM frame).
+  if (stillMode === 'show') {
+    const host = menu.closest('x-video') as any;
+    const meta = host?._dvdjsMetadata as DiscMetadata | undefined;
+    const domainMeta =
+      domain != null && meta && meta[Number(domain)]
+        ? meta[Number(domain)]
+        : null;
+    stillSrc = resolveMenuStillUrl({
+      baseDir,
+      domain,
+      cellID: opts.cellID,
+      vobID: opts.vobID,
+      domainMeta,
+    });
   }
 
   if (stillMode === 'show' && stillSrc) {
@@ -694,11 +707,24 @@ function updateMenuCellVisuals(
       still.style.opacity = '';
     } else {
       // Keep whatever is currently painted (often opacity:0 over a frozen
-      // WebM). Revealing now would flash the previous cell's cached PNG.
+      // WebM). Revealing now would flash the previous cell's cached still.
       still.style.display = '';
     }
     still.onerror = () => {
       if ((menu as any)._dvdjsStillGen !== stillGen) {
+        return;
+      }
+      // Legacy archives: invent path may be .webp while files are .png.
+      const cur = still!.getAttribute('src') || '';
+      if (/\.webp$/i.test(cur)) {
+        const png = cur.replace(/\.webp$/i, '.png');
+        still!.onerror = () => {
+          if ((menu as any)._dvdjsStillGen !== stillGen) {
+            return;
+          }
+          still!.style.display = 'none';
+        };
+        still!.setAttribute('src', png);
         return;
       }
       // Failed decode of the *new* src — hide broken icon; video/cover stays.
@@ -1080,7 +1106,16 @@ function playMenuMotionSegment(
           opts.cellID != null &&
           opts.vobID != null
         ) {
-          const src = `${base}menu-${domain}-${opts.cellID}-${opts.vobID}.png`;
+          const src =
+            resolveMenuStillUrl({
+              baseDir: base,
+              domain,
+              cellID: opts.cellID,
+              vobID: opts.vobID,
+              domainMeta:
+                (host as any)._dvdjsMetadata?.[Number(domain)] || null,
+            }) ||
+            `${base}menu-${domain}-${opts.cellID}-${opts.vobID}.webp`;
           stillEl.setAttribute('src', src);
           stillEl.style.display = '';
           stillEl.style.opacity = '';
@@ -1352,7 +1387,15 @@ function playMenuMotionSegment(
           ) {
             still.setAttribute(
               'src',
-              `${base}menu-${domain}-${opts.cellID}-${opts.vobID}.png`,
+              resolveMenuStillUrl({
+                baseDir: base,
+                domain,
+                cellID: opts.cellID,
+                vobID: opts.vobID,
+                domainMeta:
+                  (host as any)._dvdjsMetadata?.[Number(domain)] || null,
+              }) ||
+                `${base}menu-${domain}-${opts.cellID}-${opts.vobID}.webp`,
             );
           }
           (still as HTMLElement).style.opacity = '';

@@ -294,9 +294,9 @@ export function updateMenuCellVisuals(
   if (!stillSrc && still?.getAttribute('src')) {
     const m = still
       .getAttribute('src')!
-      .match(/^(.*\/)menu-\d+-\d+-\d+\.png$/);
+      .match(/^(.*\/)menu-\d+-\d+-\d+\.(webp|png)$/i);
     if (m) {
-      stillSrc = `${m[1]}menu-${domain}-${opts.cellID}-${opts.vobID}.png`;
+      stillSrc = `${m[1]}menu-${domain}-${opts.cellID}-${opts.vobID}.${m[2]}`;
       cssHref = `${m[1]}menu-${domain}-${opts.cellID}-${opts.vobID}.css`;
     }
   }
@@ -308,7 +308,7 @@ export function updateMenuCellVisuals(
 
   let baseDir: string | null = null;
   if (stillSrc) {
-    const bm = stillSrc.match(/^(.*\/)menu-\d+-\d+-\d+\.png$/);
+    const bm = stillSrc.match(/^(.*\/)menu-\d+-\d+-\d+\.(?:webp|png)$/i);
     if (bm) {
       baseDir = bm[1];
     }

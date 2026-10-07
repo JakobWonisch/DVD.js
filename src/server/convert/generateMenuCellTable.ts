@@ -19,17 +19,22 @@ import {
   webColorMetadataArgs,
   webStillColorFilter,
 } from './dvdColorConvert.js';
-import { writeStillPlaceholder } from './writeStillPlaceholder.js';
 import { capMenuEncodeEndBytes } from './menuEncodeSegments.js';
 import {
   DVD_VIDEO_LB_LEN,
   cellNeedsStillPng,
   cellRelativeSkipBytes,
-  isUsableStillPng,
   loadNavBySectorForBasename,
   pickHighlightNav,
   resolveMenuStillSeek,
 } from './menuStillSeek.js';
+import {
+  MENU_STILL_EXT,
+  isUsableStillWebp,
+  stillWebpEncodeArgs,
+  unlinkStaleStillPng,
+  writeStillPlaceholderWebp,
+} from './stillWebp.js';
 
 var spawn = child_process.spawn;
 
@@ -40,7 +45,7 @@ var MIN_CELL_BYTES = 8 * 1024;
 export default extractMenu;
 
 /**
- * Generate menu cell table with still PNGs and seek metadata.
+ * Generate menu cell table with still WebPs and seek metadata.
  *
  * @param {string} dvdPath
  * @param {function} callback
@@ -108,7 +113,14 @@ function extractMenu(dvdPath: string, callback) {
       var cellBytes = end - start;
       var imgFile = path.join(
         webPath,
-        'menu-' + pointer + '-' + cellID + '-' + vobID + '.png',
+        'menu-' +
+          pointer +
+          '-' +
+          cellID +
+          '-' +
+          vobID +
+          '.' +
+          MENU_STILL_EXT,
       );
 
       ensureMenuCellEntry(cellID, vobID);
@@ -129,7 +141,16 @@ function extractMenu(dvdPath: string, callback) {
       }
 
       var stillUrl =
-        '/' + dvdName + '/menu-' + pointer + '-' + cellID + '-' + vobID + '.png';
+        '/' +
+        dvdName +
+        '/menu-' +
+        pointer +
+        '-' +
+        cellID +
+        '-' +
+        vobID +
+        '.' +
+        MENU_STILL_EXT;
       var stillLabel = pointer + '-' + cellID + '-' + vobID;
       var stillHeight = menuFrameHeightFromIfo(json);
       var highlight = pickHighlightNav(
@@ -152,6 +173,7 @@ function extractMenu(dvdPath: string, callback) {
         } catch (e) {
           // ignore
         }
+        unlinkStaleStillPng(imgFile);
         entry.still = null;
         finishCell();
         return;
@@ -163,7 +185,7 @@ function extractMenu(dvdPath: string, callback) {
           path.basename(imgFile),
           '(' + cellBytes + ' bytes)',
         );
-        writeStillPlaceholder(imgFile, stillLabel, 720, stillHeight);
+        writeStillPlaceholderWebp(imgFile, stillLabel, 720, stillHeight);
         entry.still = stillUrl;
         finishCell();
         return;
@@ -176,7 +198,7 @@ function extractMenu(dvdPath: string, callback) {
         timing: timing,
       });
 
-      extractAuthoredStillPng(
+      extractAuthoredStillWebp(
         inputFile,
         seek,
         imgFile,
@@ -198,7 +220,7 @@ function extractMenu(dvdPath: string, callback) {
             } catch (e) {
               // ignore
             }
-            writeStillPlaceholder(imgFile, stillLabel, 720, stillHeight);
+            writeStillPlaceholderWebp(imgFile, stillLabel, 720, stillHeight);
             entry.still = stillUrl;
           }
           finishCell();
@@ -246,7 +268,7 @@ function extractMenu(dvdPath: string, callback) {
    * The cell is clipped to a temp VOB first so ffmpeg cannot bleed into the next
    * cell (HP last scene page → Special Features).
    */
-  function extractAuthoredStillPng(
+  function extractAuthoredStillWebp(
     vobFile,
     seek,
     imgFile,
@@ -256,7 +278,7 @@ function extractMenu(dvdPath: string, callback) {
     done,
   ) {
     var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvd-menu-archive-still-'));
-    var outPng = path.join(tmpDir, 'still.png');
+    var outWebp = path.join(tmpDir, 'still.webp');
     var cellFile = path.join(tmpDir, 'cell.vob');
     var inputFile = vobFile;
     var skipBytes = seek.skipBytes;
@@ -310,8 +332,9 @@ function extractMenu(dvdPath: string, callback) {
       '-vf',
       webStillColorFilter({ videoFormat: videoFormat }),
       ...webColorMetadataArgs(),
+      ...stillWebpEncodeArgs(),
       '-y',
-      outPng,
+      outWebp,
     ];
 
     var child = spawn('ffmpeg', cmd);
@@ -325,13 +348,14 @@ function extractMenu(dvdPath: string, callback) {
       done(false);
     });
     child.on('close', function () {
-      if (!isUsableStillPng(outPng)) {
+      if (!isUsableStillWebp(outWebp)) {
         // Fall back: first frame of the clipped cell (no HLI skip).
         if (skipBytes !== 0 || (seek.ssSec || 0) !== 0) {
-          tryFallbackFirstFrame(inputFile, outPng, videoFormat, function (ok) {
-            if (ok && isUsableStillPng(outPng)) {
+          tryFallbackFirstFrame(inputFile, outWebp, videoFormat, function (ok) {
+            if (ok && isUsableStillWebp(outWebp)) {
               try {
-                fs.copyFileSync(outPng, imgFile);
+                fs.copyFileSync(outWebp, imgFile);
+                unlinkStaleStillPng(imgFile);
                 cleanupDir(tmpDir);
                 done(true);
                 return;
@@ -356,7 +380,8 @@ function extractMenu(dvdPath: string, callback) {
       }
 
       try {
-        fs.copyFileSync(outPng, imgFile);
+        fs.copyFileSync(outWebp, imgFile);
+        unlinkStaleStillPng(imgFile);
         cleanupDir(tmpDir);
         done(true);
       } catch (e) {
@@ -367,7 +392,7 @@ function extractMenu(dvdPath: string, callback) {
     });
   }
 
-  function tryFallbackFirstFrame(cellInput, outPng, videoFormat, done) {
+  function tryFallbackFirstFrame(cellInput, outWebp, videoFormat, done) {
     var cmd = [
       '-hide_banner',
       '-loglevel',
@@ -389,8 +414,9 @@ function extractMenu(dvdPath: string, callback) {
       '-vf',
       webStillColorFilter({ videoFormat: videoFormat }),
       ...webColorMetadataArgs(),
+      ...stillWebpEncodeArgs(),
       '-y',
-      outPng,
+      outWebp,
     ];
     var child = spawn('ffmpeg', cmd);
     child.on('error', function () {

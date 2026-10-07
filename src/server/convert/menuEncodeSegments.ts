@@ -15,7 +15,53 @@ export type MenuCellLike = {
   endSec?: number;
   start_sector?: number;
   last_sector?: number;
+  still_time?: number;
+  buttons?: unknown[] | null;
 };
+
+/**
+ * Match viewer `menuCellPrefersStillOnly`: short timed stills with no buttons
+ * (Avatar language copyrights) — show the still, do not encode motion WebM.
+ */
+export function menuCellPrefersStillOnlyEncode(cell: {
+  still_time?: number | null;
+  startSec?: number | null;
+  endSec?: number | null;
+  buttons?: unknown[] | null;
+}): boolean {
+  const stillTime = cell.still_time != null ? cell.still_time : 0;
+  if (!(stillTime >= 3 && stillTime < 255)) {
+    return false;
+  }
+  if (cell.buttons && cell.buttons.length) {
+    return false;
+  }
+  const start = cell.startSec != null ? cell.startSec : 0;
+  const end = cell.endSec != null ? cell.endSec : start;
+  const duration = end - start;
+  return duration > 0 && duration <= 1.5;
+}
+
+/**
+ * Whether convert should encode a per-cell menu WebM.
+ * Infinite stills (255) and prefer-still-only copyrights are still-only in the
+ * viewer — encoding them wastes archive space.
+ */
+export function menuCellNeedsMotionWebm(cell: {
+  still_time?: number | null;
+  startSec?: number | null;
+  endSec?: number | null;
+  buttons?: unknown[] | null;
+}): boolean {
+  const stillTime = cell.still_time != null ? cell.still_time : 0;
+  if (stillTime === 255) {
+    return false;
+  }
+  if (menuCellPrefersStillOnlyEncode(cell)) {
+    return false;
+  }
+  return true;
+}
 
 export type MenuEncodeSegment = {
   /** Absolute timeline start (matches menuCell / vm.js). */
@@ -94,6 +140,9 @@ export function buildMenuEncodeSegments(
         startSector == null ||
         !Number.isFinite(startSector)
       ) {
+        continue;
+      }
+      if (!menuCellNeedsMotionWebm(cell)) {
         continue;
       }
       const durationSec = endSec - startSec;

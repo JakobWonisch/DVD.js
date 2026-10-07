@@ -248,6 +248,8 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
           } catch (e) {
             // ignore
           }
+          // Still-only cells are omitted from segments — delete stale WebMs.
+          unlinkOrphanMenuCellWebms(index, cellVideos || {});
           finishOne();
         });
         return;
@@ -270,6 +272,7 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
         } catch (e) {
           // ignore
         }
+        unlinkOrphanMenuCellWebms(index, {});
         finishOne();
         return;
       }
@@ -1009,6 +1012,48 @@ function encodeVideo(dvdPath: string, optionsOrCallback, callback?) {
 
   function getWebName(name: string): string {
     return path.join(webPath, getJsonFileName(name));
+  }
+
+  /**
+   * Delete menu-{domain}-*-*.webm that were not encoded this run (still-only
+   * cells, failed cells, or prior convert leftovers).
+   */
+  function unlinkOrphanMenuCellWebms(
+    domainIndex: number,
+    kept: Record<string, string>,
+  ) {
+    var prefix = 'menu-' + domainIndex + '-';
+    var keepNames = new Set<string>();
+    Object.keys(kept).forEach(function (key) {
+      var url = kept[key];
+      if (typeof url === 'string') {
+        keepNames.add(path.basename(url));
+      }
+    });
+    var names: string[] = [];
+    try {
+      names = fs.readdirSync(webPath);
+    } catch (e) {
+      return;
+    }
+    for (var i = 0; i < names.length; i++) {
+      var name = names[i];
+      if (!name.startsWith(prefix) || !name.endsWith('.webm')) {
+        continue;
+      }
+      // menu-{d}-{cell}-{vob}.webm only (not -spu).
+      if (!/^menu-\d+-\d+-\d+\.webm$/i.test(name)) {
+        continue;
+      }
+      if (keepNames.has(name)) {
+        continue;
+      }
+      try {
+        fs.unlinkSync(path.join(webPath, name));
+      } catch (e) {
+        // ignore
+      }
+    }
   }
 }
 

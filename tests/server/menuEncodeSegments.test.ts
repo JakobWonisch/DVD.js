@@ -6,6 +6,7 @@ import {
   buildMenuEncodeSegments,
   capMenuEncodeEndBytes,
   clipVobByteRange,
+  menuCellNeedsMotionWebm,
   menuForceKeyFrameTimes,
 } from '../../src/server/convert/menuEncodeSegments.js';
 import { DVD_VIDEO_LB_LEN } from '../../src/server/convert/menuStillSeek.js';
@@ -93,6 +94,60 @@ describe('buildMenuEncodeSegments', () => {
   it('returns empty when menuCell missing', () => {
     expect(buildMenuEncodeSegments(null)).toEqual([]);
     expect(buildMenuEncodeSegments(undefined)).toEqual([]);
+  });
+
+  it('skips infinite stills and prefer-still-only copyrights', () => {
+    expect(
+      menuCellNeedsMotionWebm({
+        still_time: 255,
+        startSec: 0,
+        endSec: 1,
+      }),
+    ).toBe(false);
+    expect(
+      menuCellNeedsMotionWebm({
+        still_time: 5,
+        startSec: 2.88,
+        endSec: 3.36,
+        buttons: [],
+      }),
+    ).toBe(false);
+    expect(
+      menuCellNeedsMotionWebm({
+        still_time: 0,
+        startSec: 0,
+        endSec: 10,
+      }),
+    ).toBe(true);
+
+    const segments = buildMenuEncodeSegments({
+      '1': {
+        '1': {
+          startSec: 0,
+          endSec: 10,
+          start_sector: 0,
+          last_sector: 99,
+          still_time: 255,
+        },
+        '2': {
+          startSec: 10,
+          endSec: 10.4,
+          start_sector: 100,
+          last_sector: 110,
+          still_time: 5,
+          buttons: [],
+        },
+        '3': {
+          startSec: 11,
+          endSec: 15,
+          start_sector: 111,
+          last_sector: 200,
+          still_time: 0,
+        },
+      },
+    });
+    expect(segments).toHaveLength(1);
+    expect(segments[0].label).toBe('1:3');
   });
 });
 

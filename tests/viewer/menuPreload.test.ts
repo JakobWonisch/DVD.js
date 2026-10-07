@@ -15,7 +15,9 @@ import {
 
 describe('menuStillUrl', () => {
   it('builds the convert still path', () => {
-    expect(menuStillUrl('/web/Disc/', 1, 2, 3)).toBe('/web/Disc/menu-1-2-3.png');
+    expect(menuStillUrl('/web/Disc/', 1, 2, 3)).toBe(
+      '/web/Disc/menu-1-2-3.webp',
+    );
   });
 });
 
@@ -57,7 +59,7 @@ describe('collectPreloadStillUrls', () => {
       linkedStillSrcs: ['/d/menu-1-9-1.png', ''],
     });
     expect(urls.sort()).toEqual(
-      ['/d/menu-0-1-1.png', '/d/menu-0-2-1.png', '/d/menu-1-9-1.png'].sort(),
+      ['/d/menu-0-1-1.webp', '/d/menu-0-2-1.png', '/d/menu-1-9-1.png'].sort(),
     );
   });
 
@@ -339,9 +341,9 @@ describe('preloadLinkedMenuAssets', () => {
     expect(video.preload).toBe('auto');
     expect(video.load).not.toHaveBeenCalled();
     // Current opts lack still_time/buttons — treated as wipe, not preloaded.
-    expect(urls).not.toContain('/web/menu-1-1-1.png');
-    expect(urls).toContain('/web/menu-1-4-1.png');
-    expect(urls).not.toContain('/web/menu-1-1-2.png');
+    expect(urls).not.toContain('/web/menu-1-1-1.webp');
+    expect(urls).toContain('/web/menu-1-4-1.webp');
+    expect(urls).not.toContain('/web/menu-1-1-2.webp');
     expect(urls).toContain('/web/menu-1-9-2.png');
   });
 });
@@ -386,6 +388,6 @@ describe('stillCoverUrlFromMenu', () => {
       }),
       ownerDocument: null,
     } as unknown as HTMLElement;
-    expect(stillCoverUrlFromMenu(menu)).toBe('/web/menu-1-2-1.png');
+    expect(stillCoverUrlFromMenu(menu)).toBe('/web/menu-1-2-1.webp');
   });
 });

@@ -48,7 +48,42 @@ export function menuStillUrl(
   cellID: string | number,
   vobID: string | number,
 ): string {
-  return `${baseDir}menu-${domain}-${cellID}-${vobID}.png`;
+  return `${baseDir}menu-${domain}-${cellID}-${vobID}.webp`;
+}
+
+/** Invent a still URL; prefer metadata `still`, else WebP (legacy: .png). */
+export function resolveMenuStillUrl(opts: {
+  baseDir: string | null | undefined;
+  domain: string | number | null | undefined;
+  cellID: string | number | null | undefined;
+  vobID: string | number | null | undefined;
+  /** Explicit still from metadata / menuCell. */
+  still?: string | null;
+  domainMeta?: {
+    menuCell?: Record<
+      string,
+      Record<string, { still?: string | null } | undefined> | undefined
+    >;
+  } | null;
+}): string | null {
+  if (typeof opts.still === 'string' && opts.still) {
+    return opts.still;
+  }
+  const domain = opts.domain;
+  const cellID = opts.cellID;
+  const vobID = opts.vobID;
+  if (domain == null || cellID == null || vobID == null) {
+    return null;
+  }
+  const fromMeta =
+    opts.domainMeta?.menuCell?.[String(cellID)]?.[String(vobID)]?.still;
+  if (typeof fromMeta === 'string' && fromMeta) {
+    return fromMeta;
+  }
+  if (!opts.baseDir) {
+    return null;
+  }
+  return menuStillUrl(opts.baseDir, domain, cellID, vobID);
 }
 
 export function imageHasPixels(
@@ -489,7 +524,7 @@ export function stillCoverUrlFromMenu(
   if (domain != null && cell != null && vob != null) {
     let baseDir: string | null = null;
     if (fromImg) {
-      const m = fromImg.match(/^(.*\/)menu-\d+-\d+-\d+\.png/);
+      const m = fromImg.match(/^(.*\/)menu-\d+-\d+-\d+\.(?:webp|png)/i);
       if (m) {
         baseDir = m[1];
       }
@@ -505,7 +540,7 @@ export function stillCoverUrlFromMenu(
       }
     }
     if (baseDir) {
-      return `${baseDir}menu-${domain}-${cell}-${vob}.png`;
+      return menuStillUrl(baseDir, domain, cell, vob);
     }
   }
   return fromImg;

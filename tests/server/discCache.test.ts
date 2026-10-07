@@ -17,6 +17,7 @@ import {
   ensureDiscReady,
   evictExpiredDiscCache,
   hasArchive,
+  isConvertScratchJson,
   isDiscConverting,
   isDiscReady,
   isSafeDiscId,
@@ -45,6 +46,17 @@ afterEach(function () {
   vi.useRealTimers();
 });
 
+describe('isConvertScratchJson', () => {
+  it('matches IFO and NAV dumps, not metadata', () => {
+    expect(isConvertScratchJson('metadata.json')).toBe(false);
+    expect(isConvertScratchJson('VIDEO_TS.json')).toBe(true);
+    expect(isConvertScratchJson('VTS_01_0.json')).toBe(true);
+    expect(isConvertScratchJson('VIDEO_TS-0x01000F.json')).toBe(true);
+    expect(isConvertScratchJson('VTS_02_0-0x00.json')).toBe(true);
+    expect(isConvertScratchJson('menu-0-1-1.webp')).toBe(false);
+  });
+});
+
 describe('packDiscArchive', () => {
   it('creates tar.gz + cover sidecar and removes the folder', async () => {
     var webFolder = makeTempWebFolder();
@@ -69,6 +81,55 @@ describe('packDiscArchive', () => {
     var members = stdout.split(/\r?\n/).filter(Boolean);
     expect(members[0]).toBe(discId + '/metadata.json');
     expect(members[1]).toBe(discId + '/vm.js');
+
+    fs.rmSync(webFolder, { recursive: true, force: true });
+  });
+
+  it('omits convert IFO/NAV JSON from the archive', async () => {
+    var webFolder = makeTempWebFolder();
+    var discId = 'ScratchJson';
+    var dir = seedDisc(webFolder, discId);
+    fs.writeFileSync(path.join(dir, 'VIDEO_TS.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'VTS_01_0.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'VIDEO_TS-0x01.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'menu-0-1-1.webp'), 'fake-webp');
+    beginDiscConvert(webFolder, discId);
+
+    await packDiscArchive(webFolder, discId);
+
+    var { stdout } = await execFile('tar', [
+      '-tzf',
+      archivePath(webFolder, discId),
+    ]);
+    var members = stdout.split(/\r?\n/).filter(Boolean);
+    expect(members).toContain(discId + '/metadata.json');
+    expect(members).toContain(discId + '/menu-0-1-1.webp');
+    expect(members).not.toContain(discId + '/VIDEO_TS.json');
+    expect(members).not.toContain(discId + '/VTS_01_0.json');
+    expect(members).not.toContain(discId + '/VIDEO_TS-0x01.json');
+
+    fs.rmSync(webFolder, { recursive: true, force: true });
+  });
+
+  it('keepUnpacked leaves the convert tree and does not re-extract over it', async () => {
+    var webFolder = makeTempWebFolder();
+    var discId = 'KeepUnpack';
+    var dir = seedDisc(webFolder, discId);
+    fs.writeFileSync(path.join(dir, 'VIDEO_TS.json'), '{"vm":true}');
+    beginDiscConvert(webFolder, discId);
+
+    await packDiscArchive(webFolder, discId, { keepUnpacked: true });
+
+    expect(hasArchive(webFolder, discId)).toBe(true);
+    expect(isDiscReady(webFolder, discId)).toBe(true);
+    expect(isDiscConverting(webFolder, discId)).toBe(false);
+    expect(fs.readFileSync(path.join(dir, 'VIDEO_TS.json'), 'utf8')).toBe(
+      '{"vm":true}',
+    );
+
+    // ensure must not replace the kept tree with a JSON-less extract.
+    await ensureDiscReady(webFolder, discId);
+    expect(fs.existsSync(path.join(dir, 'VIDEO_TS.json'))).toBe(true);
 
     fs.rmSync(webFolder, { recursive: true, force: true });
   });

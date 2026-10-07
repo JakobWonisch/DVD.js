@@ -15,15 +15,20 @@ import * as os from 'node:os';
 import * as serverUtils from '../../server/utils/index.js';
 import { globFiles } from '../../server/utils/globFiles.js';
 import editMetadataFile from '../../server/utils/editMetadataFile.js';
-import { writeStillPlaceholder } from './writeStillPlaceholder.js';
 import {
   DVD_VIDEO_LB_LEN,
   cellRelativeSkipBytes,
   hliOffsetSecFromNav,
-  isUsableStillPng,
   STILL_SEEK_FRAME_CANDIDATES,
   STILL_SEEK_WINDOW_SEC,
 } from './menuStillSeek.js';
+import {
+  MENU_STILL_EXT,
+  isUsableStillWebp,
+  stillWebpEncodeArgs,
+  unlinkStaleStillPng,
+  writeStillPlaceholderWebp,
+} from './stillWebp.js';
 import {
   buildShortTitleEncodePlan,
   buildVobExtents,
@@ -227,7 +232,14 @@ function materializeInteractiveStub(
   var cellID = cell.cellId;
   var vobID = cell.vobId;
   var imgName =
-    'title-stub-' + opts.domainIndex + '-' + cellID + '-' + vobID + '.png';
+    'title-stub-' +
+    opts.domainIndex +
+    '-' +
+    cellID +
+    '-' +
+    vobID +
+    '.' +
+    MENU_STILL_EXT;
   var cssName =
     'title-stub-' + opts.domainIndex + '-' + cellID + '-' + vobID + '.css';
   var imgFile = path.join(opts.webPath, imgName);
@@ -283,7 +295,7 @@ function materializeInteractiveStub(
     startResolved.path !== endResolved.path ||
     startResolved.path !== hliResolved.path
   ) {
-    writeStillPlaceholder(imgFile, stillLabel, 720, frameHeight);
+    writeStillPlaceholderWebp(imgFile, stillLabel, 720, frameHeight);
     finish();
     return;
   }
@@ -308,7 +320,7 @@ function materializeInteractiveStub(
     titleVideoFormat(opts.ifoJson),
     function (ok) {
       if (!ok) {
-        writeStillPlaceholder(imgFile, stillLabel, 720, frameHeight);
+        writeStillPlaceholderWebp(imgFile, stillLabel, 720, frameHeight);
       }
       finish();
     },
@@ -330,7 +342,7 @@ function extractTitleStubStill(
   done: (ok: boolean) => void,
 ) {
   var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvd-menu-archive-title-stub-'));
-  var outPng = path.join(tmpDir, 'still.png');
+  var outWebp = path.join(tmpDir, 'still.webp');
   var cellFile = path.join(tmpDir, 'cell.vob');
   var inputFile = vobFile;
   var skipBytes = seek.skipBytes;
@@ -384,8 +396,9 @@ function extractTitleStubStill(
     '-vf',
     webStillColorFilter({ videoFormat: videoFormat }),
     ...webColorMetadataArgs(),
+    ...stillWebpEncodeArgs(),
     '-y',
-    outPng,
+    outWebp,
   ];
 
   var child = spawn('ffmpeg', cmd);
@@ -394,13 +407,14 @@ function extractTitleStubStill(
     done(false);
   });
   child.on('close', function () {
-    if (!isUsableStillPng(outPng)) {
+    if (!isUsableStillWebp(outWebp)) {
       cleanupDir(tmpDir);
       done(false);
       return;
     }
     try {
-      fs.copyFileSync(outPng, imgFile);
+      fs.copyFileSync(outWebp, imgFile);
+      unlinkStaleStillPng(imgFile);
       cleanupDir(tmpDir);
       done(true);
     } catch (e) {
