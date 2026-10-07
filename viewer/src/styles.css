@@ -279,8 +279,9 @@ footer {
 }
 
 /*
- * Video surface only — overlays / spinner / virtual remote are confined here.
+ * Video surface only — status / start / spinner overlays are confined here.
  * Matches the DVD aspect box (same max-width as x-video).
+ * Virtual remote lives on .player-stage (viewport / fullscreen overlay).
  */
 .player-surface {
   position: relative;
@@ -553,37 +554,36 @@ footer {
 }
 
 /*
- * Emulator-style touch D-pad: bottom-center over the stage, semi-transparent.
+ * Touch-emulator D-pad: fixed bottom-center of the viewport (not the video box).
+ * Child of .player-stage so it stays visible when the stage is fullscreen.
  * Available on all viewports when the toolbar checkbox is on (not mobile-only).
  */
 .virtual-remote {
-  /* Anchored to .player-surface (video box), not the toolbar. */
-  position: absolute;
+  position: fixed;
   left: 50%;
-  bottom: 0.75rem;
+  bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
-  z-index: 35;
+  z-index: 40;
   pointer-events: none;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
 
+/* Clear the fullscreen toolbar strip at the bottom of the stage. */
 .player-stage:fullscreen .virtual-remote {
-  bottom: 0.75rem;
+  bottom: max(4rem, calc(3.25rem + env(safe-area-inset-bottom, 0px)));
 }
 
 .virtual-remote__pad {
   display: grid;
-  grid-template-columns: repeat(3, 3.1rem);
-  grid-template-rows: repeat(3, 3.1rem);
-  gap: 0.2rem;
-  padding: 0.45rem;
-  border-radius: 1.35rem;
-  background: rgba(20, 20, 24, 0.42);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(2px);
+  grid-template-columns: repeat(3, 3.25rem);
+  grid-template-rows: repeat(3, 3.25rem);
+  gap: 0.35rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
   pointer-events: auto;
 }
 
@@ -591,10 +591,10 @@ footer {
   appearance: none;
   margin: 0;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 0.55rem;
-  background: rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0.65rem;
+  background: rgba(180, 180, 185, 0.38);
+  color: rgba(255, 255, 255, 0.92);
   font-size: 0.95rem;
   line-height: 1;
   cursor: pointer;
@@ -606,47 +606,35 @@ footer {
 }
 
 .virtual-remote__btn:active {
-  background: rgba(255, 255, 255, 0.38);
+  background: rgba(220, 220, 225, 0.55);
   color: #fff;
 }
 
 .virtual-remote__btn--up {
   grid-column: 2;
   grid-row: 1;
-  border-radius: 0.55rem 0.55rem 0.35rem 0.35rem;
 }
 
 .virtual-remote__btn--left {
   grid-column: 1;
   grid-row: 2;
-  border-radius: 0.55rem 0.35rem 0.35rem 0.55rem;
 }
 
 .virtual-remote__btn--enter {
   grid-column: 2;
   grid-row: 2;
   border-radius: 50%;
-  background: rgba(255, 204, 0, 0.28);
-  border-color: rgba(255, 204, 0, 0.55);
-  color: #ffe082;
   font-size: 1.05rem;
-}
-
-.virtual-remote__btn--enter:active {
-  background: rgba(255, 204, 0, 0.5);
-  color: #fff8e1;
 }
 
 .virtual-remote__btn--right {
   grid-column: 3;
   grid-row: 2;
-  border-radius: 0.35rem 0.55rem 0.55rem 0.35rem;
 }
 
 .virtual-remote__btn--down {
   grid-column: 2;
   grid-row: 3;
-  border-radius: 0.35rem 0.35rem 0.55rem 0.55rem;
 }
 
 .player-toolbar__actions {

@@ -462,9 +462,6 @@ export const PlayDisc: Component = () => {
             </p>
           </div>
         </Show>
-        <Show when={metadata() && showRemote() && !needsStart()}>
-          <VirtualRemote host={hostEl()} />
-        </Show>
         <Show when={mediaLoad().active}>
           <div
             class="player-media-load"
@@ -487,6 +484,9 @@ export const PlayDisc: Component = () => {
           </div>
         </Show>
       </div>
+      <Show when={metadata() && showRemote() && !needsStart()}>
+        <VirtualRemote host={hostEl()} />
+      </Show>
       <Show when={metadata()}>
         <div
           class="player-toolbar"
