@@ -6,8 +6,12 @@
 
 'use strict';
 
-/** Ignore tiny/gray failed stills when choosing a cover. */
-export const MIN_COVER_STILL_BYTES = 32 * 1024;
+/**
+ * Ignore gray placeholder / tiny failed stills (~0.8–3KB) when choosing a
+ * cover. Real dark WebP main menus (Harry Potter) often sit at 15–30KB — the
+ * old 32KB floor rejected them and fell through to a large copyright still.
+ */
+export const MIN_COVER_STILL_BYTES = 4 * 1024;
 
 /** DVD PGCI menu type nibble (entry_id & 0x0f). */
 export const MENU_TYPE_TITLE = 2;
@@ -79,6 +83,129 @@ export function orderMenuLangs(langs: string[]): string[] {
     }
   }
   return out;
+}
+
+/** Per-cell cover ranking hints derived from metadata menu LUs. */
+export type CoverCellLangRank = {
+  /** Lower is better — index in orderMenuLangs (en=0, default=1, …). */
+  langRank: number;
+  /** Best matching LU code (for reason strings). */
+  lang: string;
+  /** Index of the first PGC in that LU that contains the cell (earlier = better). */
+  pgcOrd: number;
+  /** True when the cell sits on a Title/Root entry PGC. */
+  mainMenu: boolean;
+};
+
+/**
+ * Map domain:cell:vob → language / PGC-order ranks for cover preference.
+ * Within one LU (Avatar-style multi-language cells), earlier PGCs are usually
+ * the primary (often English) menus.
+ */
+export function coverCellLangRanks(
+  metadata: CoverDomainMeta[] | null | undefined,
+): Map<string, CoverCellLangRank> {
+  const out = new Map<string, CoverCellLangRank>();
+  if (!Array.isArray(metadata)) {
+    return out;
+  }
+
+  for (let domain = 0; domain < metadata.length; domain++) {
+    const byLang = metadata[domain] && metadata[domain].menu;
+    if (!byLang) {
+      continue;
+    }
+    const langs = orderMenuLangs(Object.keys(byLang));
+    for (let li = 0; li < langs.length; li++) {
+      const lang = langs[li];
+      const pgcs = byLang[lang];
+      if (!Array.isArray(pgcs)) {
+        continue;
+      }
+      for (let pi = 0; pi < pgcs.length; pi++) {
+        const pgc = pgcs[pi];
+        if (!pgc || !Array.isArray(pgc.cells)) {
+          continue;
+        }
+        const main = menuType(pgc.entry) === MENU_TYPE_TITLE ||
+          menuType(pgc.entry) === MENU_TYPE_ROOT;
+        for (let ci = 0; ci < pgc.cells.length; ci++) {
+          const cell = pgc.cells[ci];
+          if (!cell || cell.cellID == null || cell.vobID == null) {
+            continue;
+          }
+          const key = stillKey(domain, cell.cellID, cell.vobID);
+          const prev = out.get(key);
+          const cand: CoverCellLangRank = {
+            langRank: li,
+            lang: lang,
+            pgcOrd: pi,
+            mainMenu: main,
+          };
+          if (
+            !prev ||
+            cand.langRank < prev.langRank ||
+            (cand.langRank === prev.langRank && cand.pgcOrd < prev.pgcOrd) ||
+            (cand.langRank === prev.langRank &&
+              cand.pgcOrd === prev.pgcOrd &&
+              cand.mainMenu &&
+              !prev.mainMenu)
+          ) {
+            // Keep mainMenu if any matching PGC is Title/Root.
+            if (prev && prev.mainMenu) {
+              cand.mainMenu = true;
+            }
+            out.set(key, cand);
+          } else if (prev && main) {
+            prev.mainMenu = true;
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Order play-title cells for cover: Title/Root → en/default → earlier PGC
+ * in that LU → original discovery order.
+ */
+export function sortPlayTitleCellsForCover(
+  playCells: CoverPlayTitleCell[],
+  metadata?: CoverDomainMeta[] | null,
+): CoverPlayTitleCell[] {
+  if (!playCells.length) {
+    return playCells;
+  }
+  const ranks = coverCellLangRanks(metadata);
+  const indexed = playCells.map(function (play, index) {
+    return { play: play, index: index };
+  });
+  indexed.sort(function (a, b) {
+    const ka = stillKey(a.play.domain, a.play.cellID, a.play.vobID);
+    const kb = stillKey(b.play.domain, b.play.cellID, b.play.vobID);
+    const ra = ranks.get(ka);
+    const rb = ranks.get(kb);
+    const mainA = ra && ra.mainMenu ? 0 : 1;
+    const mainB = rb && rb.mainMenu ? 0 : 1;
+    if (mainA !== mainB) {
+      return mainA - mainB;
+    }
+    const langA = ra ? ra.langRank : 999;
+    const langB = rb ? rb.langRank : 999;
+    if (langA !== langB) {
+      return langA - langB;
+    }
+    const pgcA = ra ? ra.pgcOrd : 9999;
+    const pgcB = rb ? rb.pgcOrd : 9999;
+    if (pgcA !== pgcB) {
+      return pgcA - pgcB;
+    }
+    return a.index - b.index;
+  });
+  return indexed.map(function (x) {
+    return x.play;
+  });
 }
 
 /**
@@ -259,8 +386,8 @@ function stillFromPlayCell(
 }
 
 /**
- * Prefer play-title cells that sit on a Title/Root menu, then other play-title
- * cells (LinkPGCN/JumpTT trampolines), then classic Title/Root stills.
+ * Prefer play-title cells on Title/Root, then en/default (earlier PGC within
+ * that LU), then other play trampolines, then classic Title/Root stills.
  */
 export function pickCoverStill(opts: {
   stills: CoverStillFile[];
@@ -279,27 +406,26 @@ export function pickCoverStill(opts: {
     byKey.set(stillKey(still.domain, still.cellID, still.vobID), still);
   }
 
-  const playCells = opts.playTitleCells || [];
+  const ranks = coverCellLangRanks(opts.metadata);
+  const playCells = sortPlayTitleCellsForCover(
+    opts.playTitleCells || [],
+    opts.metadata,
+  );
   if (playCells.length) {
-    const mainKeys = mainMenuStillKeys(opts.metadata);
-    // 1. Play button on a Title/Root menu (best catalogue match).
     for (let i = 0; i < playCells.length; i++) {
       const play = playCells[i];
-      const key = stillKey(play.domain, play.cellID, play.vobID);
-      if (!mainKeys.has(key)) {
+      const hit = stillFromPlayCell(play, byKey);
+      if (!hit) {
         continue;
       }
-      const hit = stillFromPlayCell(play, byKey);
-      if (hit) {
-        return hit;
+      const rank = ranks.get(
+        stillKey(play.domain, play.cellID, play.vobID),
+      );
+      if (rank && rank.lang) {
+        hit.reason =
+          (play.reason || hit.reason) + ' (lang ' + rank.lang + ')';
       }
-    }
-    // 2. Other play-title cells (e.g. non-entry Play trampoline menus).
-    for (let i = 0; i < playCells.length; i++) {
-      const hit = stillFromPlayCell(playCells[i], byKey);
-      if (hit) {
-        return hit;
-      }
+      return hit;
     }
   }
 

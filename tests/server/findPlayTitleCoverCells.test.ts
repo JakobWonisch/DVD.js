@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   findDirectPlayMenuPgcs,
   isChapterIndexHighlight,
+  parsePlayCoverCmd,
   type MainTitleInfo,
 } from '../../src/server/convert/findPlayTitleCoverCells.ts';
 import {
@@ -67,6 +68,17 @@ describe('vmCmdBits', () => {
   });
 });
 
+describe('parsePlayCoverCmd', () => {
+  it('parses Set GPRM + LinkPGCN (Avatar Play All button)', () => {
+    // Real Avatar VTS1 main-menu btn0 bytes: Set + LinkPGCN 6
+    expect(
+      parsePlayCoverCmd({
+        bytes: [113, 4, 0, 7, 0, 5, 0, 6],
+      }),
+    ).toEqual({ kind: 'LinkPGCN', arg: 6, ptt: 0 });
+  });
+});
+
 describe('findDirectPlayMenuPgcs', () => {
   it('finds a trampoline PGC with JumpTT to the main title', () => {
     const jumpTT1 = makeCmd({ type: 1, bit60: 1, op51: 2, arg22: 1 });
@@ -125,6 +137,74 @@ describe('findDirectPlayMenuPgcs', () => {
     };
     expect([...findDirectPlayMenuPgcs(ifo, 1, main)]).toEqual([1]);
     expect([...findDirectPlayMenuPgcs(ifo, 2, main)]).toEqual([]);
+  });
+
+  it('follows LinkPGCN and JumpSS hops into a VMGM JumpTT trampoline', () => {
+    const jumpTT1 = makeCmd({ type: 1, bit60: 1, op51: 2, arg22: 1 });
+    const jumpSsVmgm12 = makeCmd({
+      type: 1,
+      bit60: 1,
+      op51: 6,
+      arg23: 3,
+      arg46: 12,
+    });
+    const linkPgc6 = makeCmd({ type: 1, bit60: 0, op51: 4, arg14: 6 });
+    const vmgmPlay = new Set([12]);
+    // VTS domain: PGC6 JumpSS→VMGM12; PGC1 LinkPGCN→6
+    const ifo = {
+      pgci_ut: {
+        lu: [
+          {
+            pgcit: {
+              pgci_srp: [
+                {
+                  pgc: {
+                    command_tbl: {
+                      pre_cmds: [{ bytes: linkPgc6 }],
+                    },
+                  },
+                },
+                { pgc: { command_tbl: null } },
+                { pgc: { command_tbl: null } },
+                { pgc: { command_tbl: null } },
+                { pgc: { command_tbl: null } },
+                {
+                  pgc: {
+                    command_tbl: {
+                      pre_cmds: [{ bytes: jumpSsVmgm12 }],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    expect([...findDirectPlayMenuPgcs(ifo, 1, main, vmgmPlay)].sort()).toEqual([
+      1, 6,
+    ]);
+    // Sanity: VMGM PGC12 itself is direct play
+    const vmg = {
+      pgci_ut: {
+        lu: [
+          {
+            pgcit: {
+              pgci_srp: Array.from({ length: 12 }, (_, i) =>
+                i === 11
+                  ? {
+                      pgc: {
+                        command_tbl: { pre_cmds: [{ bytes: jumpTT1 }] },
+                      },
+                    }
+                  : { pgc: { command_tbl: null } },
+              ),
+            },
+          },
+        ],
+      },
+    };
+    expect([...findDirectPlayMenuPgcs(vmg, 0, main)]).toEqual([12]);
   });
 });
 

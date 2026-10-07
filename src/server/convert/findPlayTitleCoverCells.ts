@@ -231,6 +231,23 @@ type ParsedCmd = {
   ptt: number;
 };
 
+/**
+ * Optional Link after Set / SetSystem (command types 2–3).
+ * Avatar “Play All” is Set GPRM + LinkPGCN — bare type-1 parse misses it.
+ */
+function parseOptionalLink(bits: string): ParsedCmd | null {
+  // Same link opcode field as bare Link (bits 51..48).
+  if (vmGetbits(bits, 51, 4) === 4) {
+    return { kind: 'LinkPGCN', arg: vmGetbits(bits, 14, 15), ptt: 0 };
+  }
+  return null;
+}
+
+/** Exported for unit tests (Set+Link / Jump parsing). */
+export function parsePlayCoverCmd(cmd: VmCmdBytes): ParsedCmd | null {
+  return parseCmd(cmd);
+}
+
 function parseCmd(cmd: VmCmdBytes): ParsedCmd | null {
   var bytes = vmCmdBytesOf(cmd);
   var bits = vmCmdBitString(bytes);
@@ -239,36 +256,45 @@ function parseCmd(cmd: VmCmdBytes): ParsedCmd | null {
   }
   var type = vmGetbits(bits, 63, 3);
   var bit60 = vmGetbits(bits, 60, 1);
-  if (type === 1 && bit60 === 1) {
-    var op = vmGetbits(bits, 51, 4);
-    if (op === 2) {
-      return { kind: 'JumpTT', arg: vmGetbits(bits, 22, 7), ptt: 0 };
-    }
-    if (op === 3) {
-      return { kind: 'JumpVTS_TT', arg: vmGetbits(bits, 22, 7), ptt: 0 };
-    }
-    if (op === 5) {
-      return {
-        kind: 'JumpVTS_PTT',
-        arg: vmGetbits(bits, 22, 7),
-        ptt: vmGetbits(bits, 41, 10),
-      };
-    }
-    if (op === 6 || op === 8) {
-      // JumpSS / CallSS — ss type in bits 23..22
-      var ss = vmGetbits(bits, 23, 2);
-      if (ss === 3) {
+
+  // Type 1: Jump/Call (bit60=1) or Link (bit60=0).
+  if (type === 1) {
+    if (bit60 === 1) {
+      var jumpOp = vmGetbits(bits, 51, 4);
+      if (jumpOp === 2) {
+        return { kind: 'JumpTT', arg: vmGetbits(bits, 22, 7), ptt: 0 };
+      }
+      if (jumpOp === 3) {
+        return { kind: 'JumpVTS_TT', arg: vmGetbits(bits, 22, 7), ptt: 0 };
+      }
+      if (jumpOp === 5) {
         return {
-          kind: op === 6 ? 'JumpSS_VMGM_PGC' : 'CallSS_VMGM_PGC',
-          arg: vmGetbits(bits, 46, 15),
-          ptt: 0,
+          kind: 'JumpVTS_PTT',
+          arg: vmGetbits(bits, 22, 7),
+          ptt: vmGetbits(bits, 41, 10),
         };
       }
+      if (jumpOp === 6 || jumpOp === 8) {
+        var ss = vmGetbits(bits, 23, 2);
+        if (ss === 3) {
+          return {
+            kind: jumpOp === 6 ? 'JumpSS_VMGM_PGC' : 'CallSS_VMGM_PGC',
+            arg: vmGetbits(bits, 46, 15),
+            ptt: 0,
+          };
+        }
+      }
+      return null;
+    }
+    if (vmGetbits(bits, 51, 4) === 4) {
+      return { kind: 'LinkPGCN', arg: vmGetbits(bits, 14, 15), ptt: 0 };
     }
     return null;
   }
-  if (type === 1 && bit60 === 0 && vmGetbits(bits, 51, 4) === 4) {
-    return { kind: 'LinkPGCN', arg: vmGetbits(bits, 14, 15), ptt: 0 };
+
+  // Type 2 (Set System) / type 3 (Set GPRM): optional link when link-op ≠ 0.
+  if ((type === 2 || type === 3) && vmGetbits(bits, 51, 4) !== 0) {
+    return parseOptionalLink(bits);
   }
   return null;
 }
@@ -294,16 +320,13 @@ function cmdJumpsToMainTitle(
   return false;
 }
 
-/** Menu PGC indexes (1-based) whose cmds jump straight into the main title. */
-export function findDirectPlayMenuPgcs(
+function eachMenuPgcCmd(
   ifo: IfoLike,
-  domain: number,
-  main: MainTitleInfo,
-): Set<number> {
-  var out = new Set<number>();
+  visit: (pgcNr: number, parsed: ParsedCmd) => void,
+): void {
   var lus = ifo.pgci_ut && ifo.pgci_ut.lu;
   if (!Array.isArray(lus)) {
-    return out;
+    return;
   }
   for (var li = 0; li < lus.length; li++) {
     var srps = lus[li] && lus[li].pgcit && lus[li].pgcit!.pgci_srp;
@@ -323,12 +346,64 @@ export function findDirectPlayMenuPgcs(
         }
         for (var c = 0; c < cmds.length; c++) {
           var parsed = parseCmd(cmds[c]);
-          if (parsed && cmdJumpsToMainTitle(parsed, domain, main)) {
-            out.add(pi + 1);
+          if (parsed && parsed.kind) {
+            visit(pi + 1, parsed);
           }
         }
       }
     }
+  }
+}
+
+/**
+ * Menu PGC indexes (1-based) that eventually start the main title:
+ *   - direct JumpTT / JumpVTS_* 
+ *   - LinkPGCN → such a PGC (same domain)
+ *   - JumpSS/CallSS VMGM_PGC → a VMGM play PGC (cross-domain trampoline)
+ *
+ * Fixed-point over hops so Avatar VTS “Play All” → LinkPGCN → JumpSS →
+ * JumpTT is found.
+ */
+export function findDirectPlayMenuPgcs(
+  ifo: IfoLike,
+  domain: number,
+  main: MainTitleInfo,
+  vmgmPlayPgcs?: Set<number>,
+): Set<number> {
+  var out = new Set<number>();
+  eachMenuPgcCmd(ifo, function (pgcNr, parsed) {
+    if (cmdJumpsToMainTitle(parsed, domain, main)) {
+      out.add(pgcNr);
+    }
+  });
+
+  var vmgmPlay = vmgmPlayPgcs || new Set<number>();
+  var changed = true;
+  while (changed) {
+    changed = false;
+    eachMenuPgcCmd(ifo, function (pgcNr, parsed) {
+      if (out.has(pgcNr)) {
+        return;
+      }
+      if (parsed.kind === 'LinkPGCN' && out.has(parsed.arg)) {
+        out.add(pgcNr);
+        changed = true;
+        return;
+      }
+      if (
+        parsed.kind === 'JumpSS_VMGM_PGC' ||
+        parsed.kind === 'CallSS_VMGM_PGC'
+      ) {
+        // Same-domain VMGM hop uses `out`; cross-domain uses caller’s vmgm set.
+        if (
+          (domain === 0 && out.has(parsed.arg)) ||
+          vmgmPlay.has(parsed.arg)
+        ) {
+          out.add(pgcNr);
+          changed = true;
+        }
+      }
+    });
   }
   return out;
 }
@@ -372,17 +447,27 @@ export function findPlayTitleCoverCells(webPath: string): {
 
   var domains = listDomainIndexes(webPath);
   var playPgcsByDomain = new Map<number, Set<number>>();
+
+  // VMGM first — VTS menus often JumpSS into a VMGM JumpTT trampoline.
+  var vmgIfo = loadDomainIfo(webPath, 0);
+  var vmgmPlay = vmgIfo
+    ? findDirectPlayMenuPgcs(vmgIfo, 0, main)
+    : new Set<number>();
+  playPgcsByDomain.set(0, vmgmPlay);
+
   for (var di = 0; di < domains.length; di++) {
     var d = domains[di];
+    if (d === 0) {
+      continue;
+    }
     var ifo = loadDomainIfo(webPath, d);
     if (!ifo) {
       playPgcsByDomain.set(d, new Set());
       continue;
     }
-    playPgcsByDomain.set(d, findDirectPlayMenuPgcs(ifo, d, main));
+    playPgcsByDomain.set(d, findDirectPlayMenuPgcs(ifo, d, main, vmgmPlay));
   }
 
-  var vmgmPlay = playPgcsByDomain.get(0) || new Set<number>();
   var byKey = new Map<string, PlayTitleCellHit>();
 
   for (var di2 = 0; di2 < domains.length; di2++) {
