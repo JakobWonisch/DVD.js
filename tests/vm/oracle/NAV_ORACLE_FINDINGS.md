@@ -49,6 +49,26 @@ Smoke: pump until WAIT on VTSM main menu → activate 1 → expect title play.
 
 ---
 
+## Lotr See D1 (`lotr-see-d1-smoke.navscript`)
+
+Smoke: First Play → first interactive still → activate button 1.
+
+| ID | Status | Finding |
+|----|--------|---------|
+| L1 | open | First settled menu disagrees: gold=`menu vts=0 pgc=11 cell=1`, ours=`menu vts=0 pgc=2 cell=2`. Trace shows both pass title VTS_03 then VMGM pgc=2 cell=2; libdvdnav then hits WAIT and lands on pgc=11 still=255, while headless replay settles on pgc=2 (metadata: vob1/cell2 `still_time=255`, 4 buttons — harness holds). |
+| L2 | open (soft) | After activate, both reach the same place: `title vts=1 pgc=1` (gold via hop pgc=4; ours via menu pgc=4 then title). So button-1 JumpTT from the early menu matches the later menu’s outcome for this smoke — first-menu PGC mismatch is still a real nav divergence. |
+
+**Result:** settled-position **DIFF** on pos[0] (pgc 11≠2); pos[1] title matches.
+
+```bash
+pnpm nav-oracle -- \
+  --video-ts "dvds/Lotr See D1/VIDEO_TS" \
+  --web web/Lotr_See_D1/vm.js \
+  --script tests/vm/oracle/scripts/lotr-see-d1-smoke.navscript
+```
+
+---
+
 ## Cross-cutting harness notes
 
 | ID | Status | Note |

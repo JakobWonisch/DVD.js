@@ -1,0 +1,8 @@
+# Lotr See D1 — First Play → first interactive still → activate button 1
+# → land in next menu / still / stop.
+
+pump max=80000 until=still
+snapshot
+activate 1
+pump max=20000 until=vts|still|stop|wait
+snapshot
