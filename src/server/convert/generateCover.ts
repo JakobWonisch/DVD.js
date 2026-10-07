@@ -1,4 +1,4 @@
-// Generate catalogue cover.jpg from the main-menu still.
+// Generate catalogue cover.jpg from the Play-title / main-menu still.
 
 'use strict';
 
@@ -8,10 +8,12 @@ import * as child_process from 'node:child_process';
 
 import * as serverUtils from '../../server/utils/index.js';
 import { loadJsonFile } from '../utils/loadJson.js';
+import { findPlayTitleCoverCells } from './findPlayTitleCoverCells.js';
 import {
   parseMenuStillName,
   pickCoverStill,
   type CoverDomainMeta,
+  type CoverPlayTitleCell,
   type CoverStillFile,
 } from './pickCoverStill.js';
 
@@ -20,8 +22,8 @@ var spawn = child_process.spawn;
 export default generateCover;
 
 /**
- * Prefer the VMGM Title / Root menu still for cover.jpg; fall back to the
- * largest usable VMGM still when metadata has no main-menu match.
+ * Prefer the menu cell whose button starts the longest title; else VMGM
+ * Title / Root; else the largest usable VMGM still.
  *
  * @param {string} dvdPath
  * @param {function} callback
@@ -66,7 +68,34 @@ function generateCover(dvdPath: string, callback) {
     metadata = null;
   }
 
-  var source = pickCoverStill({ stills: stills, metadata: metadata });
+  var playTitleCells: CoverPlayTitleCell[] = [];
+  try {
+    var play = findPlayTitleCoverCells(webPath);
+    playTitleCells = play.cells;
+    if (play.main) {
+      console.log(
+        'Main title: TT',
+        play.main.titleNr,
+        'VTS',
+        play.main.vts,
+        'TTN',
+        play.main.vtsTtn,
+        '(' + Math.round(play.main.durationSec) + 's)',
+        playTitleCells.length
+          ? '— ' + playTitleCells.length + ' play-menu cell(s)'
+          : '— no play-menu cell found',
+      );
+    }
+  } catch (e) {
+    console.warn('Play-title cover scan failed:', e);
+    playTitleCells = [];
+  }
+
+  var source = pickCoverStill({
+    stills: stills,
+    metadata: metadata,
+    playTitleCells: playTitleCells,
+  });
   if (!source) {
     console.warn('No usable menu stills for cover.jpg');
     callback();

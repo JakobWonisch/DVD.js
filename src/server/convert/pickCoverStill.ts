@@ -1,6 +1,7 @@
 /**
- * Choose catalogue cover.jpg source: prefer the main-menu still
- * (VMGM Title → Root → other Title), not the largest/first VMGM frame.
+ * Choose catalogue cover.jpg source: prefer the menu cell that starts the
+ * longest title (Play button), then VMGM Title → Root → other Title, then
+ * the largest usable VMGM still.
  */
 
 'use strict';
@@ -40,6 +41,15 @@ export type CoverDomainMeta = {
 
 export type CoverStillPick = CoverStillFile & {
   reason: string;
+};
+
+/** Cell that can start the main (longest) title — from findPlayTitleCoverCells. */
+export type CoverPlayTitleCell = {
+  domain: number;
+  cellID: number;
+  vobID: number;
+  reason?: string;
+  via?: string;
 };
 
 function menuType(entry: number | null | undefined): number {
@@ -215,11 +225,47 @@ export function pickLargestDomainStill(
 }
 
 /**
- * Pick the best cover still from converted menu PNGs + metadata.
+ * Keys of cells that belong to any Title/Root menu PGC in metadata.
+ */
+export function mainMenuStillKeys(
+  metadata: CoverDomainMeta[] | null | undefined,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const cand of listMainMenuCandidates(metadata)) {
+    const cells = cand.pgc.cells || [];
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
+      if (!cell || cell.cellID == null || cell.vobID == null) {
+        continue;
+      }
+      keys.add(stillKey(cand.domain, cell.cellID, cell.vobID));
+    }
+  }
+  return keys;
+}
+
+function stillFromPlayCell(
+  play: CoverPlayTitleCell,
+  byKey: Map<string, CoverStillFile>,
+): CoverStillPick | null {
+  const still = byKey.get(stillKey(play.domain, play.cellID, play.vobID));
+  if (!still) {
+    return null;
+  }
+  return {
+    ...still,
+    reason: play.reason || 'play-title menu cell',
+  };
+}
+
+/**
+ * Prefer play-title cells that sit on a Title/Root menu, then other play-title
+ * cells (LinkPGCN/JumpTT trampolines), then classic Title/Root stills.
  */
 export function pickCoverStill(opts: {
   stills: CoverStillFile[];
   metadata?: CoverDomainMeta[] | null;
+  playTitleCells?: CoverPlayTitleCell[] | null;
 }): CoverStillPick | null {
   const usable = (opts.stills || []).filter(function (s) {
     return s && s.size >= MIN_COVER_STILL_BYTES;
@@ -231,6 +277,30 @@ export function pickCoverStill(opts: {
   const byKey = new Map<string, CoverStillFile>();
   for (const still of usable) {
     byKey.set(stillKey(still.domain, still.cellID, still.vobID), still);
+  }
+
+  const playCells = opts.playTitleCells || [];
+  if (playCells.length) {
+    const mainKeys = mainMenuStillKeys(opts.metadata);
+    // 1. Play button on a Title/Root menu (best catalogue match).
+    for (let i = 0; i < playCells.length; i++) {
+      const play = playCells[i];
+      const key = stillKey(play.domain, play.cellID, play.vobID);
+      if (!mainKeys.has(key)) {
+        continue;
+      }
+      const hit = stillFromPlayCell(play, byKey);
+      if (hit) {
+        return hit;
+      }
+    }
+    // 2. Other play-title cells (e.g. non-entry Play trampoline menus).
+    for (let i = 0; i < playCells.length; i++) {
+      const hit = stillFromPlayCell(playCells[i], byKey);
+      if (hit) {
+        return hit;
+      }
+    }
   }
 
   for (const cand of listMainMenuCandidates(opts.metadata)) {
@@ -260,13 +330,13 @@ export function pickCoverStill(opts: {
   };
 }
 
-/** Parse menu-D-C-V.png into a CoverStillFile (size filled by caller). */
+/** Parse menu-D-C-V.webp|png into a CoverStillFile (size filled by caller). */
 export function parseMenuStillName(
   name: string,
   full: string,
   size: number,
 ): CoverStillFile | null {
-  const m = name.match(/^menu-(\d+)-(\d+)-(\d+)\.png$/i);
+  const m = name.match(/^menu-(\d+)-(\d+)-(\d+)\.(?:webp|png)$/i);
   if (!m) {
     return null;
   }

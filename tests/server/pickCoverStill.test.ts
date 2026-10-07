@@ -15,7 +15,7 @@ function still(
   vobID: number,
   size: number,
 ): CoverStillFile {
-  const name = 'menu-' + domain + '-' + cellID + '-' + vobID + '.png';
+  const name = 'menu-' + domain + '-' + cellID + '-' + vobID + '.webp';
   return {
     name,
     full: '/tmp/' + name,
@@ -38,17 +38,20 @@ describe('orderMenuLangs', () => {
 });
 
 describe('parseMenuStillName', () => {
-  it('parses domain-cell-vob', () => {
-    expect(parseMenuStillName('menu-0-2-1.png', '/x/menu-0-2-1.png', 99)).toEqual(
-      {
-        name: 'menu-0-2-1.png',
-        full: '/x/menu-0-2-1.png',
-        size: 99,
-        domain: 0,
-        cellID: 2,
-        vobID: 1,
-      },
-    );
+  it('parses domain-cell-vob webp and legacy png', () => {
+    expect(
+      parseMenuStillName('menu-0-2-1.webp', '/x/menu-0-2-1.webp', 99),
+    ).toEqual({
+      name: 'menu-0-2-1.webp',
+      full: '/x/menu-0-2-1.webp',
+      size: 99,
+      domain: 0,
+      cellID: 2,
+      vobID: 1,
+    });
+    expect(
+      parseMenuStillName('menu-0-2-1.png', '/x/menu-0-2-1.png', 99),
+    ).toMatchObject({ domain: 0, cellID: 2, vobID: 1 });
   });
 
   it('rejects non-menu stills', () => {
@@ -135,7 +138,7 @@ describe('pickCoverStill', () => {
         },
       ],
     });
-    expect(pick?.name).toBe('menu-0-5-1.png');
+    expect(pick?.name).toBe('menu-0-5-1.webp');
     expect(pick?.reason).toContain('title menu domain 0');
   });
 
@@ -171,7 +174,7 @@ describe('pickCoverStill', () => {
         },
       ],
     });
-    expect(pick?.name).toBe('menu-1-2-1.png');
+    expect(pick?.name).toBe('menu-1-2-1.webp');
     expect(pick?.reason).toContain('root menu domain 1');
   });
 
@@ -198,7 +201,7 @@ describe('pickCoverStill', () => {
         },
       ],
     });
-    expect(pick?.name).toBe('menu-0-2-1.png');
+    expect(pick?.name).toBe('menu-0-2-1.webp');
   });
 
   it('falls back to largest VMGM still without metadata', () => {
@@ -206,8 +209,71 @@ describe('pickCoverStill', () => {
       stills: [still(1, 1, 1, 200_000), still(0, 3, 1, 50_000)],
       metadata: null,
     });
-    expect(pick?.name).toBe('menu-0-3-1.png');
+    expect(pick?.name).toBe('menu-0-3-1.webp');
     expect(pick?.reason).toContain('no main-menu match');
+  });
+
+  it('prefers a play-title cell on the Title menu over intro cells', () => {
+    const pick = pickCoverStill({
+      stills: [
+        still(0, 1, 1, 200_000), // copyright / larger
+        still(0, 5, 1, 80_000), // Title menu with Play
+      ],
+      metadata: [
+        {
+          menu: {
+            en: [
+              {
+                pgc: 4,
+                entry: 0x82,
+                cells: [{ cellID: 5, vobID: 1, still_time: 255 }],
+              },
+            ],
+          },
+        },
+      ],
+      playTitleCells: [
+        {
+          domain: 0,
+          cellID: 5,
+          vobID: 1,
+          reason: 'play title 1 via btn 0 LinkPGCN 3',
+        },
+      ],
+    });
+    expect(pick?.name).toBe('menu-0-5-1.webp');
+    expect(pick?.reason).toContain('play title');
+  });
+
+  it('uses a non-Title play-title cell before generic Title fallback', () => {
+    const pick = pickCoverStill({
+      stills: [
+        still(0, 1, 1, 90_000), // Title menu without Play
+        still(1, 2, 4, 70_000), // Play trampoline
+      ],
+      metadata: [
+        {
+          menu: {
+            en: [
+              {
+                pgc: 1,
+                entry: 0x82,
+                cells: [{ cellID: 1, vobID: 1, still_time: 255 }],
+              },
+            ],
+          },
+        },
+      ],
+      playTitleCells: [
+        {
+          domain: 1,
+          cellID: 2,
+          vobID: 4,
+          reason: 'play title 1 via btn 0 LinkPGCN 8',
+        },
+      ],
+    });
+    expect(pick?.name).toBe('menu-1-2-4.webp');
   });
 
   it('ignores stills below the size floor', () => {
