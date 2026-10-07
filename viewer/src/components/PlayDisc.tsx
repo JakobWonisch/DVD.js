@@ -27,11 +27,14 @@ import {
   type MediaLoadState,
 } from '../host/mediaLoadState.js';
 import {
-  CRT_STORAGE_KEY,
+  CSS,
   VIRTUAL_REMOTE_STORAGE_KEY,
   VIRTUAL_REMOTE_STORAGE_KEY_LEGACY,
+  readCrtMode,
+  writeCrtMode,
   readStoragePrefer,
   writeStorage,
+  type CrtMode,
 } from '../projectId.js';
 import { loadVm, startVm } from '../vm/loadVm.js';
 import type { DiscMetadata } from '../types/metadata.js';
@@ -41,6 +44,7 @@ import {
   pushVmUndo,
   VM_UNDO_CHANGE_EVENT,
 } from '../host/vmUndo.js';
+import { startCrtFull } from '../host/crtFull.js';
 
 type PlayerHost = HTMLElement & {
   setDebugHitboxes?: (enabled: boolean) => void;
@@ -160,15 +164,7 @@ export const PlayDisc: Component = () => {
       VIRTUAL_REMOTE_STORAGE_KEY_LEGACY,
     ) === '1',
   );
-  const [crtOn, setCrtOn] = createSignal(
-    (() => {
-      try {
-        return localStorage.getItem(CRT_STORAGE_KEY) === '1';
-      } catch {
-        return false;
-      }
-    })(),
-  );
+  const [crtMode, setCrtMode] = createSignal<CrtMode>(readCrtMode());
   const [isFullscreen, setIsFullscreen] = createSignal(false);
   const [mediaLoad, setMediaLoad] = createSignal<MediaLoadState>({
     active: false,
@@ -190,6 +186,26 @@ export const PlayDisc: Component = () => {
   createEffect(() => {
     const unsub = subscribeMediaLoad(setMediaLoad);
     onCleanup(unsub);
+  });
+
+  createEffect(() => {
+    if (crtMode() !== 'full') {
+      return;
+    }
+    const host = hostEl();
+    if (!host) {
+      return;
+    }
+    const stop = startCrtFull(host);
+    if (!stop) {
+      warn('crt', 'WebGL CRT unavailable — staying on Full does nothing');
+      return;
+    }
+    log('crt', 'WebGL CRT started');
+    onCleanup(() => {
+      stop();
+      log('crt', 'WebGL CRT stopped');
+    });
   });
 
   createEffect(() => {
@@ -306,6 +322,33 @@ export const PlayDisc: Component = () => {
       console.warn('Fullscreen failed', e);
     }
   };
+
+  createEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+      const key = event.key;
+      if (!(key === 'f' || key === 'F' || event.code === 'KeyF')) {
+        return;
+      }
+      const t = event.target;
+      if (
+        t instanceof HTMLElement &&
+        (t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.tagName === 'SELECT' ||
+          t.isContentEditable) &&
+        (!(t instanceof HTMLInputElement) || !t.classList.contains('btn'))
+      ) {
+        return;
+      }
+      event.preventDefault();
+      void toggleFullscreen();
+    };
+    document.addEventListener('keydown', onKey);
+    onCleanup(() => document.removeEventListener('keydown', onKey));
+  });
 
   const onStart = () => {
     const host = hostEl();
@@ -438,7 +481,10 @@ export const PlayDisc: Component = () => {
 
   return (
     <div class="player-stage" ref={setStageEl}>
-      <div class="player-surface">
+      <div
+        class="player-surface"
+        classList={{ [CSS.crtFull]: crtMode() === 'full' }}
+      >
         <Show when={decompressing() && metadata.loading}>
           <div class="decompress-screen" role="status" aria-live="polite">
             <p class="decompress-screen__title">Decompressing…</p>
@@ -468,7 +514,7 @@ export const PlayDisc: Component = () => {
               class="player-surface__crt"
               attr:preset="minimal"
               attr:fill=""
-              attr:enabled={crtOn() ? 'true' : 'false'}
+              attr:enabled={crtMode() === 'simple' ? 'true' : 'false'}
               attr:enable-glow=""
               attr:enable-glare=""
               attr:enable-curvature=""
@@ -564,18 +610,24 @@ export const PlayDisc: Component = () => {
               />
               Virtual remote
             </label>
-            <label class="player-toolbar__debug">
-              <input
-                type="checkbox"
-                checked={crtOn()}
+            <label class="player-toolbar__lang">
+              <span class="player-toolbar__lang-label">CRT effect</span>
+              <select
+                class="player-toolbar__lang-select"
                 disabled={toolbarNonEscapeLocked()}
+                value={crtMode()}
                 onChange={(e) => {
-                  const on = e.currentTarget.checked;
-                  setCrtOn(on);
-                  writeStorage(CRT_STORAGE_KEY, on ? '1' : '0');
+                  const v = e.currentTarget.value;
+                  const mode: CrtMode =
+                    v === 'simple' || v === 'full' ? v : 'none';
+                  setCrtMode(mode);
+                  writeCrtMode(mode);
                 }}
-              />
-              CRT filter
+              >
+                <option value="none">None</option>
+                <option value="simple">Simple</option>
+                <option value="full">Full</option>
+              </select>
             </label>
           </div>
           <div class="player-toolbar__actions">
@@ -638,6 +690,7 @@ export const PlayDisc: Component = () => {
             <button
               type="button"
               class="player-toolbar__fs"
+              title="Toggle fullscreen (F)"
               disabled={toolbarNonEscapeLocked()}
               onClick={() => void toggleFullscreen()}
             >

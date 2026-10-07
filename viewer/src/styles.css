@@ -301,6 +301,42 @@ footer {
   display: block;
 }
 
+/*
+ * Full (WebGL) CRT: keep <video> full-bleed *above* the CRT canvas at opacity 0
+ * so decode continues (opaque occlusion freezes drawImage). Stills/hold sit
+ * under the CRT; inline opacity still drives which layer we composite.
+ * Canvas background fills transparent tube corners.
+ */
+.player-surface.dvd-menu-archive-crt-full x-video > video {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 0 !important;
+  z-index: 8 !important;
+  pointer-events: none !important;
+  object-fit: fill !important;
+}
+
+.player-surface.dvd-menu-archive-crt-full x-video > canvas.dvd-menu-archive-menu-hold,
+.player-surface.dvd-menu-archive-crt-full x-menu img.menu-still,
+.player-surface.dvd-menu-archive-crt-full x-menu img.menu-spu,
+.player-surface.dvd-menu-archive-crt-full x-menu img.menu-spu-sel,
+.player-surface.dvd-menu-archive-crt-full x-menu img.menu-spu-act {
+  opacity: 0 !important;
+}
+
+x-video > canvas.dvd-menu-archive-crt-webgl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  pointer-events: none;
+  display: block;
+  background: #000;
+}
+
 .player-surface > crt-effect.player-surface__crt > x-video,
 .player-surface > x-video {
   width: 100%;

@@ -18,6 +18,28 @@ export const VIRTUAL_REMOTE_STORAGE_KEY_LEGACY = 'dvdjs-virtual-remote';
 
 export const CRT_STORAGE_KEY = 'dvd-menu-archive-crt';
 
+/** CRT look: none | simple (CSS) | full (WebGL). Legacy `1` → simple. */
+export type CrtMode = 'none' | 'simple' | 'full';
+
+export function readCrtMode(): CrtMode {
+  try {
+    const v = localStorage.getItem(CRT_STORAGE_KEY);
+    if (v === 'full') {
+      return 'full';
+    }
+    if (v === 'simple' || v === '1') {
+      return 'simple';
+    }
+    return 'none';
+  } catch {
+    return 'none';
+  }
+}
+
+export function writeCrtMode(mode: CrtMode): void {
+  writeStorage(CRT_STORAGE_KEY, mode);
+}
+
 export const MENU_LANG_STORAGE_KEY = 'dvd-menu-archive.menuLang';
 export const MENU_LANG_STORAGE_KEY_LEGACY = 'dvdjs.menuLang';
 
@@ -38,6 +60,8 @@ export const CSS = {
   startOverlay: 'dvd-menu-archive-start-overlay',
   startOverlayBtn: 'dvd-menu-archive-start-overlay__btn',
   startOverlayHint: 'dvd-menu-archive-start-overlay__hint',
+  crtWebgl: 'dvd-menu-archive-crt-webgl',
+  crtFull: 'dvd-menu-archive-crt-full',
 } as const;
 
 export function readStoragePrefer(

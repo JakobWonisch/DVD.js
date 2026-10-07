@@ -26,6 +26,9 @@ export const VIRTUAL_REMOTE_STORAGE_KEY_LEGACY = 'dvdjs-virtual-remote';
 
 export const CRT_STORAGE_KEY = 'dvd-menu-archive-crt';
 
+/** CRT look: none | simple (CSS) | full (WebGL). Legacy `1` → simple. */
+export type CrtMode = 'none' | 'simple' | 'full';
+
 export const MENU_LANG_STORAGE_KEY = 'dvd-menu-archive.menuLang';
 export const MENU_LANG_STORAGE_KEY_LEGACY = 'dvdjs.menuLang';
 

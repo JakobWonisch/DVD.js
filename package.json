@@ -40,6 +40,7 @@
     "preservation"
   ],
   "dependencies": {
+    "@glowbox/crt": "^1.13.0",
     "@solidjs/router": "^1.0.0",
     "connect": "^3.7.0",
     "cors": "^2.8.5",
