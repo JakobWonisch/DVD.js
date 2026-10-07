@@ -1,8 +1,6 @@
-# Build the single-command libdvdnav VM oracle.
+# Build dvdnav-oracle (eval via vendored decoder.c + play via libdvdnav.so).
 #
-# Needs public dvdnav + dvdread headers (Nix: `nix develop`, or set
-# DVDNAV_INCLUDE / DVDREAD_INCLUDE). Does not link libdvdnav.so — we compile
-# vendored decoder.c from libdvdnav 6.1.1 (see vendor/VERSION).
+# Needs public dvdnav + dvdread headers and shared libs (Nix: `nix develop`).
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 VENDOR := $(ROOT)vendor
@@ -12,9 +10,10 @@ TARGET := $(BINDIR)/dvdnav-oracle
 CC ?= gcc
 CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
 
-# Prefer pkg-config; fall back to explicit dirs or common Nix store paths.
 DVDNAV_INCLUDE ?= $(shell pkg-config --variable=includedir dvdnav 2>/dev/null)
 DVDREAD_INCLUDE ?= $(shell pkg-config --variable=includedir dvdread 2>/dev/null)
+DVDNAV_LIBDIR ?= $(shell pkg-config --variable=libdir dvdnav 2>/dev/null)
+DVDREAD_LIBDIR ?= $(shell pkg-config --variable=libdir dvdread 2>/dev/null)
 
 ifeq ($(DVDNAV_INCLUDE),)
   DVDNAV_INCLUDE := $(shell ls -d /nix/store/*-libdvdnav-*/include 2>/dev/null | head -1)
@@ -22,15 +21,29 @@ endif
 ifeq ($(DVDREAD_INCLUDE),)
   DVDREAD_INCLUDE := $(shell ls -d /nix/store/*-libdvdread-*/include 2>/dev/null | head -1)
 endif
+ifeq ($(DVDNAV_LIBDIR),)
+  DVDNAV_LIBDIR := $(shell ls -d /nix/store/*-libdvdnav-*/lib 2>/dev/null | head -1)
+endif
+ifeq ($(DVDREAD_LIBDIR),)
+  DVDREAD_LIBDIR := $(shell ls -d /nix/store/*-libdvdread-*/lib 2>/dev/null | head -1)
+endif
 
 ifeq ($(DVDNAV_INCLUDE),)
-  $(error Set DVDNAV_INCLUDE to the directory containing dvdnav/dvdnav.h (or install libdvdnav + pkg-config))
+  $(error Set DVDNAV_INCLUDE (or install libdvdnav + pkg-config))
 endif
 ifeq ($(DVDREAD_INCLUDE),)
-  $(error Set DVDREAD_INCLUDE to the directory containing dvdread/ifo_types.h (or install libdvdread + pkg-config))
+  $(error Set DVDREAD_INCLUDE (or install libdvdread + pkg-config))
+endif
+ifeq ($(DVDNAV_LIBDIR),)
+  $(error Set DVDNAV_LIBDIR)
+endif
+ifeq ($(DVDREAD_LIBDIR),)
+  $(error Set DVDREAD_LIBDIR)
 endif
 
 INCLUDES := -I$(DVDNAV_INCLUDE) -I$(DVDREAD_INCLUDE) -I$(VENDOR)/src -I$(VENDOR)/src/vm
+LIBS := -L$(DVDNAV_LIBDIR) -L$(DVDREAD_LIBDIR) -ldvdnav -ldvdread -lpthread
+RPATH := -Wl,-rpath,$(DVDNAV_LIBDIR) -Wl,-rpath,$(DVDREAD_LIBDIR)
 
 .PHONY: all clean check-headers
 
@@ -39,8 +52,8 @@ all: $(TARGET)
 $(BINDIR):
 	mkdir -p $(BINDIR)
 
-$(TARGET): main.c $(VENDOR)/src/vm/decoder.c | $(BINDIR) check-headers
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ main.c $(VENDOR)/src/vm/decoder.c
+$(TARGET): main.c play.c $(VENDOR)/src/vm/decoder.c | $(BINDIR) check-headers
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ main.c play.c $(VENDOR)/src/vm/decoder.c $(LIBS) $(RPATH)
 
 check-headers:
 	@test -f "$(DVDNAV_INCLUDE)/dvdnav/dvdnav.h" || (echo "missing $(DVDNAV_INCLUDE)/dvdnav/dvdnav.h" >&2; exit 1)

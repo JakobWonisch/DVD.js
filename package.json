@@ -24,6 +24,7 @@
     "test:watch": "vitest",
     "build:dvdnav-oracle": "make -C tools/dvdnav-oracle",
     "test:vm-oracle": "pnpm build:dvdnav-oracle && vitest run tests/vm/oracle",
+    "nav-oracle": "pnpm build:dvdnav-oracle && node --experimental-strip-types ./scripts/nav-oracle.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p viewer/tsconfig.json"
   },
   "repository": {

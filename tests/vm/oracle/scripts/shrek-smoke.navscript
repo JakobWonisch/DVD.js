@@ -1,0 +1,8 @@
+# Shrek menus smoke — First Play → first interactive still → activate button 1
+# → land in VTS menu (or next still/stop).
+
+pump max=80000 until=still
+snapshot
+activate 1
+pump max=20000 until=vts|still|stop
+snapshot

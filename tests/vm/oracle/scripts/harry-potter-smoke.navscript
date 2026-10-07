@@ -1,0 +1,8 @@
+# Harry Potter — FP briefly hits titles then VTSM. No infinite still on the
+# first menu (motion + WAIT). Stop on WAIT while still in VTSM, then activate.
+
+pump max=80000 until=wait
+snapshot
+activate 1
+pump max=20000 until=vts|still|stop|wait
+snapshot

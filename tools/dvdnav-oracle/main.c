@@ -1,14 +1,12 @@
 /*
- * dvdnav-oracle — evaluate DVD VM commands with libdvdnav's decoder.
+ * dvdnav-oracle — libdvdnav-backed VM oracles.
  *
- * Compiles libdvdnav 6.1.1 src/vm/decoder.c (vendored) against public
- * dvdnav/dvdread headers. Does not link libdvdnav.so — only needs headers
- * for vm_cmd_t / includes.
+ * eval: vendored decoder.c (vmEval_CMD) vs recompiled JS (no disc needed).
+ * play: linked libdvdnav.so disc-path traces for Part 3 nav oracle.
  *
  * Usage:
  *   dvdnav-oracle eval --cmd HEX [--cmd HEX ...] [--gprm v0,...] [--sprm v0,...]
- *
- * Prints one JSON object to stdout.
+ *   dvdnav-oracle play --path /path/to/DVD [--script file.navscript]
  */
 
 #include <stdio.h>
@@ -21,6 +19,8 @@
 #include <dvdread/ifo_types.h> /* vm_cmd_t */
 
 #include "decoder.h"
+
+int cmd_play(int argc, char **argv);
 
 #define MAX_CMDS 64
 
@@ -192,7 +192,9 @@ static void apply_link_button_highlight(registers_t *regs, const link_t *link) {
 
 static void usage(void) {
   fprintf(stderr,
-    "Usage: dvdnav-oracle eval --cmd HEX16 [--cmd HEX16 ...] [--gprm v0,..] [--sprm v0,..] [--gprm-mode v0,..]\n"
+    "Usage:\n"
+    "  dvdnav-oracle eval --cmd HEX16 [--cmd HEX16 ...] [--gprm v0,..] [--sprm v0,..] [--gprm-mode v0,..]\n"
+    "  dvdnav-oracle play --path /path/to/DVD [--script file.navscript]\n"
     "  HEX16 = 8 command bytes as 16 hex digits (e.g. 3002000000010000 for JumpTT 1)\n"
   );
 }
@@ -284,11 +286,14 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "eval") == 0) {
     return cmd_eval(argc - 2, argv + 2);
   }
+  if (strcmp(argv[1], "play") == 0) {
+    return cmd_play(argc - 2, argv + 2);
+  }
   if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
     usage();
     return 0;
   }
-  fprintf(stderr, "dvdnav-oracle: unknown command '%s' (try eval)\n", argv[1]);
+  fprintf(stderr, "dvdnav-oracle: unknown command '%s' (try eval|play)\n", argv[1]);
   usage();
   return 2;
 }

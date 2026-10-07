@@ -1,60 +1,83 @@
 # dvdnav-oracle
 
-Single-command (and short-sequence) **eval oracle** using libdvdnav’s VM decoder (`vmEval_CMD` from `src/vm/decoder.c`).
+libdvdnav-backed oracles for DVD.js VM parity.
 
-This is **Option A** from the nav-oracle plan: we vendor libdvdnav **6.1.1** decoder sources and compile them against public `dvdnav` / `dvdread` headers. The shared library is not linked; only headers are required.
+| Mode | What | Needs |
+|------|------|--------|
+| **eval** | Single-command `vmEval_CMD` (vendored `decoder.c`) | Headers only |
+| **play** | Disc-path JSONL traces via `libdvdnav.so` | Headers + shared libs |
 
 ## Build
 
 ```bash
-# From repo root (Nix: headers via devShell)
 nix develop -c pnpm build:dvdnav-oracle
-
-# Or manually
-make -C tools/dvdnav-oracle
+# or: make -C tools/dvdnav-oracle
 ```
 
 Binary: `tools/dvdnav-oracle/bin/dvdnav-oracle` (gitignored).
 
-Requires:
+Requires `gcc`, `make`, `libdvdnav` + `libdvdread` (Nix `devShell`).
 
-- `gcc` / `make`
-- Headers: `dvdnav/dvdnav.h`, `dvdread/ifo_types.h` (Nix `libdvdnav` + `libdvdread`, or system packages)
-
-## Usage
+## eval (Part 2)
 
 ```bash
 ./tools/dvdnav-oracle/bin/dvdnav-oracle eval --cmd 3002000000010000
-# JumpTT title 1 → JSON with gprm/sprm/link
-
-./tools/dvdnav-oracle/bin/dvdnav-oracle eval \
-  --cmd 7100000000010000 \
-  --gprm 10,3,7,0,0,0,0,0,0,0,0,0,0,0,0,0
 ```
 
-Output shape:
-
-```json
-{
-  "jumped": true,
-  "gprm": […16…],
-  "sprm": […24…],
-  "gprm_mode": […16…],
-  "link": { "command": 22, "name": "JumpTT", "data1": 1, "data2": 0, "data3": 0 }
-}
-```
-
-`--no-normalize-hl` disables applying the button→`SPRM[8]` side-effect that libdvdnav’s `process_command` normally performs after eval (enabled by default so register diffs match recompiled JS).
-
-## Tests
+Prints one JSON object: `gprm` / `sprm` / `link` after `vmEval_CMD`.
 
 ```bash
-pnpm build:dvdnav-oracle
-pnpm test:vm-oracle
+pnpm test:vm-oracle   # builds + Vitest opcode effect suite
 ```
 
-Compares each `status: 'ok'` opcode fixture’s **runtime effect** (registers + link) under libdvdnav vs `recompile()` executed in a stub host.
+## play (Part 3)
+
+Drive a real `VIDEO_TS` with a `.navscript`, emit JSONL position events:
+
+```bash
+./tools/dvdnav-oracle/bin/dvdnav-oracle play \
+  --path dvds/Shrek \
+  --script tests/vm/oracle/scripts/shrek-smoke.navscript
+```
+
+### Navscript
+
+```
+# comment
+pump max=80000 until=still
+snapshot
+activate 1
+pump max=80000 until=still|stop
+snapshot
+select down
+activate
+still_skip
+menu root
+```
+
+| Op | Meaning |
+|----|---------|
+| `pump max=N until=still\|wait\|stop\|cell\|highlight\|hop\|menu` | Read blocks until event |
+| `snapshot` | Emit current position |
+| `activate [N]` | Activate button N (1-based) or current |
+| `select up\|down\|left\|right` | Move highlight |
+| `select_button N` | Select without activate |
+| `still_skip` / `wait_skip` | Skip still/wait |
+| `menu title\|root\|…` | `dvdnav_menu_call` |
+
+Finite stills auto-skip during pump; infinite stills (`255`) stop the pump so the script can `activate` / `still_skip`.
+
+### Compare vs converted package
+
+```bash
+pnpm nav-oracle -- \
+  --video-ts dvds/Shrek \
+  --web web/Shrek/vm.js \
+  --script tests/vm/oracle/scripts/shrek-smoke.navscript
+```
+
+Vitest (`tests/vm/oracle/navOracle.test.ts`) runs the Shrek smoke when `dvds/Shrek` + `web/Shrek/vm.js` exist (or `DVDJS_NAV_*` env). Default smoke checks that both sides produce traces; set `DVDJS_NAV_STRICT=1` to require settled-position equality. Shrek + Harry Potter smokes match after harness + JumpSS/`pickLang` fixes — see `tests/vm/oracle/NAV_ORACLE_FINDINGS.md`.
 
 ## Vendor notice
 
-Files under `vendor/` are from [libdvdnav 6.1.1](https://www.videolan.org/developers/libdvdnav.html) (GPL-2.0-or-later), same family as this project’s GPL-3.0 license. See `vendor/VERSION`.
+`vendor/` holds libdvdnav **6.1.1** decoder sources for **eval** (GPL-2.0-or-later). **play** links the system/Nix `libdvdnav.so`. See `vendor/VERSION` + `NOTICE`.
