@@ -69,6 +69,46 @@ pnpm nav-oracle -- \
 
 ---
 
+## Avatar Bk1 Vol1 Eur (`avatar-vol1-smoke.navscript`)
+
+Smoke: First Play → first interactive still → activate button 1.
+
+| ID | Status | Finding |
+|----|--------|---------|
+| A1 | open (corpus) | **Gold cannot finish:** rip is menus-skewed / incomplete — `VIDEO_TS` has `VTS_03_0.IFO` but **no** `VTS_03_*.VOB` (also no `VTS_04` menu/title VOBs). After FP timed still, libdvdnav dies: `Error opening vtsN=3, domain=3`. Partial gold: start → VMGM still_timed=2 → crash. |
+| A2 | open | **Ours alone (no gold):** FP settles briefly on `menu vts=0 pgc=2 still=2`, then posts into `title vts=4 pgc=2` (gold would have entered VTS_03). Activate on title has no `btnCmd` → harness `still_skip` → `title vts=5 pgc=4` cell1↔2 loop until stack overflow (`Maximum call stack size exceeded`). Related to Avatar-class language-copyright / missing-title auto-skip (AGENTS.md) plus incomplete title media in this rip. |
+
+**Result:** compare **blocked** (gold play exits 1). Need fuller VIDEO_TS or oracle soft-fail when a VTS VOB is missing.
+
+```bash
+pnpm nav-oracle -- \
+  --video-ts "dvds/Avatar Bk1 Vol1 Eur/VIDEO_TS" \
+  --web web/Avatar_Bk1_Vol1_Eur/vm.js \
+  --script tests/vm/oracle/scripts/avatar-vol1-smoke.navscript
+```
+
+---
+
+## Avatar Bk1 Vol3 Eur (`avatar-vol3-smoke.navscript`)
+
+Smoke: First Play → first interactive still → activate button 1.
+
+| ID | Status | Finding |
+|----|--------|---------|
+| A3 | open | First settled menu: gold=`menu vts=0 pgc=3 cell=1 hl=2`, ours=`menu vts=0 pgc=2 cell=1 hl=1`. Gold FP path: timed still → title VTS_02 → VMGM pgc=3 (hl=2). Ours: finite still on pgc=2 posts into **title vts=5** and settles there for the first `pump`/`snapshot` (never reaches pgc=3 language/menu still). Same class as Avatar copyright still → JumpTT / missing-title skip (see AGENTS.md language-copyright notes). |
+| A4 | open | After activate: gold=`menu vts=4 pgc=2` (hop pgc=5 timed still → VTSM). Ours activates while still in title (no buttons) → `still_skip` → `title vts=5 pgc=5`. So the smoke never exercises the same button as gold. |
+
+**Result:** settled-position **DIFF** (count 2 vs 3; pos[0] pgc/hl; pos[1] menu≠title).
+
+```bash
+pnpm nav-oracle -- \
+  --video-ts "dvds/Avatar Bk1 Vol3 Eur/VIDEO_TS" \
+  --web web/Avatar_Bk1_Vol3_Eur/vm.js \
+  --script tests/vm/oracle/scripts/avatar-vol3-smoke.navscript
+```
+
+---
+
 ## Cross-cutting harness notes
 
 | ID | Status | Note |
