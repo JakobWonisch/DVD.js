@@ -16,6 +16,8 @@ export const DEBUG_WINDOW_FLAG = 'dvdMenuArchiveDebug';
 export const VIRTUAL_REMOTE_STORAGE_KEY = 'dvd-menu-archive-virtual-remote';
 export const VIRTUAL_REMOTE_STORAGE_KEY_LEGACY = 'dvdjs-virtual-remote';
 
+export const CRT_STORAGE_KEY = 'dvd-menu-archive-crt';
+
 export const MENU_LANG_STORAGE_KEY = 'dvd-menu-archive.menuLang';
 export const MENU_LANG_STORAGE_KEY_LEGACY = 'dvdjs.menuLang';
 

@@ -182,11 +182,11 @@ Prefer documenting this over inventing a silent HW path. Menus-only converts are
 
 ### Color normalize / tag (stills + WebM)
 
-DVD MPEG-2 is **BT.601 limited (TV) range**. Untagged limited WebM often looks darker in Chrome (HW decode); untagged PNG/WebP stills can look darker in Firefox (CMS) vs VLC. Convert expands TV→PC and tags output via `dvdColorConvert.ts`:
+DVD MPEG-2 is **BT.601 limited (TV) range**. Untagged limited WebM often looks darker in Chrome (HW decode); untagged PNG/WebP stills can look darker in Firefox (CMS) vs VLC. Convert handles **WebM and stills differently** via `dvdColorConvert.ts`:
 
-- Filter: `yadif` + `colorspace=iall=smpte170m|bt470bg:all=bt709:irange=tv:range=pc:fast=1` (NTSC/PAL from IFO `video_format`; menus use VMGM/VTSM, titles use `vts_video_attr`). **`fast=1` is required** — a full `bt470bg→bt709` transfer conversion crushes PAL midtones (~30% darker vs VLC)
-- Metadata: `-color_primaries bt709 -color_trc iec61966-2-1 -colorspace bt709 -color_range pc` (sRGB TRC for browsers)
-- Applied to menu/title WebM (`encodeVideo`), menu stills (`generateMenuCellTable`), and title-stub stills (`generateTitleStubs`)
+- **WebM (libvpx):** `yadif` only — **do not** expand TV→PC before encode. Expanding + tagging `color_range=pc` round-trips ~30% darker through libvpx than limited pixels tagged `tv` (HP main menu meanRGB 22 vs 31, matching the WebP still). Tag with source BT.601 + `-color_range tv` (`smpte170m` / `bt470bg` from IFO `video_format`)
+- **Stills:** `yadif` + `colorspace=iall=smpte170m|bt470bg:all=bt709:irange=tv:range=pc:fast=1` then RGB→WebP. **`fast=1` is required** — a full `bt470bg→bt709` transfer crushes PAL midtones. Tag `-color_primaries bt709 -color_trc iec61966-2-1 -colorspace bt709 -color_range pc`
+- Applied in `encodeVideo` (WebM), `generateMenuCellTable` / `generateTitleStubs` (stills)
 
 ## Engineering standards
 
@@ -243,6 +243,8 @@ Title play after First Play: `fp_pgc` uses `setTimeout`, so unmuted `video.play(
 Viewer menu click: `loadVm` calls `init()` once and sets `_dvdjsVmInited`; `startVm` must not call `init()` again — older vm.js stacked click listeners, so after host/`btnCmd` rebuilt the menu the next handler hit `target.parentNode === null` (Harry Potter Special Features B0). Host `bindMenuKeys` click stops immediate propagation after a successful activate; generated click handler null-checks `parentNode`.
 
 Virtual remote (touch D-pad): player toolbar checkbox “Virtual remote” toggles a semi-transparent gray/white ↑←●→↓ overlay (**fixed** bottom-center of the viewport — not on the video box; still visible when `.player-stage` is fullscreen, cleared above the fullscreen toolbar). No pad backdrop blur. Preference persists in `localStorage` (`dvd-menu-archive-virtual-remote`). Available on all viewports when enabled — not mobile-only. Presses go through `handleMenuNavAction` (same path as Arrow/Enter).
+
+CRT filter (optional look): toolbar “CRT filter” wraps only the disc media (`<crt-effect preset="minimal" fill enable-glow enable-glare enable-curvature>` around `DvdDisc` / `x-video`) via npm `vault66-crt-effect` (CSS scanlines/vignette/glow/glare/curvature — not WebGL). Start/decompress/status overlays, virtual remote, and toolbar stay outside the wrap. Preference in `localStorage` (`dvd-menu-archive-crt`); off by default (`enabled="false"`).
 
 Player layout: `.player-stage` wraps `.player-surface` (DVD aspect box: video + start overlay + spinner + decompress/status), the virtual remote, and `.player-toolbar` below the surface. Surface overlays never cover the toolbar; while any surface overlay/load is active the toolbar is `player-toolbar--locked` (controls `disabled` / non-interactive).
 

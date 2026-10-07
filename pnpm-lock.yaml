@@ -193,6 +193,9 @@ importers:
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
+      vault66-crt-effect:
+        specifier: ^3.1.1
+        version: 3.1.1
     devDependencies:
       '@types/connect':
         specifier: ^3.4.38
@@ -1208,6 +1211,20 @@ packages:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
 
+  vault66-crt-effect@3.1.1:
+    resolution: {integrity: sha512-piSVW3wnwO2AGEzwjJ7k8DWF5dxN6edjjtz8jWZxsqkDAHihdE905M150jP9v0U5HdXSgUI0Aa4q83/VJ3/JSg==}
+    peerDependencies:
+      react: '>=18.0.0'
+      react-dom: '>=18.0.0'
+      vue: '>=3.0.0'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      react-dom:
+        optional: true
+      vue:
+        optional: true
+
   vite-plugin-solid@2.11.14:
     resolution: {integrity: sha512-7ZVBt8rpoyqmlwin2kRIUveaHoF6/kulY7gsnD+qFh4nS29V4OPAnw+ojoAspXIjObiL9o1xh9a/nTuYHm02Rw==}
     peerDependencies:
@@ -2130,6 +2147,8 @@ snapshots:
   utils-merge@1.0.1: {}
 
   vary@1.1.2: {}
+
+  vault66-crt-effect@3.1.1: {}
 
   vite-plugin-solid@2.11.14(solid-js@1.9.15)(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)):
     dependencies:

@@ -27,6 +27,7 @@ import {
   type MediaLoadState,
 } from '../host/mediaLoadState.js';
 import {
+  CRT_STORAGE_KEY,
   VIRTUAL_REMOTE_STORAGE_KEY,
   VIRTUAL_REMOTE_STORAGE_KEY_LEGACY,
   readStoragePrefer,
@@ -158,6 +159,15 @@ export const PlayDisc: Component = () => {
       VIRTUAL_REMOTE_STORAGE_KEY,
       VIRTUAL_REMOTE_STORAGE_KEY_LEGACY,
     ) === '1',
+  );
+  const [crtOn, setCrtOn] = createSignal(
+    (() => {
+      try {
+        return localStorage.getItem(CRT_STORAGE_KEY) === '1';
+      } catch {
+        return false;
+      }
+    })(),
   );
   const [isFullscreen, setIsFullscreen] = createSignal(false);
   const [mediaLoad, setMediaLoad] = createSignal<MediaLoadState>({
@@ -453,7 +463,19 @@ export const PlayDisc: Component = () => {
           <div class="player-surface__status error">{vmError()}</div>
         </Show>
         <Show when={metadata()}>
-          {(meta) => <DvdDisc metadata={meta()} hostRef={setHostEl} />}
+          {(meta) => (
+            <crt-effect
+              class="player-surface__crt"
+              attr:preset="minimal"
+              attr:fill=""
+              attr:enabled={crtOn() ? 'true' : 'false'}
+              attr:enable-glow=""
+              attr:enable-glare=""
+              attr:enable-curvature=""
+            >
+              <DvdDisc metadata={meta()} hostRef={setHostEl} />
+            </crt-effect>
+          )}
         </Show>
         <Show when={needsStart() && vmReady() && metadata()}>
           <div class="dvd-menu-archive-start-overlay">
@@ -541,6 +563,19 @@ export const PlayDisc: Component = () => {
                 }}
               />
               Virtual remote
+            </label>
+            <label class="player-toolbar__debug">
+              <input
+                type="checkbox"
+                checked={crtOn()}
+                disabled={toolbarNonEscapeLocked()}
+                onChange={(e) => {
+                  const on = e.currentTarget.checked;
+                  setCrtOn(on);
+                  writeStorage(CRT_STORAGE_KEY, on ? '1' : '0');
+                }}
+              />
+              CRT filter
             </label>
           </div>
           <div class="player-toolbar__actions">

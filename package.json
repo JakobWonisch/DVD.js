@@ -48,7 +48,8 @@
     "lodash": "^4.17.21",
     "mdns-js": "^1.0.3",
     "serve-static": "^1.16.2",
-    "solid-js": "^1.9.15"
+    "solid-js": "^1.9.15",
+    "vault66-crt-effect": "^3.1.1"
   },
   "devDependencies": {
     "@types/connect": "^3.4.38",
