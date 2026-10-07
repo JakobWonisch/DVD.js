@@ -22,6 +22,8 @@
     "reconvert": "bash ./scripts/reconvert.sh",
     "test": "vitest run",
     "test:watch": "vitest",
+    "build:dvdnav-oracle": "make -C tools/dvdnav-oracle",
+    "test:vm-oracle": "pnpm build:dvdnav-oracle && vitest run tests/vm/oracle",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p viewer/tsconfig.json"
   },
   "repository": {

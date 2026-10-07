@@ -1,0 +1,10 @@
+Vendored from libdvdnav 6.1.1 (https://www.videolan.org/developers/libdvdnav.html).
+
+Copyright (C) 2000–2004 the dvdnav / Ogle authors (see individual file headers).
+Licensed under the GNU General Public License, version 2 or later.
+
+Only the VM decoder sources needed for vmEval_CMD are included:
+  src/vm/decoder.c, decoder.h, vm.h, vmcmd.h
+  src/dvdnav_internal.h, logger.h
+
+Version pin: see VERSION in this directory.

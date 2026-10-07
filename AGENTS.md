@@ -155,9 +155,10 @@ dvd-menu-archive /dev/sr0       # convert using tools.json paths
 
 **Stay optional.** The recompiled `vm.js` path already covers menus for the MVP. Pull in libdvdnav only if corpus QA keeps hitting nav bugs the hand-ported VM cannot fix cleanly.
 
-- **Rip-time (native, preferred if needed):** use libdvdnav as an oracle while converting — validate jumps, cell order, CallSS/RSM, and exotic menu games against a known-good engine; optionally dump ground-truth nav traces for fixtures. Fits convert-and-stream; no browser WASM tax.
+- **Single-command eval oracle (implemented):** `tools/dvdnav-oracle/` vendors libdvdnav **6.1.1** `decoder.c` and builds a CLI that runs `vmEval_CMD`. Compare register + link effects against `recompile()` in a stub host via `pnpm test:vm-oracle` (needs headers from the Nix `devShell`). See `tools/dvdnav-oracle/README.md`.
+- **Rip-time disc-path oracle (planned):** drive native libdvdnav on a real `VIDEO_TS` with a scripted button stream, dump nav traces, replay against converted `vm.js`. Fits convert-and-stream; no browser WASM tax.
 - **Browser WASM (last resort):** drive menus from libdvdnav’s state machine instead of `vm.js`. Higher fidelity, heavier, and fights the “pre-rip + stream” model — only if rip-time checks prove the JS VM is the bottleneck.
-- Opcode fixtures already treat libdvdnav (`decoder.c` / `vmcmd.c`) as the reference; that stays true without shipping the library.
+- Opcode fixtures already treat libdvdnav (`decoder.c` / `vmcmd.c`) as the reference for **compile** expects; the eval oracle checks **runtime** parity.
 
 ### ffmpeg / readonly source discs
 
@@ -219,6 +220,7 @@ DVD MPEG-2 is **BT.601 limited (TV) range**. Untagged limited WebM often looks d
 | Solid viewer | `viewer/` |
 | Entry bins | `bin/convert.js`, `bin/http-server.js` |
 | Tests | `tests/**/*.test.ts` |
+| VM eval oracle | `tools/dvdnav-oracle/` + `tests/vm/oracle/` (`pnpm test:vm-oracle`) |
 | Docs | `README.md`, this file |
 
 Solid custom elements: set `data-*` with `attr:data-*={...}` (property binding does not create attributes, so generated button CSS selectors like `[data-domain="0"] …` would miss).
@@ -283,6 +285,7 @@ pnpm start                  # http://localhost:3000/ + rebuild viewer on change
 pnpm start:server           # HTTP only (no viewer watch)
 pnpm dev:viewer             # Vite HMR on :5173 (proxies disc assets; run with start:server)
 pnpm test
+pnpm build:dvdnav-oracle && pnpm test:vm-oracle  # libdvdnav eval vs recompile
 pnpm convert --                        # sole optical drive (errors if 0 or many)
 pnpm convert -- path/to/DVD/root          # menus + short title cells ≤ 60s
 pnpm convert -- --full path/to/DVD/root   # menus + all titles
