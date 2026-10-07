@@ -37,7 +37,6 @@ function generateJavaScript(dvdPath: string, callback) {
   var metadata = loadJsonFile(ifoPath);
 
   var pointer = 0;
-  var currentVideoTitle = 1;
   var code = [
     "'use strict';",
     '',
@@ -809,35 +808,64 @@ function generateJavaScript(dvdPath: string, callback) {
       return code;
     }
 
+    /**
+     * Global title → {domain, pgc} from VMG TT_SRPT + per-VTS PTT_SRPT.
+     * Do not walk each VTS PGC list with a running title counter — that
+     * mis-assigned titles (Avatar: JumpTT 6 is VTS_02, not domain 5).
+     */
     function vtt_table(json, code) {
-      if (
-        !json.vts_pgcit ||
-        !json.vts_pgcit.pgci_srp ||
-        !Array.isArray(json.vts_pgcit.pgci_srp)
-      ) {
-        console.log('No PGCI Unit table present');
+      if (pointer !== 0) {
         return code;
       }
-      var domainIndex = pointer;
-
-      for (var i = 0; i < json.vts_pgcit.nr_of_pgci_srp; i++) {
-        var pgci_srp = json.vts_pgcit.pgci_srp[i];
-        var pgcIndex = i + 1;
-        if (pgci_srp.pgc) {
-          code.push(
-            'VTT_TABLE[' +
-              currentVideoTitle +
-              '] = {domain: ' +
-              domainIndex +
-              ', pgc: ' +
-              pgcIndex +
-              '};'
-          );
-        }
-        currentVideoTitle++;
+      var tt = json.tt_srpt;
+      var titles = tt && tt.title;
+      if (!Array.isArray(titles) || !titles.length) {
+        console.log('No Title Search Pointer Table present');
+        return code;
       }
-
+      for (var i = 0; i < titles.length; i++) {
+        var t = titles[i];
+        var domainIndex = (t && t.title_set_nr) | 0;
+        var vtsTtn = (t && t.vts_ttn) | 0;
+        // JumpTT title entry: use vts_ttn as the title PGC index within that
+        // VTS (1:1 with VTSI title PGCs). PTT pgcn is chapter-oriented and
+        // can point mid-feature (Harry Potter title 2 → PTT pgcn 1 / pgn 3
+        // while JumpTT lands on title PGC 2).
+        var pgcIndex = lookupVtsTitlePgc(domainIndex, vtsTtn);
+        code.push(
+          'VTT_TABLE[' +
+            (i + 1) +
+            '] = {domain: ' +
+            domainIndex +
+            ', pgc: ' +
+            pgcIndex +
+            '};',
+        );
+      }
       return code;
+    }
+
+    function lookupVtsTitlePgc(domainIndex, vtsTtn) {
+      if (!domainIndex || !vtsTtn) {
+        return 1;
+      }
+      var id = domainIndex < 10 ? '0' + domainIndex : String(domainIndex);
+      var vtsPath = path.join(webPath, 'VTS_' + id + '_0.json');
+      try {
+        var vts = loadJsonFile(vtsPath);
+        var nr =
+          (vts && vts.vts_pgcit && vts.vts_pgcit.nr_of_pgci_srp) | 0;
+        if (nr > 0 && vtsTtn >= 1 && vtsTtn <= nr) {
+          return vtsTtn;
+        }
+        var titleList = vts && vts.vts_ptt_srpt && vts.vts_ptt_srpt.title;
+        var entry = titleList && titleList[vtsTtn - 1];
+        var pgcn =
+          entry && entry.ptt && entry.ptt[0] && entry.ptt[0].pgcn;
+        return pgcn || 1;
+      } catch (e) {
+        return vtsTtn || 1;
+      }
     }
 
     function ptt_table(json, code) {
