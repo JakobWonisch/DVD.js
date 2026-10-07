@@ -3,6 +3,7 @@
 
 pump max=80000 until=still
 snapshot
-activate 1
+# Use current highlight (language menu defaults to button 2 on Avatar EUR).
+activate
 pump max=20000 until=vts|still|stop|wait
 snapshot

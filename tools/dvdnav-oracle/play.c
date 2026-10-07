@@ -128,9 +128,19 @@ static int pump(dvdnav_t *nav, nav_state_t *st, int max_blocks, int until_mask) 
     int event = 0;
     int len = 0;
     if (dvdnav_get_next_block(nav, buf, &event, &len) != DVDNAV_STATUS_OK) {
-      fprintf(stderr, "dvdnav-oracle play: get_next_block failed: %s\n",
-              dvdnav_err_to_string(nav));
-      return -1;
+      /* Incomplete rips (missing VTS_NN_*.VOB) fail here — emit what we have
+       * so vm.js replay can still be compared up to the fault. */
+      const char *err = dvdnav_err_to_string(nav);
+      fprintf(stderr, "dvdnav-oracle play: get_next_block failed: %s\n", err);
+      refresh_program(nav, st);
+      {
+        char extra[192];
+        snprintf(extra, sizeof(extra), "\"message\":\"%s\"", err ? err : "read error");
+        emit_pos("error", st, extra);
+      }
+      st->stopped = 1;
+      hit = 1;
+      goto done;
     }
     blocks++;
 
@@ -358,6 +368,12 @@ static int run_script(dvdnav_t *nav, nav_state_t *st, FILE *fp) {
     char *p = ltrim(line);
     rtrim(p);
     if (!*p || *p == '#') continue;
+
+    /* Incomplete VIDEO_TS: stop scripting after a soft read fault. */
+    if (st->stopped) {
+      emit_pos("end", st, NULL);
+      return 0;
+    }
 
     if (strncmp(p, "pump", 4) == 0) {
       int max_blocks = 50000;
