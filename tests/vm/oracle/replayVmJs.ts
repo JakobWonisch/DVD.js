@@ -293,6 +293,11 @@ export function replayVmJs(opts: ReplayOptions): NavTraceStep[] {
       this._dvdjsFromButton = true;
     },
     playMenuCell(opts: any) {
+      // Match viewer: landing on a real menu clears missing-title skip cycle
+      // so the same skip-stub bumper can be taken again (Shrek btn6 twice).
+      missingTitleSkip.clear();
+      missingTitleBroken = false;
+      missingTitleSkipCount = 0;
       const buttons = opts.buttons || [];
       active = {
         domain: opts.domain | 0,
@@ -374,6 +379,9 @@ export function replayVmJs(opts: ReplayOptions): NavTraceStep[] {
       const stub = getStub(domain, pgc);
 
       if (stub?.kind === 'skip') {
+        // Match viewer playSkipTitleStub: clear button latch so skip stubs
+        // always follow PGC post() (Shrek special-features bumper → next menu).
+        dvd._dvdjsFromButton = false;
         tryAutoSkipMissingTitle();
         afterLanguageCopyrightPost();
         flushTimers();
@@ -427,6 +435,7 @@ export function replayVmJs(opts: ReplayOptions): NavTraceStep[] {
       const title = g.PGCIUT?.[g.domain]?.[g.pgc];
       const stub = getStub(g.domain | 0, g.pgc | 0);
       if (stub?.kind === 'skip') {
+        dvd._dvdjsFromButton = false;
         tryAutoSkipMissingTitle();
         afterLanguageCopyrightPost();
         flushTimers();

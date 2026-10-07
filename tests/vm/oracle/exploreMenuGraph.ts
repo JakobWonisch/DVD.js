@@ -5,9 +5,16 @@
  * Titles are recorded as destinations but not expanded (avoids feature drains).
  * Each path is replayed from a cold start so GPRM/SPRM match DVD semantics.
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { runNavPlayScript } from './runNavPlay.ts';
 import { replayVmJs } from './replayVmJs.ts';
 import type { NavTraceStep } from './traceTypes.ts';
+
+type TitleMedia = {
+  includedPgcs?: number[];
+  stubs?: Record<string, { kind?: string }>;
+};
 
 export type ExploreOptions = {
   videoTs: string;
@@ -70,6 +77,7 @@ export function exploreMenuGraph(opts: ExploreOptions): ExploreResult {
   const screens: string[] = [];
   const visited = new Set<string>();
   let truncated = false;
+  const titleMedia = loadTitlePgcMedia(opts.vmJsPath);
 
   const bootstrap = buildScript([], pumpMax, null);
   const gold0 = runNavPlayScript({ videoTs: opts.videoTs, scriptText: bootstrap });
@@ -96,7 +104,7 @@ export function exploreMenuGraph(opts: ExploreOptions): ExploreResult {
     return { ok: false, screens, edges, diffs, truncated: false };
   }
 
-  const entryDiff = compareSettles(gSettle, oSettle);
+  const entryDiff = compareSettles(gSettle, oSettle, titleMedia);
   if (entryDiff) diffs.push(`entry: ${entryDiff}`);
 
   if (!isMenuLike(gSettle)) {
@@ -141,7 +149,7 @@ export function exploreMenuGraph(opts: ExploreOptions): ExploreResult {
 
       const gTo = lastSettle(gold) ?? unknownSettle('gold-empty');
       const oTo = lastSettle(ours) ?? unknownSettle('ours-empty');
-      const edgeDiff = compareSettles(gTo, oTo);
+      const edgeDiff = compareSettles(gTo, oTo, titleMedia);
       const edge: ExploreEdge = {
         from: item.screen.key,
         button: btn,
@@ -308,8 +316,15 @@ function isMenuLike(s: ScreenSettle): boolean {
 /**
  * Soft position compare (same rules as compareTraces for menus).
  * Screen key ignores hl; we still flag hard space/vts/pgc mismatches.
+ *
+ * Omitted titles (menus-only skip stubs / empty includedPgcs): gold may settle
+ * inside the feature while ours stub-skips via PGC post() to a menu — soft-pass.
  */
-function compareSettles(g: ScreenSettle, o: ScreenSettle): string | null {
+function compareSettles(
+  g: ScreenSettle,
+  o: ScreenSettle,
+  titleMedia?: Map<number, TitleMedia>,
+): string | null {
   if (g.key === o.key) return null;
   // Soft: fp ↔ menu
   const gSpace = g.space === 'fp' ? 'menu' : g.space;
@@ -322,5 +337,53 @@ function compareSettles(g: ScreenSettle, o: ScreenSettle): string | null {
   if (g.space === 'title' && o.space === 'title' && g.vts === o.vts && g.pgc === o.pgc) {
     return null;
   }
+  if (
+    titleMedia &&
+    g.space === 'title' &&
+    isOmittedTitle(titleMedia, g.vts, g.pgc) &&
+    (o.space === 'menu' || o.space === 'title' || o.space === 'fp')
+  ) {
+    return null;
+  }
   return `space/vts/pgc/cell ${g.key}≠${o.key}`;
+}
+
+function isOmittedTitle(
+  titleMedia: Map<number, TitleMedia>,
+  vts: number,
+  pgc: number,
+): boolean {
+  const media = titleMedia.get(vts);
+  if (!media) return false;
+  const stub = media.stubs?.[String(pgc)];
+  if (stub?.kind === 'skip' || stub?.kind === 'interactive') return true;
+  const included = media.includedPgcs;
+  if (Array.isArray(included) && included.length > 0) {
+    return !included.includes(pgc);
+  }
+  // Empty includedPgcs + any stubs ⇒ menus-only domain with all titles omitted.
+  if (Array.isArray(included) && included.length === 0 && media.stubs) {
+    return true;
+  }
+  return false;
+}
+
+function loadTitlePgcMedia(vmJsPath: string): Map<number, TitleMedia> {
+  const out = new Map<number, TitleMedia>();
+  const metaPath = path.join(path.dirname(vmJsPath), 'metadata.json');
+  if (!fs.existsSync(metaPath)) return out;
+  try {
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as Record<
+      string,
+      { titlePgcMedia?: TitleMedia }
+    >;
+    for (const [key, val] of Object.entries(meta)) {
+      const d = Number(key);
+      if (!Number.isFinite(d) || !val?.titlePgcMedia) continue;
+      out.set(d, val.titlePgcMedia);
+    }
+  } catch {
+    /* ignore */
+  }
+  return out;
 }

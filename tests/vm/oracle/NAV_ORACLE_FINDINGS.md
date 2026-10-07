@@ -28,8 +28,10 @@ pnpm nav-oracle -- \
   --script tests/vm/oracle/scripts/avatar-vol3-smoke.navscript
 
 # Full menu graph (every screen + every button):
-pnpm nav-oracle -- --video-ts dvds/Shrek --web web/Shrek/vm.js --explore
+pnpm nav-oracle -- --video-ts dvds/Shrek --web web/Shrek/vm.js --explore \
+  --max-screens 200 --max-depth 15
 ```
+
 
 Status legend: **fixed** | open (corpus)
 
@@ -44,6 +46,16 @@ Status legend: **fixed** | open (corpus)
 | S3 | **fixed** | `still_time === 255` settles; `still_time === 0` + buttons emit WAIT (not fake infinite still). |
 
 **Result:** `OK — settled positions match`
+
+### Shrek explore (`--explore --max-screens 200 --max-depth 15`)
+
+| ID | Status | Finding |
+|----|--------|---------|
+| SE1 | **fixed** | Skip-stub titles: replay left `_dvdjsFromButton` set so `tryAutoSkipMissingTitle` no-op'd (held on omitted VTS_03). Match viewer `playSkipTitleStub` — clear latch then `post()`. |
+| SE2 | **fixed** | Re-entering the same skip stub (special-features btn6 twice) hit missing-title cycle detection → VMGM Title. Clear skip set on `playMenuCell` like the viewer. |
+| SE3 | **fixed** | Explore compare: gold may settle inside omitted features (Play → VTS_01) while ours stub-skips to a menu — soft-pass when `metadata.titlePgcMedia` marks the gold title omitted. |
+
+**Result:** `OK — menu graph destinations match` (200 screens / 707 edges at caps; graph larger than cap — truncated, no bad edges)
 
 ---
 
