@@ -16,6 +16,7 @@ import { compareTraces } from '../tests/vm/oracle/compareTraces.ts';
 import { exploreMenuGraph } from '../tests/vm/oracle/exploreMenuGraph.ts';
 import { runNavPlay } from '../tests/vm/oracle/runNavPlay.ts';
 import { replayVmJs } from '../tests/vm/oracle/replayVmJs.ts';
+import { loadTitlePgcMedia } from '../tests/vm/oracle/titlePgcMedia.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -112,7 +113,9 @@ if (args.explore) {
   const script = path.resolve(root, args.script!);
   const gold = runNavPlay({ videoTs, script });
   const ours = replayVmJs({ vmJsPath: web, scriptPath: script });
-  const result = compareTraces(gold, ours);
+  const result = compareTraces(gold, ours, {
+    titleMediaByDomain: loadTitlePgcMedia(web),
+  });
 
   if (args.json) {
     console.log(JSON.stringify({ ok: result.ok, diffs: result.diffs, gold, ours }, null, 2));

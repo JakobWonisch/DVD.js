@@ -316,6 +316,13 @@ export function replayVmJs(opts: ReplayOptions): NavTraceStep[] {
         emit('still', { still: 255, buttons: buttons.length });
         return;
       }
+      // Buttons win over finite still_time: libdvdnav settles WAIT (HP PGC9
+      // still_time 5 + OK button). Auto-skip only buttonless timed stills.
+      if (buttons.length > 0) {
+        active.waiting = true;
+        emit('wait', { buttons: buttons.length });
+        return;
+      }
       if (active.still_time > 0 && active.still_time < 255) {
         // Finite timed still — leave post pending; pump auto-skips (play.c)
         // after checking until=vts so VTS_CHANGE can stop first (Avatar).
@@ -323,11 +330,6 @@ export function replayVmJs(opts: ReplayOptions): NavTraceStep[] {
           still: active.still_time,
           buttons: buttons.length,
         });
-        return;
-      }
-      if (buttons.length > 0) {
-        active.waiting = true;
-        emit('wait', { buttons: buttons.length });
         return;
       }
       runPendingPost();
@@ -379,11 +381,11 @@ export function replayVmJs(opts: ReplayOptions): NavTraceStep[] {
       const stub = getStub(domain, pgc);
 
       if (stub?.kind === 'skip') {
-        // Match viewer playSkipTitleStub: clear button latch so skip stubs
-        // always follow PGC post() (Shrek special-features bumper → next menu).
+        // Match viewer playSkipTitleStub: clear button latch and post only —
+        // do not afterLanguageCopyrightPost (HP title pre sets gprm[0x0B] and
+        // that helper would steal navigation back to the language Root).
         dvd._dvdjsFromButton = false;
         tryAutoSkipMissingTitle();
-        afterLanguageCopyrightPost();
         flushTimers();
         return;
       }
@@ -437,7 +439,6 @@ export function replayVmJs(opts: ReplayOptions): NavTraceStep[] {
       if (stub?.kind === 'skip') {
         dvd._dvdjsFromButton = false;
         tryAutoSkipMissingTitle();
-        afterLanguageCopyrightPost();
         flushTimers();
         return;
       }
@@ -588,10 +589,12 @@ export function replayVmJs(opts: ReplayOptions): NavTraceStep[] {
       }
 
       // Finite timed stills: auto-skip during pump (play.c), unless we already
-      // stopped for until=vts above.
+      // stopped for until=vts above. Do not skip when buttons made this a WAIT
+      // settle (HP PGC9 still_time 5 + OK — libdvdnav waits for activate).
       if (
         active &&
         active.onPost &&
+        !active.waiting &&
         active.still_time > 0 &&
         active.still_time < 255
       ) {

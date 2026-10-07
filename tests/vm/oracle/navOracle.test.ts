@@ -4,6 +4,7 @@ import { exploreMenuGraph } from './exploreMenuGraph.ts';
 import { oracleBinaryExists } from './runDvdnavOracle.ts';
 import { defaultShrekPaths, runNavPlay } from './runNavPlay.ts';
 import { replayVmJs } from './replayVmJs.ts';
+import { loadTitlePgcMedia } from './titlePgcMedia.ts';
 
 /**
  * Part 3 disc-path oracle. Runs when dvdnav-oracle is built and a corpus
@@ -42,7 +43,9 @@ describe.skipIf(!enabled)('vm nav oracle (libdvdnav play vs vm.js replay)', () =
     expect(gold.some((s) => s.event === 'still' && s.still === 255)).toBe(true);
     expect(gold.some((s) => s.event === 'input_activate')).toBe(true);
 
-    const result = compareTraces(gold, ours);
+    const result = compareTraces(gold, ours, {
+      titleMediaByDomain: loadTitlePgcMedia(paths!.webVm),
+    });
     if (!result.ok) {
       console.warn(
         '[nav-oracle] settled-position divergence:\n' +

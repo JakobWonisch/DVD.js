@@ -70,6 +70,16 @@ Status legend: **fixed** | open (corpus)
 
 **Result:** `OK — settled positions match`
 
+### Harry Potter explore (`--explore --max-screens 200 --max-depth 15`)
+
+| ID | Status | Finding |
+|----|--------|---------|
+| HE1 | **fixed** | Finite `still_time` + buttons (PGC9 warning/OK) must WAIT like libdvdnav — not auto-skip as `still_timed`. Prefer buttons over finite still in `playMenuCell`; skip finite auto-skip while `waiting`. |
+| HE2 | **fixed** | Skip-stub title `post()` must not call `afterLanguageCopyrightPost` (viewer `playSkipTitleStub` does not). HP title pre sets `gprm[0x0B]` and the helper stole nav back to Root/main. |
+| HE3 | **fixed** | Smoke Play → omitted feature: gold holds in title, ours stub-skips to a menu — `compareTraces` soft-pass via `titlePgcMedia` (same rule as explore). |
+
+**Result:** `OK — menu graph destinations match` (13 screens / 105 edges, complete)
+
 ---
 
 ## Lotr See D1 (`lotr-see-d1-smoke.navscript`)

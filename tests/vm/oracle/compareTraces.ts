@@ -1,3 +1,7 @@
+import {
+  isOmittedTitle,
+  type TitlePgcMedia,
+} from './titlePgcMedia.ts';
 import { COMPARE_EVENTS, stepToPos, type NavTraceStep, type TracePos } from './traceTypes.ts';
 
 export type TraceCompareResult = {
@@ -5,6 +9,11 @@ export type TraceCompareResult = {
   diffs: string[];
   goldPositions: TracePos[];
   oursPositions: TracePos[];
+};
+
+export type TraceCompareOptions = {
+  /** When set, gold omitted-title settles vs ours menu (skip stub post) soft-pass. */
+  titleMediaByDomain?: Map<number, TitlePgcMedia>;
 };
 
 /**
@@ -17,14 +26,17 @@ export type TraceCompareResult = {
  * - `pg` may disagree when cell-list indexing differs; prefer cell+pgc+vts+space+hl
  * - `title` ignored (libdvdnav title vs our TTN often disagree on menus)
  * - First-play `space=fp` may collapse quickly — compare after first pump_end
+ * - Omitted titles (menus-only stubs): gold may hold in title while ours posts to a menu
  */
 export function compareTraces(
   gold: NavTraceStep[],
   ours: NavTraceStep[],
+  opts?: TraceCompareOptions,
 ): TraceCompareResult {
   const goldPositions = extractPositions(gold);
   const oursPositions = extractPositions(ours);
   const diffs: string[] = [];
+  const titleMedia = opts?.titleMediaByDomain;
 
   // Incomplete VIDEO_TS (missing VTS_*.VOB): gold emits error and stops.
   // Ours may continue via title stubs — treat as corpus soft-pass when ours
@@ -56,6 +68,14 @@ export function compareTraces(
   for (let i = 0; i < n; i++) {
     const g = goldPositions[i]!;
     const o = oursPositions[i]!;
+    if (
+      titleMedia &&
+      g.space === 'title' &&
+      isOmittedTitle(titleMedia, g.vts, g.pgc) &&
+      (o.space === 'menu' || o.space === 'title' || o.space === 'fp')
+    ) {
+      continue;
+    }
     const parts: string[] = [];
     if (!spaceCompatible(g.space, o.space)) {
       parts.push(`space ${g.space}≠${o.space}`);
