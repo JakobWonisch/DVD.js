@@ -8,6 +8,12 @@ import {
   beginUserButtonNav,
   isTitleUnavailableOpen,
 } from './titleUnavailable.js';
+import {
+  isViewerCrashOpen,
+  runUserVmCommand,
+  type ViewerCrashHost,
+} from './viewerCrash.js';
+import { pushVmUndo } from './vmUndo.js';
 
 export type MenuKeyHost = HTMLElement & {
   _dvdjsActiveMenu?: HTMLElement | null;
@@ -16,8 +22,10 @@ export type MenuKeyHost = HTMLElement & {
   beginUserButtonNav?: () => void;
   skipToEnd?: () => boolean;
   goToMainMenu?: () => boolean;
+  undoNav?: () => boolean;
   setMenuHighlight?: (menu: Element | null, buttonIndex: number) => void;
   flashMenuActivate?: (menu: Element | null, buttonIndex: number) => void;
+  _dvdjsOnReportProblem?: () => void | Promise<void>;
 };
 
 function activeMenu(host: MenuKeyHost): HTMLElement | null {
@@ -158,9 +166,15 @@ export function activateButton(
     host.beginUserButtonNav();
   } else {
     beginUserButtonNav(host as any);
+    try {
+      pushVmUndo(host as any, window as any);
+    } catch {
+      // ignore
+    }
   }
-  cmd();
-  return true;
+  return runUserVmCommand(host as ViewerCrashHost, cmd, {
+    onReport: host._dvdjsOnReportProblem,
+  });
 }
 
 export type MenuNavAction = 'up' | 'down' | 'left' | 'right' | 'enter';
@@ -173,8 +187,11 @@ export function handleMenuNavAction(
   host: MenuKeyHost,
   action: MenuNavAction,
 ): boolean {
-  // Sticky missing-title dialog owns input until OK / Escape.
-  if (isTitleUnavailableOpen(host as any)) {
+  // Sticky dialogs own input until dismissed.
+  if (
+    isTitleUnavailableOpen(host as any) ||
+    isViewerCrashOpen(host as any)
+  ) {
     return false;
   }
 
@@ -229,8 +246,11 @@ export function handleMenuKeyDown(
   host: MenuKeyHost,
   event: KeyboardEvent,
 ): boolean {
-  // Sticky missing-title dialog owns the keyboard until OK / Escape.
-  if (isTitleUnavailableOpen(host as any)) {
+  // Sticky dialogs own the keyboard until dismissed.
+  if (
+    isTitleUnavailableOpen(host as any) ||
+    isViewerCrashOpen(host as any)
+  ) {
     return false;
   }
 
@@ -258,7 +278,21 @@ export function handleMenuKeyDown(
     return false;
   }
   if (key === 'm' || key === 'M' || event.code === 'KeyM') {
-    if (typeof host.goToMainMenu === 'function' && host.goToMainMenu()) {
+    if (typeof host.goToMainMenu === 'function') {
+      try {
+        pushVmUndo(host as any, window as any);
+      } catch {
+        // ignore
+      }
+      if (host.goToMainMenu()) {
+        event.preventDefault();
+        return true;
+      }
+    }
+    return false;
+  }
+  if (key === 'z' && (event.ctrlKey || event.metaKey)) {
+    if (typeof host.undoNav === 'function' && host.undoNav()) {
       event.preventDefault();
       return true;
     }

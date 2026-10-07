@@ -34,12 +34,17 @@ import {
 } from '../projectId.js';
 import { loadVm, startVm } from '../vm/loadVm.js';
 import type { DiscMetadata } from '../types/metadata.js';
+import { installViewerCrashGuard } from '../host/viewerCrash.js';
+import { canVmUndo, pushVmUndo } from '../host/vmUndo.js';
 
 type PlayerHost = HTMLElement & {
   setDebugHitboxes?: (enabled: boolean) => void;
   skipToEnd?: () => boolean;
   goToMainMenu?: () => boolean;
+  undoNav?: () => boolean;
+  canUndoNav?: () => boolean;
   setMenuLanguage?: (lang: string) => boolean;
+  _dvdjsOnReportProblem?: () => void | Promise<void>;
 };
 
 type EnsureStatus = 'ready' | 'decompressing' | 'missing';
@@ -159,6 +164,14 @@ export const PlayDisc: Component = () => {
   });
   const [reportBusy, setReportBusy] = createSignal(false);
   const [reportMsg, setReportMsg] = createSignal<string | null>(null);
+  const [undoAvailable, setUndoAvailable] = createSignal(false);
+
+  const refreshUndoAvailable = () => {
+    const host = hostEl();
+    setUndoAvailable(
+      !!(host && (host.canUndoNav?.() ?? canVmUndo(host as any))),
+    );
+  };
 
   createEffect(() => {
     const unsub = subscribeMediaLoad(setMediaLoad);
@@ -295,9 +308,9 @@ export const PlayDisc: Component = () => {
     startVm(host);
   };
 
-  const onReportProblem = async () => {
+  const submitProblemReport = async (): Promise<void> => {
     if (reportBusy()) {
-      return;
+      throw new Error('Report already in progress.');
     }
     setReportBusy(true);
     setReportMsg(null);
@@ -328,31 +341,70 @@ export const PlayDisc: Component = () => {
         // ignore
       }
       if (res.status === 507 || body.error === 'storage_full') {
-        setReportMsg('Report storage is full — try again later.');
+        const msg = 'Report storage is full — try again later.';
+        setReportMsg(msg);
         warn('report', 'storage full');
-        return;
+        throw new Error(msg);
       }
       if (res.status === 429 || body.error === 'rate_limited') {
-        setReportMsg('Too many reports — try again later.');
+        const msg = 'Too many reports — try again later.';
+        setReportMsg(msg);
         warn('report', 'rate limited');
-        return;
+        throw new Error(msg);
       }
       if (!res.ok || !body.ok) {
-        setReportMsg(body.message || 'Could not send report.');
+        const msg = body.message || 'Could not send report.';
+        setReportMsg(msg);
         warn('report', 'failed', { status: res.status, body });
-        return;
+        throw new Error(msg);
       }
       setReportMsg('Thanks — report sent.');
       log('report', 'accepted', { id: body.id ?? null });
     } catch (e) {
-      setReportMsg('Could not send report.');
-      warn('report', 'network error', {
-        error: e instanceof Error ? e.message : String(e),
-      });
+      const msg =
+        e instanceof Error ? e.message : 'Could not send report.';
+      if (!reportMsg()) {
+        setReportMsg('Could not send report.');
+        warn('report', 'network error', { error: msg });
+      }
+      throw e instanceof Error ? e : new Error(msg);
     } finally {
       setReportBusy(false);
     }
   };
+
+  const onReportProblem = () => {
+    void submitProblemReport().catch(() => {
+      // status already set
+    });
+  };
+
+  createEffect(() => {
+    const host = hostEl();
+    if (!host) {
+      return;
+    }
+    host._dvdjsOnReportProblem = () => submitProblemReport();
+    const disposeGuard = installViewerCrashGuard({
+      getHost: () => hostEl() as any,
+      isActive: () =>
+        !!(vmReady() && metadata() && !needsStart() && !decompressing()),
+      onReport: () => submitProblemReport(),
+    });
+    // Poll undo affordance after user actions (cheap).
+    const onInteract = () => refreshUndoAvailable();
+    host.addEventListener('click', onInteract);
+    document.addEventListener('keydown', onInteract, true);
+    refreshUndoAvailable();
+    onCleanup(() => {
+      disposeGuard();
+      host.removeEventListener('click', onInteract);
+      document.removeEventListener('keydown', onInteract, true);
+      if (host._dvdjsOnReportProblem) {
+        delete host._dvdjsOnReportProblem;
+      }
+    });
+  });
 
   /** Hard lock: start overlay / decompress — all toolbar controls inert. */
   const controlsLocked = () =>
@@ -501,6 +553,18 @@ export const PlayDisc: Component = () => {
             </Show>
             <button
               type="button"
+              class="player-toolbar__undo"
+              title="Undo last menu navigation (Ctrl+Z)"
+              disabled={controlsLocked() || !undoAvailable()}
+              onClick={() => {
+                hostEl()?.undoNav?.();
+                refreshUndoAvailable();
+              }}
+            >
+              Undo
+            </button>
+            <button
+              type="button"
               class="player-toolbar__skip"
               title="Skip to end of current clip (N)"
               disabled={controlsLocked()}
@@ -513,7 +577,19 @@ export const PlayDisc: Component = () => {
               class="player-toolbar__menu"
               title="Jump to title/root menu (M)"
               disabled={controlsLocked()}
-              onClick={() => hostEl()?.goToMainMenu?.()}
+              onClick={() => {
+                const host = hostEl();
+                if (!host) {
+                  return;
+                }
+                try {
+                  pushVmUndo(host as any, window as any);
+                } catch {
+                  // ignore
+                }
+                host.goToMainMenu?.();
+                refreshUndoAvailable();
+              }}
             >
               Main menu
             </button>

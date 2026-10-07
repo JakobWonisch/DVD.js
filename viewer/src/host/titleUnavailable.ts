@@ -8,14 +8,24 @@ export const TITLE_UNAVAILABLE_OK_LABEL = 'OK';
 
 type TitleUnavailableDismiss = () => void;
 
-/** VM + menu UI snapshot so dismiss can undo a JumpTT that already ran. */
+/** VM + menu UI snapshot so dismiss / undo / crash recovery can restore. */
 export type MenuResumeSnapshot = {
   domain?: number;
   pgc?: number;
   lang?: string;
   pgcSpace?: string;
   cellN?: number;
+  pgN?: number;
   hlBtnn?: number;
+  /** Full GPRM bank (16). */
+  gprm?: number[];
+  gprm_mode?: number[];
+  /** Full SPRM map (named keys). */
+  sprm?: Record<string, number>;
+  rsm_cell?: number;
+  rsm_vtsN?: number;
+  rsm_pgcN?: number;
+  rsm_regs?: number[];
   menuId?: string | null;
   menuVideoTime?: number | null;
   menuVideoPaused?: boolean | null;
@@ -208,23 +218,56 @@ export function clearUserButtonNav(host: {
  */
 export function beginUserButtonNav(
   host: MissingTitleSkipHost,
-  g: VmNavGlobals & {
-    pgcSpace?: string;
-    cellN?: number;
-    sprm?: { HL_BTNN?: number };
-  } = typeof window !== 'undefined' ? (window as any) : {},
+  g: VmCaptureGlobals = typeof window !== 'undefined' ? (window as any) : {},
 ): void {
   host._dvdjsFromButton = true;
   captureMenuResumeState(host, g);
 }
 
-export function captureMenuResumeState(
+type VmCaptureGlobals = VmNavGlobals & {
+  pgcSpace?: string;
+  cellN?: number;
+  pgN?: number;
+  gprm_mode?: number[];
+  sprm?: Record<string, number>;
+  rsm_cell?: number;
+  rsm_vtsN?: number;
+  rsm_pgcN?: number;
+  rsm_regs?: number[];
+  t?: ReturnType<typeof setTimeout> | null;
+  stillTimer?: ReturnType<typeof setTimeout> | null;
+};
+
+function cloneNumberArray(src: unknown, len?: number): number[] | undefined {
+  if (!Array.isArray(src)) {
+    return undefined;
+  }
+  const out = src.map((v) => (typeof v === 'number' ? v : 0));
+  if (len != null && out.length < len) {
+    while (out.length < len) {
+      out.push(0);
+    }
+  }
+  return out;
+}
+
+function cloneSprm(src: unknown): Record<string, number> | undefined {
+  if (!src || typeof src !== 'object') {
+    return undefined;
+  }
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(src as Record<string, unknown>)) {
+    if (typeof v === 'number') {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+/** Build a deep-enough VM/menu snapshot (does not attach to host). */
+export function buildMenuResumeSnapshot(
   host: MissingTitleSkipHost,
-  g: VmNavGlobals & {
-    pgcSpace?: string;
-    cellN?: number;
-    sprm?: { HL_BTNN?: number };
-  } = typeof window !== 'undefined' ? (window as any) : {},
+  g: VmCaptureGlobals = typeof window !== 'undefined' ? (window as any) : {},
 ): MenuResumeSnapshot {
   const menu = host._dvdjsActiveMenu || null;
   const domainAttr = menu?.dataset?.domain;
@@ -243,37 +286,71 @@ export function captureMenuResumeState(
       menuVideoPaused = menuVideo.paused;
     }
   }
-  const snap: MenuResumeSnapshot = {
+  return {
     domain: g.domain,
     pgc: g.pgc,
     lang: g.lang,
     pgcSpace: g.pgcSpace,
     cellN: g.cellN,
+    pgN: g.pgN,
     hlBtnn: g.sprm?.HL_BTNN,
+    gprm: cloneNumberArray(g.gprm, 16),
+    gprm_mode: cloneNumberArray(g.gprm_mode, 16),
+    sprm: cloneSprm(g.sprm),
+    rsm_cell: typeof g.rsm_cell === 'number' ? g.rsm_cell : undefined,
+    rsm_vtsN: typeof g.rsm_vtsN === 'number' ? g.rsm_vtsN : undefined,
+    rsm_pgcN: typeof g.rsm_pgcN === 'number' ? g.rsm_pgcN : undefined,
+    rsm_regs: cloneNumberArray(g.rsm_regs),
     menuId: menu?.id ?? null,
     menuVideoTime,
     menuVideoPaused,
   };
+}
+
+export function captureMenuResumeState(
+  host: MissingTitleSkipHost,
+  g: VmCaptureGlobals = typeof window !== 'undefined' ? (window as any) : {},
+): MenuResumeSnapshot {
+  const snap = buildMenuResumeSnapshot(host, g);
   host._dvdjsMenuResume = snap;
   return snap;
 }
 
-/**
- * Restore VM globals + visible menu/highlight after a missing-title JumpTT.
- * Returns true when a snapshot was applied.
- */
-export function restoreMenuResumeState(
-  host: MissingTitleSkipHost,
-  g: VmNavGlobals & {
-    pgcSpace?: string;
-    cellN?: number;
-    sprm?: { HL_BTNN?: number };
-  } = typeof window !== 'undefined' ? (window as any) : {},
-): boolean {
-  const snap = host._dvdjsMenuResume;
-  if (!snap) {
-    return false;
+/** Cancel VM setTimeout handlers used by generated vm.js. */
+export function cancelVmNavTimers(
+  g: { t?: ReturnType<typeof setTimeout> | null; stillTimer?: ReturnType<typeof setTimeout> | null } = typeof window !== 'undefined'
+    ? (window as any)
+    : {},
+): void {
+  if (g.t != null) {
+    try {
+      clearTimeout(g.t);
+    } catch {
+      // ignore
+    }
+    g.t = null;
   }
+  if (g.stillTimer != null) {
+    try {
+      clearTimeout(g.stillTimer);
+    } catch {
+      // ignore
+    }
+    g.stillTimer = null;
+  }
+}
+
+/**
+ * Apply a snapshot to VM globals + visible menu/highlight.
+ * Does not clear host._dvdjsMenuResume (caller decides).
+ */
+export function applyMenuResumeSnapshot(
+  host: MissingTitleSkipHost,
+  snap: MenuResumeSnapshot,
+  g: VmCaptureGlobals = typeof window !== 'undefined' ? (window as any) : {},
+): boolean {
+  cancelVmNavTimers(g);
+
   if (snap.domain != null) {
     g.domain = snap.domain;
   }
@@ -289,8 +366,44 @@ export function restoreMenuResumeState(
   if (snap.cellN != null) {
     g.cellN = snap.cellN;
   }
-  if (g.sprm && snap.hlBtnn != null) {
+  if (snap.pgN != null) {
+    g.pgN = snap.pgN;
+  } else if (snap.cellN != null) {
+    g.pgN = snap.cellN;
+  }
+
+  if (snap.gprm && Array.isArray(g.gprm)) {
+    for (let i = 0; i < 16; i++) {
+      g.gprm[i] = snap.gprm[i] ?? 0;
+    }
+  }
+  if (snap.gprm_mode && Array.isArray(g.gprm_mode)) {
+    for (let i = 0; i < 16; i++) {
+      g.gprm_mode[i] = snap.gprm_mode[i] ?? 0;
+    }
+  }
+  if (snap.sprm) {
+    if (!g.sprm || typeof g.sprm !== 'object') {
+      g.sprm = {};
+    }
+    for (const [k, v] of Object.entries(snap.sprm)) {
+      g.sprm[k] = v;
+    }
+  } else if (g.sprm && snap.hlBtnn != null) {
     g.sprm.HL_BTNN = snap.hlBtnn;
+  }
+
+  if (snap.rsm_cell != null) {
+    g.rsm_cell = snap.rsm_cell;
+  }
+  if (snap.rsm_vtsN != null) {
+    g.rsm_vtsN = snap.rsm_vtsN;
+  }
+  if (snap.rsm_pgcN != null) {
+    g.rsm_pgcN = snap.rsm_pgcN;
+  }
+  if (snap.rsm_regs) {
+    g.rsm_regs = snap.rsm_regs.slice();
   }
 
   let menu: HTMLElement | null = null;
@@ -348,6 +461,22 @@ export function restoreMenuResumeState(
     }
   }
 
+  return true;
+}
+
+/**
+ * Restore VM globals + visible menu/highlight after a missing-title JumpTT.
+ * Returns true when a snapshot was applied.
+ */
+export function restoreMenuResumeState(
+  host: MissingTitleSkipHost,
+  g: VmCaptureGlobals = typeof window !== 'undefined' ? (window as any) : {},
+): boolean {
+  const snap = host._dvdjsMenuResume;
+  if (!snap) {
+    return false;
+  }
+  applyMenuResumeSnapshot(host, snap, g);
   host._dvdjsMenuResume = null;
   return true;
 }

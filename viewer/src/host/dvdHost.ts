@@ -47,6 +47,8 @@ import {
 } from './menuKeys.js';
 import { goToMainMenu as jumpToMainMenu } from './goToMainMenu.js';
 import { setDiscMenuLanguage } from './menuLanguage.js';
+import { pushVmUndo, undoVmNav, canVmUndo } from './vmUndo.js';
+import { isViewerCrashOpen } from './viewerCrash.js';
 import {
   freezeMenuVideoAtEnd,
   imageHasPixels,
@@ -155,6 +157,9 @@ export type XVideoElement = HTMLElement & {
   }) => void;
   /** Latch button nav + snapshot menu/VM for missing-title restore. */
   beginUserButtonNav: () => void;
+  /** Pop previous user menu/VM state (toolbar Undo / Ctrl+Z). */
+  undoNav: () => boolean;
+  canUndoNav: () => boolean;
   setMenuHighlight: (menu: Element | null, buttonIndex: number) => void;
   flashMenuActivate: (menu: Element | null, buttonIndex: number) => void;
   setDebugHitboxes: (enabled: boolean) => void;
@@ -1686,9 +1691,31 @@ class XVideo extends HTMLElement implements XVideoElement {
     return setDiscMenuLanguage(this, lang, window as any);
   }
 
-  /** Snapshot menu/VM before a user button command runs. */
+  /** Snapshot menu/VM before a user button command runs (+ undo stack). */
   beginUserButtonNav(): void {
     latchUserButtonNav(this as any, window as any);
+    try {
+      pushVmUndo(this as any, window as any);
+    } catch {
+      // ignore
+    }
+  }
+
+  /** Pop previous user nav state (toolbar Undo). */
+  undoNav(): boolean {
+    if (isViewerCrashOpen(this as any)) {
+      return false;
+    }
+    try {
+      return undoVmNav(this as any, window as any);
+    } catch (e) {
+      console.warn('dvd-menu-archive undo failed', e);
+      return false;
+    }
+  }
+
+  canUndoNav(): boolean {
+    return canVmUndo(this as any);
   }
 
   /**
