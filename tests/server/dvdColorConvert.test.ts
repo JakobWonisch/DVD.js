@@ -45,9 +45,9 @@ describe('menuVideoFormat / titleVideoFormat', () => {
 });
 
 describe('web color filters', () => {
-  it('builds NTSC WebM filter with full-range BT.709', () => {
+  it('builds NTSC WebM filter with full-range BT.709 (fast, no gamma)', () => {
     expect(webVideoColorFilter({ videoFormat: 0 })).toBe(
-      'yadif=0:-1:0,colorspace=iall=smpte170m:all=bt709:irange=tv:range=pc:format=yuv420p',
+      'yadif=0:-1:0,colorspace=iall=smpte170m:all=bt709:irange=tv:range=pc:fast=1:format=yuv420p',
     );
   });
 
@@ -55,22 +55,22 @@ describe('web color filters', () => {
     expect(
       webVideoColorFilter({ videoFormat: 1, padToDuration: true }),
     ).toBe(
-      'yadif=0:-1:0,colorspace=iall=bt470bg:all=bt709:irange=tv:range=pc:format=yuv420p,tpad=stop_mode=clone:stop_duration=3600',
+      'yadif=0:-1:0,colorspace=iall=bt470bg:all=bt709:irange=tv:range=pc:fast=1:format=yuv420p,tpad=stop_mode=clone:stop_duration=3600',
     );
   });
 
-  it('builds still PNG filter as full-range RGB', () => {
+  it('builds still filter as full-range RGB with fast=1', () => {
     expect(webStillColorFilter({ videoFormat: 1 })).toBe(
-      'yadif=0:-1:0,colorspace=iall=bt470bg:all=bt709:irange=tv:range=pc,format=rgb24',
+      'yadif=0:-1:0,colorspace=iall=bt470bg:all=bt709:irange=tv:range=pc:fast=1,format=rgb24',
     );
   });
 
-  it('tags output as BT.709 full range', () => {
+  it('tags output as BT.709 full range with sRGB transfer', () => {
     expect(webColorMetadataArgs()).toEqual([
       '-color_primaries',
       'bt709',
       '-color_trc',
-      'bt709',
+      'iec61966-2-1',
       '-colorspace',
       'bt709',
       '-color_range',

@@ -182,10 +182,10 @@ Prefer documenting this over inventing a silent HW path. Menus-only converts are
 
 ### Color normalize / tag (stills + WebM)
 
-DVD MPEG-2 is **BT.601 limited (TV) range**. Untagged limited WebM often looks darker in Chrome (HW decode); untagged PNG stills can look darker in Firefox (CMS) vs VLC. Convert expands TV→PC and tags output via `dvdColorConvert.ts`:
+DVD MPEG-2 is **BT.601 limited (TV) range**. Untagged limited WebM often looks darker in Chrome (HW decode); untagged PNG/WebP stills can look darker in Firefox (CMS) vs VLC. Convert expands TV→PC and tags output via `dvdColorConvert.ts`:
 
-- Filter: `yadif` + `colorspace=iall=smpte170m|bt470bg:all=bt709:irange=tv:range=pc` (NTSC/PAL from IFO `video_format`; menus use VMGM/VTSM, titles use `vts_video_attr`)
-- Metadata: `-color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range pc`
+- Filter: `yadif` + `colorspace=iall=smpte170m|bt470bg:all=bt709:irange=tv:range=pc:fast=1` (NTSC/PAL from IFO `video_format`; menus use VMGM/VTSM, titles use `vts_video_attr`). **`fast=1` is required** — a full `bt470bg→bt709` transfer conversion crushes PAL midtones (~30% darker vs VLC)
+- Metadata: `-color_primaries bt709 -color_trc iec61966-2-1 -colorspace bt709 -color_range pc` (sRGB TRC for browsers)
 - Applied to menu/title WebM (`encodeVideo`), menu stills (`generateMenuCellTable`), and title-stub stills (`generateTitleStubs`)
 
 ## Engineering standards

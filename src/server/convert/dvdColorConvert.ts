@@ -2,9 +2,11 @@
  * DVD MPEG-2 → web color normalize + tag helpers.
  *
  * DVD video is BT.601 limited (TV) range. Untagged limited WebM often looks
- * darker in Chrome (esp. HW decode); untagged PNG stills can look darker in
- * Firefox (color management). Convert expands TV→PC and tags BT.709 / full
- * range so browsers align closer to VLC.
+ * darker in Chrome (esp. HW decode); untagged PNG/WebP stills can look darker
+ * in Firefox (color management). Convert expands TV→PC, converts matrix to
+ * BT.709 with `fast=1` (skip gamma/primary — a full bt470bg→bt709 transfer
+ * crush midtones ~30% on PAL discs), and tags full-range BT.709 / sRGB so
+ * browsers align closer to VLC.
  */
 
 'use strict';
@@ -70,6 +72,20 @@ export function titleVideoFormat(
 }
 
 /**
+ * Shared colorspace filter body: TV→PC + BT.601→BT.709 matrix, no gamma.
+ * `fast=1` is required — without it PAL `bt470bg→bt709` re-applies transfer
+ * and darkens menus/titles badly.
+ */
+function webColorSpaceFilterBody(videoFormat?: number | null): string {
+  const iall = dvdInputColorSpace(videoFormat);
+  return (
+    'colorspace=iall=' +
+    iall +
+    ':all=bt709:irange=tv:range=pc:fast=1'
+  );
+}
+
+/**
  * Deinterlace + BT.601 limited → BT.709 full-range yuv420p for libvpx WebM.
  * Optional `tpad` matches prior encode behavior for short still cells.
  */
@@ -77,39 +93,38 @@ export function webVideoColorFilter(opts?: {
   videoFormat?: number | null;
   padToDuration?: boolean;
 }): string {
-  const iall = dvdInputColorSpace(opts?.videoFormat);
   let vf =
-    'yadif=0:-1:0,colorspace=iall=' +
-    iall +
-    ':all=bt709:irange=tv:range=pc:format=yuv420p';
+    'yadif=0:-1:0,' +
+    webColorSpaceFilterBody(opts?.videoFormat) +
+    ':format=yuv420p';
   if (opts?.padToDuration) {
     vf += ',tpad=stop_mode=clone:stop_duration=3600';
   }
   return vf;
 }
 
-/** Deinterlace + BT.601 limited → BT.709 full-range RGB for menu/title still PNGs. */
+/** Deinterlace + BT.601 limited → BT.709 full-range RGB for menu/title stills. */
 export function webStillColorFilter(opts?: {
   videoFormat?: number | null;
 }): string {
-  const iall = dvdInputColorSpace(opts?.videoFormat);
   return (
-    'yadif=0:-1:0,colorspace=iall=' +
-    iall +
-    ':all=bt709:irange=tv:range=pc,format=rgb24'
+    'yadif=0:-1:0,' +
+    webColorSpaceFilterBody(opts?.videoFormat) +
+    ',format=rgb24'
   );
 }
 
 /**
- * ffmpeg output color tags after normalize (full-range BT.709).
- * Apply to WebM and still PNG encodes so browsers stop guessing.
+ * ffmpeg output color tags after normalize (full-range BT.709 / sRGB TRC).
+ * sRGB transfer (`iec61966-2-1`) matches browser display better than `bt709`.
+ * Apply to WebM and still encodes so browsers stop guessing.
  */
 export function webColorMetadataArgs(): string[] {
   return [
     '-color_primaries',
     'bt709',
     '-color_trc',
-    'bt709',
+    'iec61966-2-1',
     '-colorspace',
     'bt709',
     '-color_range',
