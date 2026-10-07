@@ -35,7 +35,11 @@ import {
 import { loadVm, startVm } from '../vm/loadVm.js';
 import type { DiscMetadata } from '../types/metadata.js';
 import { installViewerCrashGuard } from '../host/viewerCrash.js';
-import { canVmUndo, pushVmUndo } from '../host/vmUndo.js';
+import {
+  canVmUndo,
+  pushVmUndo,
+  VM_UNDO_CHANGE_EVENT,
+} from '../host/vmUndo.js';
 
 type PlayerHost = HTMLElement & {
   setDebugHitboxes?: (enabled: boolean) => void;
@@ -391,15 +395,18 @@ export const PlayDisc: Component = () => {
         !!(vmReady() && metadata() && !needsStart() && !decompressing()),
       onReport: () => submitProblemReport(),
     });
-    // Poll undo affordance after user actions (cheap).
-    const onInteract = () => refreshUndoAvailable();
-    host.addEventListener('click', onInteract);
-    document.addEventListener('keydown', onInteract, true);
+    // Menu click/keydown handlers call stopImmediatePropagation after activate,
+    // so bubbling polls never see the push — listen for the stack change event.
+    const onUndoChange = () => refreshUndoAvailable();
+    host.addEventListener(VM_UNDO_CHANGE_EVENT, onUndoChange);
+    (host as any)._dvdjsOnUndoChange = onUndoChange;
     refreshUndoAvailable();
     onCleanup(() => {
       disposeGuard();
-      host.removeEventListener('click', onInteract);
-      document.removeEventListener('keydown', onInteract, true);
+      host.removeEventListener(VM_UNDO_CHANGE_EVENT, onUndoChange);
+      if ((host as any)._dvdjsOnUndoChange === onUndoChange) {
+        delete (host as any)._dvdjsOnUndoChange;
+      }
       if (host._dvdjsOnReportProblem) {
         delete host._dvdjsOnReportProblem;
       }

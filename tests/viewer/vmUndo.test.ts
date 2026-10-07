@@ -119,4 +119,107 @@ describe('vm undo stack', () => {
     expect(g.domain).toBe(1);
     expect(g.gprm[1]).toBe(1);
   });
+
+  it('notifies on push / undo so the toolbar can enable', () => {
+    const { host, g } = makeHostAndG();
+    let changes = 0;
+    host._dvdjsOnUndoChange = () => {
+      changes += 1;
+    };
+    pushVmUndo(host, g);
+    expect(changes).toBe(1);
+    expect(canVmUndo(host)).toBe(true);
+    undoVmNav(host, g);
+    expect(changes).toBe(2);
+    expect(canVmUndo(host)).toBe(false);
+  });
+
+  it('replays playCurrentMenuCell so still/buttons rebuild for the prior cell', () => {
+    const { host, g } = makeHostAndG();
+    const calls: Array<{ cellN: number; pgc: number; space: string }> = [];
+    g.playCurrentMenuCell = () => {
+      calls.push({
+        cellN: g.cellN,
+        pgc: g.pgc,
+        space: g.pgcSpace,
+      });
+    };
+
+    pushVmUndo(host, g);
+
+    // Navigate to another cell in the same PGC (shared x-menu).
+    g.cellN = 5;
+    g.pgN = 5;
+    g.pgc = 9;
+    host._dvdjsActiveMenu.dataset.cell = '9';
+    host._dvdjsActiveMenu.dataset.vob = '2';
+
+    expect(undoVmNav(host, g)).toBe(true);
+    expect(g.cellN).toBe(2);
+    expect(g.pgc).toBe(2);
+    expect(calls).toEqual([{ cellN: 2, pgc: 2, space: 'menu' }]);
+  });
+
+  it('restores the selected button (HL_BTNN) after replay', () => {
+    const { host, g } = makeHostAndG();
+    // Button 5 selected — typical “Next page” before LinkCN.
+    g.sprm.HL_BTNN = 5 * 0x0400;
+    const highlights: number[] = [];
+    host.setMenuHighlight = (_menu: unknown, idx: number) => {
+      highlights.push(idx);
+    };
+    g.playCurrentMenuCell = () => {
+      // Destination page often forces button 1 — must not stick after undo.
+      g.sprm.HL_BTNN = 1 * 0x0400;
+    };
+
+    pushVmUndo(host, g);
+    g.cellN = 3;
+    g.sprm.HL_BTNN = 1 * 0x0400;
+
+    expect(undoVmNav(host, g)).toBe(true);
+    expect(g.sprm.HL_BTNN).toBe(5 * 0x0400);
+    expect(highlights.length).toBeGreaterThan(0);
+    expect(highlights[highlights.length - 1]).toBe(4);
+  });
+
+  it('replays playCurrentTitleCell when undoing back into title space', () => {
+    const { host, g } = makeHostAndG();
+    g.pgcSpace = 'title';
+    g.domain = 4;
+    g.pgc = 1;
+    g.cellN = 1;
+    const titleCalls: number[] = [];
+    const menuCalls: number[] = [];
+    g.playCurrentTitleCell = () => {
+      titleCalls.push(g.domain);
+    };
+    g.playCurrentMenuCell = () => {
+      menuCalls.push(g.domain);
+    };
+
+    const titleVideo = {
+      style: { display: 'block' },
+      hidden: false,
+      pause() {},
+    };
+    host.querySelectorAll = (sel: string) =>
+      sel === 'video[id^="video-"]' ? [titleVideo] : [];
+
+    pushVmUndo(host, g);
+
+    // Jump to a menu (e.g. Main menu) — titles would normally be hidden.
+    g.pgcSpace = 'menu';
+    g.domain = 0;
+    g.pgc = 1;
+
+    expect(undoVmNav(host, g)).toBe(true);
+    expect(g.pgcSpace).toBe('title');
+    expect(g.domain).toBe(4);
+    expect(titleCalls).toEqual([4]);
+    expect(menuCalls).toEqual([]);
+    // Must not hide title videos before title replay.
+    expect(titleVideo.hidden).toBe(false);
+    expect(titleVideo.style.display).toBe('block');
+  });
 });

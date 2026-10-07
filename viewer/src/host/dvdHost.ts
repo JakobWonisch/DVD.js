@@ -2446,13 +2446,11 @@ class XVideo extends HTMLElement implements XVideoElement {
     } else {
       menu.style.display = 'flex';
     }
-    const hl =
-      Math.floor(
-        ((window as any).sprm && (window as any).sprm.HL_BTNN
-          ? (window as any).sprm.HL_BTNN
-          : 0x0400) / 0x0400,
-      ) - 1;
-    highlightMenuButton(menu, hl);
+    const hlRaw =
+      (window as any).sprm?.HL_BTNN != null
+        ? (window as any).sprm.HL_BTNN
+        : 0x0400;
+    highlightMenuButton(menu, Math.max(0, Math.floor(hlRaw / 0x0400) - 1));
   }
 
   playMenuCell(opts: MenuCellPlayOpts = {}) {
@@ -2644,12 +2642,12 @@ class XVideo extends HTMLElement implements XVideoElement {
       }
     }
 
-    const btnIndex =
-      Math.floor(
-        ((window as any).sprm && (window as any).sprm.HL_BTNN
-          ? (window as any).sprm.HL_BTNN
-          : 0x0400) / 0x0400,
-      ) - 1;
+    // Prefer nullish coalesce — HL_BTNN 0 must not fall through to button 1.
+    const hlRaw =
+      (window as any).sprm?.HL_BTNN != null
+        ? (window as any).sprm.HL_BTNN
+        : 0x0400;
+    const btnIndex = Math.max(0, Math.floor(hlRaw / 0x0400) - 1);
     const enableButtons = () => {
       if ((this as any)._dvdjsMenuPlayGen !== playGen) {
         return;

@@ -142,12 +142,14 @@ describe('Enter activates via cell-keyed btnCmd', () => {
     btnCmd[1] = [];
     btnCmd[1][5] = [];
     btnCmd[1][5][1] = [vi.fn(), vi.fn(), vi.fn(), mainMenu];
-    stubWindow({ btnCmd });
+    const sprm = { HL_BTNN: 1 * 0x0400 };
+    stubWindow({ btnCmd, sprm });
 
     expect(activateButton(host, menu, 3)).toBe(true);
     expect(mainMenu).toHaveBeenCalledOnce();
     expect(host._dvdjsFromButton).toBe(true);
     expect(host.setMenuHighlight).toHaveBeenCalledWith(menu, 3);
+    expect(sprm.HL_BTNN).toBe(4 * 0x0400);
   });
 
   it('Enter claims the key only when a command runs', () => {

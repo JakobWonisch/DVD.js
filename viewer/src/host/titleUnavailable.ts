@@ -340,6 +340,159 @@ export function cancelVmNavTimers(
   }
 }
 
+export type ApplyMenuResumeOptions = {
+  /**
+   * Rebuild still/WebM/buttons via generated `playCurrentMenuCell` /
+   * `playCurrentTitleCell` (multi-cell PGCs share one `x-menu` — show+seek
+   * alone leaves the destination cell’s media and hitboxes). Default false
+   * for missing-title dismiss when the menu under the dialog was never left;
+   * undo / crash restore pass true.
+   */
+  replayPresentation?: boolean;
+};
+
+type VmReplayGlobals = VmCaptureGlobals & {
+  playCurrentMenuCell?: () => void;
+  playCurrentTitleCell?: () => void;
+};
+
+/**
+ * Re-run the cell presentation for the restored VM position.
+ * Returns true when a play helper was invoked.
+ */
+export function replayNavPresentation(
+  host: MissingTitleSkipHost,
+  snap: MenuResumeSnapshot,
+  g: VmReplayGlobals = typeof window !== 'undefined' ? (window as any) : {},
+): boolean {
+  const space = snap.pgcSpace ?? g.pgcSpace;
+  try {
+    if (space === 'title') {
+      if (typeof g.playCurrentTitleCell === 'function') {
+        g.playCurrentTitleCell();
+        return true;
+      }
+      // Patched playCurrentMenuCell dispatches to title when pgcSpace is title.
+      if (typeof g.playCurrentMenuCell === 'function') {
+        g.pgcSpace = 'title';
+        g.playCurrentMenuCell();
+        return true;
+      }
+      const dvd = host as MissingTitleSkipHost & {
+        playTitleCell?: (opts: Record<string, unknown>) => void;
+        playTitlePgc?: (domain: number, pgc: number) => void;
+        playByID?: (id: string) => void;
+      };
+      if (
+        typeof dvd.playTitlePgc === 'function' &&
+        snap.domain != null &&
+        snap.pgc != null
+      ) {
+        dvd.playTitlePgc(snap.domain, snap.pgc);
+        return true;
+      }
+      if (typeof dvd.playByID === 'function' && snap.domain != null) {
+        dvd.playByID(`video-${snap.domain}`);
+        return true;
+      }
+      return false;
+    }
+
+    if (typeof g.playCurrentMenuCell === 'function') {
+      g.pgcSpace = 'menu';
+      g.playCurrentMenuCell();
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.warn('dvd-menu-archive replay after resume failed', e);
+    return false;
+  }
+}
+
+/** Re-apply SPRM highlight + CSS/SPU selected state for the restored button. */
+export function applyRestoredMenuHighlight(
+  host: MissingTitleSkipHost,
+  snap: MenuResumeSnapshot,
+  g: VmCaptureGlobals = typeof window !== 'undefined' ? (window as any) : {},
+): void {
+  const hlBtnn =
+    snap.hlBtnn != null
+      ? snap.hlBtnn
+      : typeof g.sprm?.HL_BTNN === 'number'
+        ? g.sprm.HL_BTNN
+        : 0x0400;
+  if (!g.sprm || typeof g.sprm !== 'object') {
+    g.sprm = {};
+  }
+  g.sprm.HL_BTNN = hlBtnn;
+  const menu = host._dvdjsActiveMenu || null;
+  if (!menu || typeof host.setMenuHighlight !== 'function') {
+    return;
+  }
+  const idx = Math.max(0, Math.floor(hlBtnn / 0x0400) - 1);
+  host.setMenuHighlight(menu, idx);
+}
+
+/** Soft UI when generated play helpers are unavailable (tests / legacy). */
+function applyMenuResumeSoftUi(
+  host: MissingTitleSkipHost,
+  snap: MenuResumeSnapshot,
+  g: VmCaptureGlobals,
+): void {
+  let menu: HTMLElement | null = null;
+  if (snap.menuId && typeof host.querySelector === 'function') {
+    try {
+      menu = host.querySelector(
+        `#${CSS.escape(snap.menuId)}`,
+      ) as HTMLElement | null;
+    } catch {
+      menu = host.querySelector(`#${snap.menuId}`) as HTMLElement | null;
+    }
+  }
+  if (!menu) {
+    menu = host._dvdjsActiveMenu || null;
+  }
+  if (!menu) {
+    return;
+  }
+  host._dvdjsActiveMenu = menu;
+  const showable = menu as HTMLElement & { show?: () => void; hidden?: boolean };
+  if (typeof showable.show === 'function') {
+    showable.show();
+  } else {
+    showable.style.display = 'flex';
+    showable.hidden = false;
+  }
+  applyRestoredMenuHighlight(host, snap, g);
+  const domainAttr = menu.dataset?.domain;
+  if (
+    domainAttr != null &&
+    domainAttr !== '' &&
+    typeof host.querySelector === 'function' &&
+    snap.menuVideoTime != null
+  ) {
+    const menuVideo = host.querySelector(
+      `#menu-video-${domainAttr}`,
+    ) as HTMLVideoElement | null;
+    if (menuVideo) {
+      try {
+        menuVideo.currentTime = snap.menuVideoTime;
+      } catch {
+        // ignore seek failures
+      }
+      // Do not resume play without re-arming finishSegment — that left
+      // transition cells past EOF with no onPost. Freeze the snap frame;
+      // buttons / Main menu remain the escape.
+      try {
+        menuVideo.pause();
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
 /**
  * Apply a snapshot to VM globals + visible menu/highlight.
  * Does not clear host._dvdjsMenuResume (caller decides).
@@ -348,6 +501,7 @@ export function applyMenuResumeSnapshot(
   host: MissingTitleSkipHost,
   snap: MenuResumeSnapshot,
   g: VmCaptureGlobals = typeof window !== 'undefined' ? (window as any) : {},
+  opts: ApplyMenuResumeOptions = {},
 ): boolean {
   cancelVmNavTimers(g);
 
@@ -389,7 +543,13 @@ export function applyMenuResumeSnapshot(
     for (const [k, v] of Object.entries(snap.sprm)) {
       g.sprm[k] = v;
     }
-  } else if (g.sprm && snap.hlBtnn != null) {
+  }
+  // Authoritative highlight: always prefer snap.hlBtnn so a partial sprm
+  // clone cannot leave the destination page's HL_BTNN in place.
+  if (snap.hlBtnn != null) {
+    if (!g.sprm || typeof g.sprm !== 'object') {
+      g.sprm = {};
+    }
     g.sprm.HL_BTNN = snap.hlBtnn;
   }
 
@@ -406,61 +566,17 @@ export function applyMenuResumeSnapshot(
     g.rsm_regs = snap.rsm_regs.slice();
   }
 
-  let menu: HTMLElement | null = null;
-  if (snap.menuId && typeof host.querySelector === 'function') {
-    try {
-      menu = host.querySelector(
-        `#${CSS.escape(snap.menuId)}`,
-      ) as HTMLElement | null;
-    } catch {
-      menu = host.querySelector(`#${snap.menuId}`) as HTMLElement | null;
-    }
-  }
-  if (!menu) {
-    menu = host._dvdjsActiveMenu || null;
-  }
-  if (menu) {
-    host._dvdjsActiveMenu = menu;
-    const showable = menu as HTMLElement & { show?: () => void; hidden?: boolean };
-    if (typeof showable.show === 'function') {
-      showable.show();
-    } else {
-      showable.style.display = 'flex';
-      showable.hidden = false;
-    }
-    const hl =
-      Math.floor((snap.hlBtnn != null ? snap.hlBtnn : 0x0400) / 0x0400) - 1;
-    if (typeof host.setMenuHighlight === 'function') {
-      host.setMenuHighlight(menu, Math.max(0, hl));
-    }
-    const domainAttr = menu.dataset?.domain;
-    if (
-      domainAttr != null &&
-      domainAttr !== '' &&
-      typeof host.querySelector === 'function' &&
-      snap.menuVideoTime != null
-    ) {
-      const menuVideo = host.querySelector(
-        `#menu-video-${domainAttr}`,
-      ) as HTMLVideoElement | null;
-      if (menuVideo) {
-        try {
-          menuVideo.currentTime = snap.menuVideoTime;
-        } catch {
-          // ignore seek failures
-        }
-        // Do not resume play without re-arming finishSegment — that left
-        // transition cells past EOF with no onPost. Freeze the snap frame;
-        // buttons / Main menu remain the escape.
-        try {
-          menuVideo.pause();
-        } catch {
-          // ignore
-        }
-      }
+  if (opts.replayPresentation) {
+    if (replayNavPresentation(host, snap, g as VmReplayGlobals)) {
+      // playMenuCell enableButtons reads HL_BTNN at entry; re-stamp after
+      // rebuild so the prior page’s selected button (e.g. “Next”) is visible
+      // even when soft UI was skipped.
+      applyRestoredMenuHighlight(host, snap, g);
+      return true;
     }
   }
 
+  applyMenuResumeSoftUi(host, snap, g);
   return true;
 }
 

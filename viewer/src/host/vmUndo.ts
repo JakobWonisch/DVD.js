@@ -18,8 +18,12 @@ import { clearMediaLoad } from './mediaLoadState.js';
 /** Reasonable default: ~100 KB worst-case, plenty of button undos. */
 export const VM_UNDO_MAX = 64;
 
+/** Fired on the host when the undo stack depth changes (toolbar affordance). */
+export const VM_UNDO_CHANGE_EVENT = 'dvd-menu-archive-undo';
+
 export type VmUndoHost = MissingTitleSkipHost & {
   _dvdjsVmUndo?: MenuResumeSnapshot[];
+  _dvdjsOnUndoChange?: () => void;
   _dvdjsStillTimer?: ReturnType<typeof setTimeout> | null;
   _dvdjsHighlightTimer?: ReturnType<typeof setTimeout> | null;
   _dvdjsMotionWatchdog?: ReturnType<typeof setTimeout> | null;
@@ -29,6 +33,17 @@ export type VmUndoHost = MissingTitleSkipHost & {
   _dvdjsRevealRetryTimer?: ReturnType<typeof setTimeout> | null;
   _dvdjsMotionRaf?: number | null;
   querySelectorAll?: (selectors: string) => NodeListOf<Element> | Element[];
+  dispatchEvent?: (event: Event) => boolean;
+  addEventListener?: (
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions,
+  ) => void;
+  removeEventListener?: (
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions,
+  ) => void;
 };
 
 function stack(host: VmUndoHost): MenuResumeSnapshot[] {
@@ -38,9 +53,29 @@ function stack(host: VmUndoHost): MenuResumeSnapshot[] {
   return host._dvdjsVmUndo;
 }
 
+/** Notify UI that undo depth changed (menu click handlers stopImmediatePropagation). */
+export function notifyVmUndoChange(host: VmUndoHost): void {
+  if (typeof host.dispatchEvent === 'function') {
+    try {
+      host.dispatchEvent(new CustomEvent(VM_UNDO_CHANGE_EVENT));
+    } catch {
+      // ignore (non-DOM hosts / jsdom quirks)
+    }
+  }
+  const cb = host._dvdjsOnUndoChange;
+  if (typeof cb === 'function') {
+    try {
+      cb();
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export function clearVmUndo(host: VmUndoHost): void {
-  if (host._dvdjsVmUndo) {
+  if (host._dvdjsVmUndo?.length) {
     host._dvdjsVmUndo.length = 0;
+    notifyVmUndoChange(host);
   }
 }
 
@@ -79,10 +114,14 @@ export function pushVmUndo(
   while (s.length > max) {
     s.shift();
   }
+  notifyVmUndoChange(host);
   return snap;
 }
 
-function cancelHostMenuAdvance(host: VmUndoHost): void {
+function cancelHostMenuAdvance(
+  host: VmUndoHost,
+  opts: { hideTitles?: boolean } = {},
+): void {
   if (host._dvdjsStillTimer) {
     clearTimeout(host._dvdjsStillTimer);
     host._dvdjsStillTimer = null;
@@ -108,6 +147,10 @@ function cancelHostMenuAdvance(host: VmUndoHost): void {
   host._dvdjsMenuPlayGen = (host._dvdjsMenuPlayGen || 0) + 1;
   clearMediaLoad();
   // Title WebMs sit above menus in the DOM — hide them when restoring a menu.
+  // When undoing back into title space, leave them for playCurrentTitleCell.
+  if (opts.hideTitles === false) {
+    return;
+  }
   if (typeof host.querySelectorAll === 'function') {
     try {
       host.querySelectorAll('video[id^="video-"]').forEach((node) => {
@@ -126,6 +169,21 @@ function cancelHostMenuAdvance(host: VmUndoHost): void {
   }
 }
 
+function applyUndoSnapshot(
+  host: VmUndoHost,
+  snap: MenuResumeSnapshot,
+  g: Parameters<typeof applyMenuResumeSnapshot>[2],
+): void {
+  cancelHostMenuAdvance(host, {
+    hideTitles: snap.pgcSpace !== 'title',
+  });
+  host._dvdjsFromButton = false;
+  host._dvdjsMenuResume = null;
+  // Must replay playMenuCell — soft show+seek leaves shared menu video src and
+  // in-place button DOM on the post-nav cell (multi-cell PGCs / still handoff).
+  applyMenuResumeSnapshot(host, snap, g, { replayPresentation: true });
+}
+
 /**
  * Pop and restore the previous user nav state.
  * Returns true when a snapshot was applied.
@@ -142,10 +200,8 @@ export function undoVmNav(
   if (!snap) {
     return false;
   }
-  cancelHostMenuAdvance(host);
-  host._dvdjsFromButton = false;
-  host._dvdjsMenuResume = null;
-  applyMenuResumeSnapshot(host, snap, g);
+  applyUndoSnapshot(host, snap, g);
+  notifyVmUndoChange(host);
   return true;
 }
 
@@ -167,12 +223,12 @@ export function restoreLastVmNav(
   if (!snap) {
     return false;
   }
-  cancelHostMenuAdvance(host);
   if (fromStack) {
     s.pop();
   }
-  host._dvdjsFromButton = false;
-  host._dvdjsMenuResume = null;
-  applyMenuResumeSnapshot(host, snap, g);
+  applyUndoSnapshot(host, snap, g);
+  if (fromStack) {
+    notifyVmUndoChange(host);
+  }
   return true;
 }

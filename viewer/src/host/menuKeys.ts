@@ -160,6 +160,10 @@ export function activateButton(
   if (!cmd) {
     return false;
   }
+  // Stamp HL_BTNN before undo push — setMenuHighlight is visual-only, and
+  // Enter can activate without a prior selectButton write.
+  const sprm = (window as any).sprm || ((window as any).sprm = {});
+  sprm.HL_BTNN = (idx + 1) * 0x0400;
   host.setMenuHighlight?.(menu, idx);
   host.flashMenuActivate?.(menu, idx);
   if (typeof host.beginUserButtonNav === 'function') {
