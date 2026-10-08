@@ -55,7 +55,30 @@ describe('resolveLinkPreview', function () {
     });
   });
 
-  it('uses catalogue name + cover.jpg for a disc', function () {
+  it('prefers TMDB poster over generated cover', function () {
+    const web = tempWebFolder();
+    fs.writeFileSync(
+      path.join(web, 'dvds.json'),
+      JSON.stringify([
+        {
+          name: 'Shrek (2001)',
+          dir: 'Shrek',
+          cover: 'Shrek.cover.jpg',
+          poster: 'Shrek.poster.jpg',
+        },
+      ]),
+    );
+    fs.writeFileSync(path.join(web, 'Shrek.cover.jpg'), 'fake-cover');
+    fs.writeFileSync(path.join(web, 'Shrek.poster.jpg'), 'fake-poster');
+
+    const preview = resolveLinkPreview(web, 'Shrek');
+    expect(preview.title).toBe('View the menu of "Shrek (2001)"');
+    expect(preview.imagePath).toBe('/Shrek.poster.jpg');
+    expect(preview.pagePath).toBe('/play/Shrek');
+    expect(preview.twitterCard).toBe('summary_large_image');
+  });
+
+  it('falls back to generated cover when poster is missing', function () {
     const web = tempWebFolder();
     fs.writeFileSync(
       path.join(web, 'dvds.json'),
@@ -70,14 +93,11 @@ describe('resolveLinkPreview', function () {
     fs.writeFileSync(path.join(web, 'Shrek.cover.jpg'), 'fake-cover');
 
     const preview = resolveLinkPreview(web, 'Shrek');
-    expect(preview.title).toBe('View the menu of "Shrek (2001)"');
-    expect(preview.description).toContain('Shrek (2001)');
     expect(preview.imagePath).toBe('/Shrek.cover.jpg');
-    expect(preview.pagePath).toBe('/play/Shrek');
     expect(preview.twitterCard).toBe('summary_large_image');
   });
 
-  it('falls back to formatted dir name and logo when cover is missing', function () {
+  it('falls back to formatted dir name and logo when art is missing', function () {
     const web = tempWebFolder();
     fs.writeFileSync(
       path.join(web, 'dvds.json'),

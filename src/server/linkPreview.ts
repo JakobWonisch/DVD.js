@@ -158,11 +158,12 @@ export function resolveLinkPreview(
   var imagePath = LOGO_IMAGE_PATH;
   var twitterCard: LinkPreview['twitterCard'] = 'summary';
   if (safe) {
+    // Prefer TMDB poster; fall back to convert-generated menu cover.
     var candidates = [
-      siteImagePath(entry && entry.cover),
-      siteImagePath(safe + '.cover.jpg'),
       siteImagePath(entry && entry.poster),
       siteImagePath(safe + '.poster.jpg'),
+      siteImagePath(entry && entry.cover),
+      siteImagePath(safe + '.cover.jpg'),
       siteImagePath(safe + '/cover.jpg'),
     ];
     for (var i = 0; i < candidates.length; i++) {
