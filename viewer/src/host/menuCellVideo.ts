@@ -18,7 +18,10 @@ export type MenuCellVideoOpts = {
 export type DiscMenuCellLookup = {
   menuCell?: Record<
     string,
-    Record<string, { video?: string | null } | undefined> | undefined
+    Record<
+      string,
+      { video?: string | null; still?: string | null } | undefined
+    > | undefined
   >;
   /** Unused for menus (per-cell only); kept for DiscMetadata shape. */
   index?: string[] | null;

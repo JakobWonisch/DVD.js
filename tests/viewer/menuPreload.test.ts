@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  cellWillAutoAdvanceWithoutInput,
   collectPreloadStillUrls,
   freezeMenuVideoAtEnd,
   imageHasPixels,
@@ -8,6 +9,7 @@ import {
   parseMenuCellsFromDataset,
   preloadLinkedMenuAssets,
   prioritizeTitleVideo,
+  resolveAutoNextMenuCell,
   whenVideoReadyForPlay,
   stillCoverUrlFromMenu,
   whenImageReady,
@@ -44,34 +46,149 @@ describe('parseMenuCellsFromDataset', () => {
   });
 });
 
+describe('cellWillAutoAdvanceWithoutInput', () => {
+  it('rejects infinite stills and buttoned cells', () => {
+    expect(
+      cellWillAutoAdvanceWithoutInput({ still_time: 255, buttons: [] }),
+    ).toBe(false);
+    expect(
+      cellWillAutoAdvanceWithoutInput({ still_time: 0, buttons: [{}] }),
+    ).toBe(false);
+    expect(
+      cellWillAutoAdvanceWithoutInput({ still_time: 5, buttons: [{}] }),
+    ).toBe(false);
+  });
+
+  it('accepts buttonless timed / wipe cells', () => {
+    expect(
+      cellWillAutoAdvanceWithoutInput({ still_time: 0, buttons: [] }),
+    ).toBe(true);
+    expect(
+      cellWillAutoAdvanceWithoutInput({ still_time: 3, buttons: [] }),
+    ).toBe(true);
+  });
+});
+
+describe('resolveAutoNextMenuCell', () => {
+  const chain = [
+    { cellID: 1, vobID: 6, still_time: 0, buttons: [], cell_cmd_nr: 0 },
+    {
+      cellID: 1,
+      vobID: 7,
+      still_time: 0,
+      buttons: [],
+      cell_cmd_nr: 0,
+      video: '/d/menu-4-1-7.webm',
+      still: '/d/menu-4-1-7.webp',
+    },
+    { cellID: 1, vobID: 8, still_time: 255, buttons: [{}], cell_cmd_nr: 0 },
+  ];
+
+  it('returns only the immediate next cell in a wipe chain', () => {
+    expect(
+      resolveAutoNextMenuCell(chain, {
+        cellID: 1,
+        vobID: 6,
+        still_time: 0,
+        buttons: [],
+      }),
+    ).toEqual(chain[1]);
+  });
+
+  it('does not look past one hop', () => {
+    const next = resolveAutoNextMenuCell(chain, {
+      cellID: 1,
+      vobID: 6,
+      still_time: 0,
+      buttons: [],
+    });
+    expect(next?.vobID).toBe(7);
+    expect(
+      resolveAutoNextMenuCell(chain, {
+        cellID: 1,
+        vobID: 7,
+        still_time: 0,
+        buttons: [],
+      }),
+    ).toEqual(chain[2]);
+  });
+
+  it('skips when cell_cmd_nr can divert', () => {
+    expect(
+      resolveAutoNextMenuCell(
+        [
+          { cellID: 1, vobID: 12, still_time: 0, buttons: [], cell_cmd_nr: 1 },
+          { cellID: 1, vobID: 13, still_time: 0, buttons: [] },
+        ],
+        { cellID: 1, vobID: 12, still_time: 0, buttons: [] },
+      ),
+    ).toBeNull();
+  });
+
+  it('skips buttoned / infinite cells and last-in-PGC (post unknown)', () => {
+    expect(
+      resolveAutoNextMenuCell(chain, {
+        cellID: 1,
+        vobID: 8,
+        still_time: 255,
+        buttons: [{}],
+      }),
+    ).toBeNull();
+    expect(
+      resolveAutoNextMenuCell(chain.slice(0, 2), {
+        cellID: 1,
+        vobID: 7,
+        still_time: 0,
+        buttons: [],
+      }),
+    ).toBeNull();
+  });
+
+  it('skips ambiguous duplicate cell identities', () => {
+    expect(
+      resolveAutoNextMenuCell(
+        [
+          { cellID: 1, vobID: 1, still_time: 0, buttons: [] },
+          { cellID: 1, vobID: 1, still_time: 0, buttons: [] },
+          { cellID: 2, vobID: 1, still_time: 0, buttons: [] },
+        ],
+        { cellID: 1, vobID: 1, still_time: 0, buttons: [] },
+      ),
+    ).toBeNull();
+  });
+});
+
 describe('collectPreloadStillUrls', () => {
-  it('includes current + PGC cells + linked DOM stills', () => {
+  it('includes all other PGC stills even when the user has a choice', () => {
     const urls = collectPreloadStillUrls({
       baseDir: '/d/',
       domain: 0,
       current: { cellID: 1, vobID: 1, still_time: 255, buttons: [{}] },
       pgcCells: [
         { cellID: 1, vobID: 1, still_time: 255, buttons: [{}] },
-        { cellID: 2, vobID: 1, still: '/d/menu-0-2-1.png' },
-        // Pure wipe — no still file; must not invent a 404 URL.
-        { cellID: 3, vobID: 1, still_time: 0, buttons: [] },
+        { cellID: 2, vobID: 1, still: '/d/menu-0-2-1.png', buttons: [{}] },
+        { cellID: 3, vobID: 1, still: '/d/menu-0-3-1.png', buttons: [{}] },
       ],
       linkedStillSrcs: ['/d/menu-1-9-1.png', ''],
     });
     expect(urls.sort()).toEqual(
-      ['/d/menu-0-1-1.webp', '/d/menu-0-2-1.png', '/d/menu-1-9-1.png'].sort(),
+      ['/d/menu-0-2-1.png', '/d/menu-0-3-1.png'].sort(),
     );
   });
 
-  it('skips pure transition cells with no still', () => {
+  it('skips the current cell and pure transition cells with no still', () => {
     expect(
       collectPreloadStillUrls({
         baseDir: '/d/',
         domain: 1,
         current: { cellID: 1, vobID: 2, still_time: 0, buttons: [] },
-        pgcCells: [{ cellID: 1, vobID: 2, still_time: 0 }],
+        pgcCells: [
+          { cellID: 1, vobID: 2, still_time: 0, buttons: [], cell_cmd_nr: 0 },
+          { cellID: 2, vobID: 2, still_time: 0, buttons: [] },
+          { cellID: 3, vobID: 2, still: '/d/menu-1-3-2.webp', buttons: [{}] },
+        ],
       }),
-    ).toEqual([]);
+    ).toEqual(['/d/menu-1-3-2.webp']);
   });
 });
 
@@ -290,29 +407,54 @@ describe('whenVideoReadyForPlay', () => {
 });
 
 describe('preloadLinkedMenuAssets', () => {
-  it('sets menu videos to preload=auto and loop=false without load()', () => {
+  it('preloads all other PGC stills plus only the auto-next WebM', () => {
+    const fetchMock = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('fetch', fetchMock);
+
     const video = {
       className: 'dvd-menu-archive-menu-video',
       loop: true,
-      preload: 'metadata',
+      preload: 'none',
       paused: true,
       readyState: 0,
       getAttribute: (name: string) =>
-        name === 'src' ? '/web/menu-1-9-2.webm' : name === 'preload' ? 'metadata' : null,
+        name === 'src'
+          ? '/web/menu-4-1-6.webm'
+          : name === 'preload'
+            ? 'none'
+            : null,
       load: vi.fn(),
-    };
-
-    const still = {
-      getAttribute: (name: string) => (name === 'src' ? '/web/menu-1-9-2.png' : null),
     };
 
     const menu = {
       dataset: {
-        domain: '1',
+        domain: '4',
         cells: encodeURIComponent(
           JSON.stringify([
-            { cellID: 4, vobID: 1, still_time: 255, buttons: [{}] },
-            { cellID: 1, vobID: 2, still_time: 0, buttons: [] },
+            {
+              cellID: 1,
+              vobID: 6,
+              still_time: 0,
+              buttons: [],
+              cell_cmd_nr: 0,
+              video: '/web/menu-4-1-6.webm',
+            },
+            {
+              cellID: 1,
+              vobID: 7,
+              still_time: 0,
+              buttons: [],
+              cell_cmd_nr: 0,
+              video: '/web/menu-4-1-7.webm',
+              still: '/web/menu-4-1-7.webp',
+            },
+            {
+              cellID: 1,
+              vobID: 8,
+              still_time: 255,
+              buttons: [{}],
+              still: '/web/menu-4-1-8.webp',
+            },
           ]),
         ),
       },
@@ -320,9 +462,6 @@ describe('preloadLinkedMenuAssets', () => {
 
     const host = {
       querySelectorAll: (sel: string) => {
-        if (sel === 'img.menu-still[src]') {
-          return [still];
-        }
         if (sel === 'video.dvd-menu-archive-menu-video') {
           return [video];
         }
@@ -331,20 +470,81 @@ describe('preloadLinkedMenuAssets', () => {
     } as unknown as ParentNode;
 
     const urls = preloadLinkedMenuAssets(host, menu, {
-      domain: 1,
+      domain: 4,
       cellID: 1,
-      vobID: 1,
+      vobID: 6,
+      still_time: 0,
+      buttons: [],
       baseDir: '/web/',
     });
 
     expect(video.loop).toBe(false);
-    expect(video.preload).toBe('auto');
+    expect(video.preload).toBe('none');
     expect(video.load).not.toHaveBeenCalled();
-    // Current opts lack still_time/buttons — treated as wipe, not preloaded.
-    expect(urls).not.toContain('/web/menu-1-1-1.webp');
-    expect(urls).toContain('/web/menu-1-4-1.webp');
-    expect(urls).not.toContain('/web/menu-1-1-2.webp');
-    expect(urls).toContain('/web/menu-1-9-2.png');
+    expect(urls.sort()).toEqual(
+      [
+        '/web/menu-4-1-7.webp',
+        '/web/menu-4-1-8.webp',
+        '/web/menu-4-1-7.webm',
+      ].sort(),
+    );
+    expect(fetchMock).toHaveBeenCalledWith('/web/menu-4-1-7.webm', {
+      method: 'GET',
+      credentials: 'same-origin',
+    });
+    // Second-hop WebM must not be fetched.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('still preloads choice stills but not WebM when cell_cmd can divert', () => {
+    const fetchMock = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const menu = {
+      dataset: {
+        domain: '4',
+        cells: encodeURIComponent(
+          JSON.stringify([
+            {
+              cellID: 1,
+              vobID: 12,
+              still_time: 0,
+              buttons: [],
+              cell_cmd_nr: 1,
+              video: '/web/menu-4-1-12.webm',
+            },
+            {
+              cellID: 1,
+              vobID: 13,
+              still_time: 255,
+              buttons: [{}],
+              still: '/web/menu-4-1-13.webp',
+              video: '/web/menu-4-1-13.webm',
+            },
+          ]),
+        ),
+      },
+    } as unknown as HTMLElement;
+
+    const host = {
+      querySelectorAll: () => [],
+    } as unknown as ParentNode;
+
+    expect(
+      preloadLinkedMenuAssets(host, menu, {
+        domain: 4,
+        cellID: 1,
+        vobID: 12,
+        still_time: 0,
+        buttons: [],
+        baseDir: '/web/',
+      }),
+    ).toEqual(['/web/menu-4-1-13.webp']);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
   });
 });
 

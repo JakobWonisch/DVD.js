@@ -2,8 +2,11 @@ import { fadeInVideoAudio, silenceVideoAudio } from './autoplay.js';
 import { type DiscMenuCellLookup } from './menuCellVideo.js';
 
 /**
- * Warm menu stills / WebMs so motion→still handoffs do not flash black or
- * frame 0 while the next PNG is still fetching.
+ * Menu asset readiness helpers + selective preload.
+ *
+ * Stills: warm every other cell in the current PGC that has a still (so button
+ * / LinkNext choices can paint immediately). WebM: only the deterministic
+ * auto-next clip (one hop; no buttons / cell_cmd divert).
  *
  * Principle: keep the last painted frame until the next asset has real pixels
  * (or the WebM is inside its segment). Never pretend a timed-out load is ready.
@@ -16,6 +19,13 @@ export type MenuCellRef = {
   buttons?: unknown[];
   /** Convert-emitted still URL when present. */
   still?: string | null;
+  /** Per-cell menu WebM when stamped on the PGC cell (vm.js). */
+  video?: string | null;
+  /**
+   * DVD cell command index (1-based). Non-zero means onPost may divert via
+   * cellCmds before the next PGC cell — not a safe auto-next target.
+   */
+  cell_cmd_nr?: number;
 };
 
 /** Parse `data-cells` on `<x-menu>` (URI-encoded JSON from the Solid tree). */
@@ -301,53 +311,169 @@ export function whenImageReady(
   });
 }
 
+/**
+ * True when the cell finishes without waiting for user input (wipe / timed
+ * still with no buttons). Infinite stills and any buttoned cell can divert.
+ */
+export function cellWillAutoAdvanceWithoutInput(cell: {
+  still_time?: number | null;
+  buttons?: unknown[] | null;
+} | null | undefined): boolean {
+  if (!cell) {
+    return false;
+  }
+  const stillTime = cell.still_time != null ? cell.still_time : 0;
+  if (stillTime === 255) {
+    return false;
+  }
+  if (cell.buttons && cell.buttons.length > 0) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * When the current cell will auto-advance to exactly one next PGC cell (no
+ * buttons, no cell command divert, and a following cell in the same PGC),
+ * return that cell. Never looks past one hop; never guesses PGC post().
+ */
+export function resolveAutoNextMenuCell(
+  pgcCells: MenuCellRef[],
+  current: {
+    cellID?: number | string | null;
+    vobID?: number | string | null;
+    still_time?: number | null;
+    buttons?: unknown[] | null;
+    cell_cmd_nr?: number | null;
+  } | null | undefined,
+): MenuCellRef | null {
+  if (!current || !pgcCells.length) {
+    return null;
+  }
+  if (current.cellID == null || current.vobID == null) {
+    return null;
+  }
+  if (!cellWillAutoAdvanceWithoutInput(current)) {
+    return null;
+  }
+
+  const matches: number[] = [];
+  for (let i = 0; i < pgcCells.length; i++) {
+    const c = pgcCells[i];
+    if (
+      c &&
+      String(c.cellID) === String(current.cellID) &&
+      String(c.vobID) === String(current.vobID)
+    ) {
+      matches.push(i);
+    }
+  }
+  // Ambiguous or missing — do not guess which occurrence is playing.
+  if (matches.length !== 1) {
+    return null;
+  }
+  const idx = matches[0];
+  const at = pgcCells[idx];
+  const cmdNr =
+    current.cell_cmd_nr != null
+      ? Number(current.cell_cmd_nr)
+      : at?.cell_cmd_nr != null
+        ? Number(at.cell_cmd_nr)
+        : 0;
+  if (Number.isFinite(cmdNr) && cmdNr > 0) {
+    return null;
+  }
+  if (idx + 1 >= pgcCells.length) {
+    return null;
+  }
+  return pgcCells[idx + 1] || null;
+}
+
+/** Still URL for preload when the cell actually has a still asset. */
+export function stillUrlForCellPreload(opts: {
+  baseDir: string | null;
+  domain: string | number | null | undefined;
+  cell: MenuCellRef | null | undefined;
+  domainMeta?: DiscMenuCellLookup | null;
+}): string | null {
+  const cell = opts.cell;
+  if (!cell || cell.cellID == null || cell.vobID == null) {
+    return null;
+  }
+  // Explicit empty still (pure wipe) — never invent a 404 URL.
+  if (cell.still === null || cell.still === '') {
+    return null;
+  }
+  const stillTime = cell.still_time != null ? cell.still_time : 0;
+  const hasButtons = !!(cell.buttons && cell.buttons.length);
+  if (!hasButtons && stillTime === 0 && cell.still == null) {
+    // Transition cell with no stamped still — convert omits the file.
+    const fromMeta =
+      opts.domainMeta?.menuCell?.[String(cell.cellID)]?.[String(cell.vobID)]
+        ?.still;
+    if (typeof fromMeta !== 'string' || !fromMeta) {
+      return null;
+    }
+  }
+  return resolveMenuStillUrl({
+    baseDir: opts.baseDir,
+    domain: opts.domain,
+    cellID: cell.cellID,
+    vobID: cell.vobID,
+    still: cell.still,
+    domainMeta: opts.domainMeta,
+  });
+}
+
+/** @deprecated Use stillUrlForCellPreload. */
+export const stillUrlForAutoNextPreload = stillUrlForCellPreload;
+
+/**
+ * Stills that may paint after leaving the current cell: every other cell in
+ * the current PGC that has a still (LinkNext/Prev, auto-advance, buttoned
+ * pages). Skips the current cell and pure wipes with no still file.
+ */
 export function collectPreloadStillUrls(opts: {
   baseDir: string | null;
   domain: string | number | null | undefined;
   current?: MenuCellRef | null;
   pgcCells?: MenuCellRef[];
-  /** Existing stills already in the disc DOM (other PGCs / button targets). */
+  domainMeta?: DiscMenuCellLookup | null;
+  /** Ignored — cross-PGC DOM stills are not speculative-preloaded. */
   linkedStillSrcs?: string[];
 }): string[] {
   const urls = new Set<string>();
-  const { baseDir, domain } = opts;
-  if (baseDir && domain != null && domain !== '') {
-    const addCell = (cell: MenuCellRef | null | undefined) => {
-      if (cell?.cellID == null || cell?.vobID == null) {
-        return;
-      }
-      // Pure wipe/transition cells intentionally have no PNG — skip preload
-      // so we do not spam 404s (and CSS nosniff noise for companion sheets).
-      const stillTime = cell.still_time != null ? cell.still_time : 0;
-      const hasButtons = !!(cell.buttons && cell.buttons.length);
-      if (cell.still === null || cell.still === '') {
-        return;
-      }
-      if (!hasButtons && stillTime === 0 && cell.still == null) {
-        return;
-      }
-      if (typeof cell.still === 'string' && cell.still) {
-        urls.add(cell.still);
-        return;
-      }
-      urls.add(menuStillUrl(baseDir, domain, cell.cellID, cell.vobID));
-    };
-    addCell(opts.current);
-    for (const cell of opts.pgcCells || []) {
-      addCell(cell);
+  const { baseDir, domain, domainMeta } = opts;
+  const current = opts.current;
+  for (const cell of opts.pgcCells || []) {
+    if (!cell || cell.cellID == null || cell.vobID == null) {
+      continue;
     }
-  }
-  for (const src of opts.linkedStillSrcs || []) {
-    if (src) {
-      urls.add(src);
+    if (
+      current?.cellID != null &&
+      current?.vobID != null &&
+      String(cell.cellID) === String(current.cellID) &&
+      String(cell.vobID) === String(current.vobID)
+    ) {
+      continue;
+    }
+    const url = stillUrlForCellPreload({
+      baseDir,
+      domain,
+      cell,
+      domainMeta,
+    });
+    if (url) {
+      urls.add(url);
     }
   }
   return [...urls];
 }
 
 /**
- * Preload stills for the current PGC cells + any menu still already referenced
- * on the disc, and bump menu WebMs to `preload=auto` (never loop).
+ * Preload stills for every other cell in this PGC (choice-safe), and at most
+ * one auto-next WebM when advance is deterministic. Does not touch the playing
+ * <video> src.
  */
 export function preloadLinkedMenuAssets(
   host: ParentNode,
@@ -358,6 +484,7 @@ export function preloadLinkedMenuAssets(
     vobID?: string | number | null;
     still_time?: number;
     buttons?: unknown[];
+    cell_cmd_nr?: number | null;
     baseDir?: string | null;
     domainMeta?: DiscMenuCellLookup | null;
     /** Force-skip menu-*.webm fetch (tests / callers that already know). */
@@ -369,57 +496,51 @@ export function preloadLinkedMenuAssets(
       ? opts.domain
       : menu.dataset.domain;
   const baseDir = opts.baseDir ?? null;
-  const linkedStillSrcs = [
-    ...host.querySelectorAll('img.menu-still[src]'),
-  ].map((el) => (el as HTMLImageElement).getAttribute('src') || '');
+  const pgcCells = parseMenuCellsFromDataset(menu);
+  const current = {
+    cellID: opts.cellID ?? undefined,
+    vobID: opts.vobID ?? undefined,
+    still_time: opts.still_time,
+    buttons: opts.buttons,
+    cell_cmd_nr: opts.cell_cmd_nr,
+  };
 
   const urls = collectPreloadStillUrls({
     baseDir,
     domain,
-    current: {
-      cellID: opts.cellID ?? undefined,
-      vobID: opts.vobID ?? undefined,
-      still_time: opts.still_time,
-      buttons: opts.buttons,
-    },
-    pgcCells: parseMenuCellsFromDataset(menu),
-    linkedStillSrcs,
+    current,
+    pgcCells,
+    domainMeta: opts.domainMeta,
   });
-
   for (const url of urls) {
     void preloadImageUrl(url);
   }
 
-  // Warm per-cell WebMs only when this cell was stamped. Never invent
-  // menu-d-c-v.webm for skipped encode cells (404 spam).
-  const cellVideoStamp =
-    opts.domainMeta?.menuCell?.[String(opts.cellID)]?.[String(opts.vobID)]
-      ?.video;
-  const shouldWarmCellWebm =
-    baseDir &&
-    domain != null &&
-    domain !== '' &&
-    opts.cellID != null &&
-    opts.vobID != null &&
-    typeof fetch === 'function' &&
+  // WebM: only the deterministic one-ahead clip (never speculative choice paths).
+  const next = resolveAutoNextMenuCell(pgcCells, current);
+  if (
+    next &&
     !opts.skipPerCellWebmWarm &&
-    typeof cellVideoStamp === 'string' &&
-    cellVideoStamp.length > 0;
-  if (shouldWarmCellWebm) {
-    void fetch(cellVideoStamp, {
-      method: 'GET',
-      credentials: 'same-origin',
-    }).catch(() => undefined);
+    typeof fetch === 'function'
+  ) {
+    const fromMeta =
+      opts.domainMeta?.menuCell?.[String(next.cellID)]?.[String(next.vobID)]
+        ?.video;
+    const videoUrl =
+      (typeof next.video === 'string' && next.video) ||
+      (typeof fromMeta === 'string' && fromMeta) ||
+      null;
+    if (videoUrl) {
+      urls.push(videoUrl);
+      void fetch(videoUrl, {
+        method: 'GET',
+        credentials: 'same-origin',
+      }).catch(() => undefined);
+    }
   }
 
   host.querySelectorAll('video.dvd-menu-archive-menu-video').forEach((node) => {
-    const video = node as HTMLVideoElement;
-    video.loop = false;
-    if (video.getAttribute('preload') !== 'auto') {
-      video.preload = 'auto';
-    }
-    // Only kick a cold element. load() on an already-buffered menu WebM resets
-    // currentTime and causes multi-second stalls before the next seek/play.
+    (node as HTMLVideoElement).loop = false;
   });
 
   return urls;
@@ -472,10 +593,20 @@ export function setMenuVideoSeekCover(
   menuVideo.style.opacity = covering ? '0' : '';
   if (covering) {
     silenceVideoAudio(menuVideo);
-  } else if (opts.unmute !== false) {
-    // Soften cell-boundary / seek-unmute clicks on concat menu WebMs.
-    fadeInVideoAudio(menuVideo);
+    return;
   }
+  const host =
+    typeof menuVideo.closest === 'function'
+      ? menuVideo.closest('x-video')
+      : null;
+  const suspended = !!(host as { _dvdjsPlaybackSuspended?: boolean } | null)
+    ?._dvdjsPlaybackSuspended;
+  if (suspended || opts.unmute === false) {
+    silenceVideoAudio(menuVideo);
+    return;
+  }
+  // Soften cell-boundary / seek-unmute clicks on concat menu WebMs.
+  fadeInVideoAudio(menuVideo);
 }
 
 /**
