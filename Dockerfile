@@ -37,8 +37,7 @@ WORKDIR /app
 ENV NODE_ENV=production \
     DVD_MENU_ARCHIVE_WEB_FOLDER=/data/web \
     DVD_MENU_ARCHIVE_PORT=3000 \
-    DVD_MENU_ARCHIVE_EVICT_DISC_CACHE=true \
-    DVD_MENU_ARCHIVE_MDNS=0
+    DVD_MENU_ARCHIVE_EVICT_DISC_CACHE=true
 
 RUN mkdir -p /data/web \
   && groupadd --system --gid 10001 dvd-menu-archive \

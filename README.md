@@ -71,11 +71,10 @@ Open [http://localhost:3000/](http://localhost:3000/).
 | `webFolder` | Directory of converted DVD assets (served by the static server) |
 | `staticServerPort` | HTTP port (default `3000`) |
 | `evictDiscCache` | Drop decompressed disc folders after 1h idle (default `false`) |
-| `mdns` | Advertise on LAN via mDNS (default `true`; off in Docker) |
 
 `config/app.json` is gitignored; keep `config/app.example.json` as the template.
 
-Precedence: environment → JSON file → defaults. Useful env vars: `DVD_MENU_ARCHIVE_CONFIG` (path to JSON), `DVD_MENU_ARCHIVE_WEB_FOLDER`, `DVD_MENU_ARCHIVE_PORT`, `DVD_MENU_ARCHIVE_EVICT_DISC_CACHE`, `DVD_MENU_ARCHIVE_MDNS`. Legacy `DVDJS_*` names are still accepted.
+Precedence: environment → JSON file → defaults. Useful env vars: `DVD_MENU_ARCHIVE_CONFIG` (path to JSON), `DVD_MENU_ARCHIVE_WEB_FOLDER`, `DVD_MENU_ARCHIVE_PORT`, `DVD_MENU_ARCHIVE_EVICT_DISC_CACHE`. Legacy `DVDJS_*` names are still accepted.
 
 ### Docker (server host)
 

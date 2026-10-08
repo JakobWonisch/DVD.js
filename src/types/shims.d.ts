@@ -2,11 +2,6 @@
 
 declare const $: any;
 
-declare module 'mdns-js' {
-  const mdns: any;
-  export default mdns;
-}
-
 declare module 'jdataview' {
   class jDataView {
     constructor(

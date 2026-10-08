@@ -1,4 +1,4 @@
-// Serve converted DVD assets and advertise on the local network.
+// Serve converted DVD assets.
 
 'use strict';
 
@@ -8,7 +8,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import connect from 'connect';
 import cors from 'cors';
 import serveStatic from 'serve-static';
-import mdns from 'mdns-js';
 
 import appConfig from '../loadAppConfig.js';
 import {
@@ -161,25 +160,4 @@ function startServer() {
   console.log('webFolder: %s', appConfig.webFolder);
 }
 
-/**
- * Advertise the service on the LAN (skipped when mdns is disabled).
- */
-function advertiseService() {
-  if (!appConfig.mdns) {
-    return;
-  }
-  try {
-    var service = mdns.createAdvertisement(mdns.tcp('_http'), 9876, {
-      name: '_dvd_server',
-    });
-    service.start();
-  } catch (err) {
-    console.warn(
-      'mDNS advertise failed (set DVD_MENU_ARCHIVE_MDNS=0 to silence):',
-      err instanceof Error ? err.message : err,
-    );
-  }
-}
-
 startServer();
-advertiseService();

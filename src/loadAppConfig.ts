@@ -14,11 +14,6 @@ export type AppConfig = {
    */
   evictDiscCache?: boolean;
   /**
-   * Advertise the HTTP server on the LAN via mDNS. Default true for local
-   * play; disable in Docker / remote hosts (`DVD_MENU_ARCHIVE_MDNS=0`).
-   */
-  mdns?: boolean;
-  /**
    * Directory for viewer “Report a problem” session logs.
    * Default: `<webFolder>/.dvd-menu-archive-reports`.
    */
@@ -38,7 +33,6 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   webFolder: join(ROOT, 'web'),
   staticServerPort: 3000,
   evictDiscCache: false,
-  mdns: true,
   reportsFolder: join(ROOT, 'web', '.dvd-menu-archive-reports'),
   reportsMaxCount: 100,
   reportsMaxTotalBytes: 50 * 1024 * 1024,
@@ -80,7 +74,7 @@ export function resolveAppConfigPath(): string | null {
  *
  * Env keys (prefer `DVD_MENU_ARCHIVE_*`; `DVDJS_*` still accepted):
  * `CONFIG`, `WEB_FOLDER`, `PORT` (or `STATIC_SERVER_PORT`),
- * `EVICT_DISC_CACHE`, `MDNS`, `REPORTS_FOLDER`, `REPORTS_MAX_COUNT`,
+ * `EVICT_DISC_CACHE`, `REPORTS_FOLDER`, `REPORTS_MAX_COUNT`,
  * `REPORTS_MAX_TOTAL_BYTES`, `REPORTS_MAX_BODY_BYTES`.
  */
 export function loadAppConfig(): AppConfig {
@@ -111,7 +105,6 @@ export function loadAppConfig(): AppConfig {
     fileCfg.evictDiscCache ??
     APP_CONFIG_DEFAULTS.evictDiscCache;
 
-  var mdns = envBool('MDNS') ?? fileCfg.mdns ?? APP_CONFIG_DEFAULTS.mdns;
 
   var reportsFolderRaw =
     envRaw('REPORTS_FOLDER') || fileCfg.reportsFolder || null;
@@ -140,7 +133,6 @@ export function loadAppConfig(): AppConfig {
     webFolder: webFolder,
     staticServerPort: staticServerPort,
     evictDiscCache: evictDiscCache,
-    mdns: mdns,
     reportsFolder: reportsFolder,
     reportsMaxCount: reportsMaxCount,
     reportsMaxTotalBytes: reportsMaxTotalBytes,

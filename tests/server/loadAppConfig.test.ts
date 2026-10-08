@@ -14,13 +14,11 @@ const ENV_KEYS = [
   'DVD_MENU_ARCHIVE_PORT',
   'DVD_MENU_ARCHIVE_STATIC_SERVER_PORT',
   'DVD_MENU_ARCHIVE_EVICT_DISC_CACHE',
-  'DVD_MENU_ARCHIVE_MDNS',
   'DVDJS_CONFIG',
   'DVDJS_WEB_FOLDER',
   'DVDJS_PORT',
   'DVDJS_STATIC_SERVER_PORT',
   'DVDJS_EVICT_DISC_CACHE',
-  'DVDJS_MDNS',
 ] as const;
 
 const saved: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> =
@@ -72,7 +70,6 @@ describe('loadAppConfig', function () {
       webFolder: '/from/json',
       staticServerPort: 4000,
       evictDiscCache: true,
-      mdns: false,
     });
     setEnv('DVD_MENU_ARCHIVE_CONFIG', file);
 
@@ -80,7 +77,6 @@ describe('loadAppConfig', function () {
       webFolder: '/from/json',
       staticServerPort: 4000,
       evictDiscCache: true,
-      mdns: false,
       reportsFolder: '/from/json/.dvd-menu-archive-reports',
     });
   });
@@ -91,19 +87,16 @@ describe('loadAppConfig', function () {
       webFolder: '/from/json',
       staticServerPort: 4000,
       evictDiscCache: false,
-      mdns: true,
     });
     setEnv('DVD_MENU_ARCHIVE_CONFIG', file);
     setEnv('DVD_MENU_ARCHIVE_WEB_FOLDER', '/from/env');
     setEnv('DVD_MENU_ARCHIVE_PORT', '8080');
     setEnv('DVD_MENU_ARCHIVE_EVICT_DISC_CACHE', 'true');
-    setEnv('DVD_MENU_ARCHIVE_MDNS', '0');
 
     expect(loadAppConfig()).toMatchObject({
       webFolder: '/from/env',
       staticServerPort: 8080,
       evictDiscCache: true,
-      mdns: false,
       reportsFolder: '/from/env/.dvd-menu-archive-reports',
     });
   });

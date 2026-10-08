@@ -187,9 +187,6 @@ importers:
       lodash:
         specifier: ^4.17.21
         version: 4.18.1
-      mdns-js:
-        specifier: ^1.0.3
-        version: 1.0.3
       serve-static:
         specifier: ^1.16.2
         version: 1.16.3
@@ -829,14 +826,6 @@ packages:
       supports-color:
         optional: true
 
-  debug@3.1.0:
-    resolution: {integrity: sha512-OX8XqP7/1a9cqkxYw2yXss15f26NKWBpDXQd0/uK/KPqdQhxbPa994hnzjcE2VqQpDslf55723cKPUOGSmMY3g==}
-    peerDependencies:
-      supports-color: '*'
-    peerDependenciesMeta:
-      supports-color:
-        optional: true
-
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
     engines: {node: '>=6.0'}
@@ -857,10 +846,6 @@ packages:
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
-
-  dns-js@0.2.1:
-    resolution: {integrity: sha512-D5ZrNcaDrDMmb6AKqnLUK+WyT4ST8lRNwfq0BpH26OAupFRtQxMNdSxq04HjXvYPQ6U7e2SPCVHWjM2vfOcRyA==}
-    engines: {node: '>= 4.1.0'}
 
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
@@ -1048,10 +1033,6 @@ packages:
   magic-string@1.4.2:
     resolution: {integrity: sha512-vG+rjFRj1PqdIBozIxAGMjPlOhaVe+GXpbttY/iSK7rGcJRMlwNJO7dcUwmUqkymsFLJiNGI06t4D7Fr7yRC9g==}
 
-  mdns-js@1.0.3:
-    resolution: {integrity: sha512-+6NHS48WZ7na7jkE9PB9dRbBGvY0FvAp8nTGp3/u/05WIyq/B37OVfMppIbHyoo9D4yocJGax4Krxfz3nU7EbQ==}
-    engines: {node: '>= 6.0.0'}
-
   merge-anything@5.1.7:
     resolution: {integrity: sha512-eRtbOb1N5iyH0tkQDAoQ4Ipsp/5qSR79Dzrz8hEPxRX10RWWR/iQXdoKmBSRCThY1Fh5EhISDtpSc93fpxUniQ==}
     engines: {node: '>=12.13'}
@@ -1110,10 +1091,6 @@ packages:
     resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
     engines: {node: ^10 || ^12 || >=14}
 
-  qap@3.3.1:
-    resolution: {integrity: sha512-U0MV9LRz4u19xaK4gssnwyc7XWTnFdmDGrgG9hvV6nchKeu3XeITTclugWKT9rLiLK2GvN3utSkKY90+1tEHkw==}
-    engines: {node: '>=0.4.x'}
-
   range-parser@1.2.1:
     resolution: {integrity: sha512-Hrgsx+orqoygnmhFbKaHE6c296J+HTAQXoxEF6gNupROmmGJRoyzfG3ccAveqCBrwr/2yxQ5BVd/GTl5agOwSg==}
     engines: {node: '>= 0.6'}
@@ -1121,10 +1098,6 @@ packages:
   rolldown@1.2.11:
     resolution: {integrity: sha512-qpSwIyz0jHQq5qXBTNxFmE6664rJ7O+4TvPFOiOaBSrz8IOHc1koKKSqTM2H6u1UG1+TveuC6vaDHKXFOvb1Kw==}
     engines: {node: ^20.19.0 || >=22.12.0}
-    hasBin: true
-
-  semver@5.4.1:
-    resolution: {integrity: sha512-WfG/X9+oATh81XtllIo/I8gOiY9EXRdv1cQdyykeXK17YcUW3EXUAi2To4pcH6nZtJPr7ZOpM5OMyWJZm+8Rsg==}
     hasBin: true
 
   semver@6.3.1:
@@ -1790,10 +1763,6 @@ snapshots:
     dependencies:
       ms: 2.0.0
 
-  debug@3.1.0:
-    dependencies:
-      ms: 2.0.0
-
   debug@4.4.3:
     dependencies:
       ms: 2.1.3
@@ -1803,13 +1772,6 @@ snapshots:
   destroy@1.2.0: {}
 
   detect-libc@2.1.2: {}
-
-  dns-js@0.2.1:
-    dependencies:
-      debug: 2.6.9
-      qap: 3.3.1
-    transitivePeerDependencies:
-      - supports-color
 
   ee-first@1.1.1: {}
 
@@ -1971,14 +1933,6 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  mdns-js@1.0.3:
-    dependencies:
-      debug: 3.1.0
-      dns-js: 0.2.1
-      semver: 5.4.1
-    transitivePeerDependencies:
-      - supports-color
-
   merge-anything@5.1.7:
     dependencies:
       is-what: 4.1.16
@@ -2021,8 +1975,6 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  qap@3.3.1: {}
-
   range-parser@1.2.1: {}
 
   rolldown@1.2.11:
@@ -2045,8 +1997,6 @@ snapshots:
       '@rolldown/binding-openharmony-arm64': 1.2.11
       '@rolldown/binding-win32-arm64-msvc': 1.2.11
       '@rolldown/binding-win32-x64-msvc': 1.2.11
-
-  semver@5.4.1: {}
 
   semver@6.3.1: {}
 

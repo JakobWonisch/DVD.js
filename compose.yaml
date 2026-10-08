@@ -23,7 +23,6 @@ services:
       DVD_MENU_ARCHIVE_WEB_FOLDER: /data/web
       DVD_MENU_ARCHIVE_PORT: "3000"
       DVD_MENU_ARCHIVE_EVICT_DISC_CACHE: "${DVD_MENU_ARCHIVE_EVICT_DISC_CACHE:-true}"
-      DVD_MENU_ARCHIVE_MDNS: "${DVD_MENU_ARCHIVE_MDNS:-0}"
       # Optional: mount a JSON file and set DVD_MENU_ARCHIVE_CONFIG=/config/app.json
       # DVD_MENU_ARCHIVE_CONFIG: /config/app.json
     volumes:
