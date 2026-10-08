@@ -60,17 +60,28 @@ a:hover {
   min-height: 0;
 }
 
-/* Desktop archive: fill remaining viewport so only the spine column scrolls. */
+/* Desktop archive: lock shell to the viewport so the footer stays on-screen
+ * and only the spine column (and tall viewer chrome) scroll inside. */
 @media (min-width: 861px) {
+  .app-shell:has(.archive-layout) {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
   .app-shell > main:has(.archive-layout) {
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: hidden;
   }
 
   .app-shell > main:has(.archive-layout) > .archive-layout {
     flex: 1 1 auto;
     min-height: 0;
+    /* Definite row track so both columns share the main height; catalogue scrolls. */
+    grid-template-rows: minmax(0, 1fr);
   }
 }
 
@@ -362,8 +373,8 @@ footer {
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    /* Room for open 3/4 cases; bottom pad keeps the last spine clear of the footer. */
-    padding: 0.35rem 0.85rem 2.75rem 0.15rem;
+    /* Room for open 3/4 cases; last spine must clear the scrollport bottom. */
+    padding: 0.35rem 0.85rem 3.5rem 0.15rem;
     scrollbar-gutter: stable;
   }
 
