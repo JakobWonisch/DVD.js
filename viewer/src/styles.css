@@ -223,51 +223,213 @@ footer {
   padding: 10px 15px;
 }
 
-.catalogue-grid {
+/* Catalogue: stack of 3-face CSS DVD cases (spine + front + solid bottom).
+ * IMPORTANT: no overflow:hidden / container-type on 3D ancestors — both flatten
+ * preserve-3d (which made spine-mode look like a cropped front face).
+ * --scene-w is set in px via ResizeObserver on each .dvd-case-scene. */
+.catalogue {
+  width: 100%;
+  max-width: 500px;
+}
+
+.spine-tower {
+  --case-ease: cubic-bezier(0.33, 1, 0.68, 1);
+  --case-dur: 0.55s;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0.5rem 0 1.5rem;
   display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: stretch;
+  width: 100%;
 }
 
-.thumbnail {
-  width: 12rem;
-  height: 17rem;
-  background-color: var(--panel);
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center 0;
-  margin: 0;
-  padding: 0;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  overflow: hidden;
-  float: none;
-}
-
-.thumbnail a {
+.spine-row {
   display: block;
   width: 100%;
-  height: 100%;
+  z-index: 0;
+}
+
+.spine-row--expanded {
+  z-index: 2;
+  margin: 0.5rem 0 0.85rem;
+}
+
+.dvd-case-scene {
+  /* Fallbacks until ResizeObserver writes --scene-w on this element */
+  --scene-w: 28rem;
+  --case-h: var(--scene-w);
+  --case-w: calc(var(--scene-w) * 135 / 190);
+  --case-d: max(2.25rem, calc(var(--scene-w) * 22 / 190));
+  width: 100%;
   position: relative;
-  color: #fff;
+  height: var(--case-d);
+  perspective: 1100px;
+  perspective-origin: 50% 50%;
+  transform-style: preserve-3d;
+  /* Do NOT set overflow/contain — flattens 3D faces into one plane. */
+  overflow: visible;
+  transition: height var(--case-dur) var(--case-ease);
 }
 
-.thumbnail a:hover {
-  text-decoration: none;
+.spine-row--expanded .dvd-case-scene {
+  /* Full-size open case: reserve enough vertical room that the next spine clears it. */
+  height: calc(var(--case-h) * 0.92 + var(--case-d));
 }
 
-.thumbnail a span {
+.dvd-case {
+  --w: var(--case-w);
+  --h: var(--case-h);
+  --d: var(--case-d);
   display: block;
-  width: 100%;
-  height: 6rem;
-  background: rgba(0, 0, 0, 0.5);
-  bottom: 0;
   position: absolute;
-  padding: 0.5rem;
-  font-size: 1.2rem;
+  left: 50%;
+  top: 50%;
+  width: var(--w);
+  height: var(--h);
+  margin: calc(var(--h) / -2) 0 0 calc(var(--w) / -2);
+  transform-style: preserve-3d;
+  color: #fff;
+  pointer-events: none;
+  /*
+   * Collapsed: spine (left face) toward camera, tipped horizontal, centered at z=0.
+   * translateX first so spine center stays on the scene plane (no perspective blow-up).
+   */
+  transform:
+    rotateZ(90deg)
+    rotateY(90deg)
+    translateX(calc(var(--w) / 2));
+  transition: transform var(--case-dur) var(--case-ease);
+}
+
+.spine-row--expanded .dvd-case {
+  /* Open: left spine + bottom + front toward the camera (no scale). */
+  transform:
+    translateY(0.15rem)
+    rotateY(48deg)
+    rotateX(28deg);
+}
+
+.spine-row--expanded .dvd-case-scene:hover .dvd-case,
+.spine-row--expanded .dvd-case-scene:focus-within .dvd-case {
+  transform:
+    translateY(0.15rem)
+    rotateY(40deg)
+    rotateX(24deg);
+}
+
+/* Scene-sized hit target — the 3D box is too large for reliable click testing. */
+.dvd-case__hit {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  color: transparent;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.dvd-case__hit:hover,
+.dvd-case__hit:focus-visible {
+  color: transparent;
+  text-decoration: none;
+  outline: none;
+}
+
+/* Faces centered on the case box, then translated to each side. */
+.dvd-case__spine,
+.dvd-case__front,
+.dvd-case__bottom {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  background-color: #2c2c2c;
+  box-sizing: border-box;
+}
+
+.dvd-case__front {
+  width: var(--w);
+  height: var(--h);
+  margin: calc(var(--h) / -2) 0 0 calc(var(--w) / -2);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid #1a1a1a;
+  border-radius: 0 2px 2px 0;
+  transform: translateZ(calc(var(--d) / 2));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+}
+
+.dvd-case__spine {
+  width: var(--d);
+  height: var(--h);
+  margin: calc(var(--h) / -2) 0 0 calc(var(--d) / -2);
+  overflow: hidden;
+  border: 1px solid #111;
+  /* Height-fill + horizontal center → exact middle vertical strip of the art. */
+  background-size: auto 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+  /* Left face — open rotateY(positive) aims this outward normal at the camera */
+  transform: rotateY(-90deg) translateZ(calc(var(--w) / 2));
+}
+
+.dvd-case__spine::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.65) 0%,
+    rgba(0, 0, 0, 0.28) 40%,
+    rgba(255, 255, 255, 0.14) 100%
+  );
+  pointer-events: none;
+}
+
+.dvd-case__spine-title {
+  position: relative;
+  z-index: 1;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: clamp(0.75rem, calc(var(--scene-w) * 0.028), 1.1rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 94%;
+  padding: 0.2rem 0;
+}
+
+.dvd-case__bottom {
+  width: var(--w);
+  height: var(--d);
+  margin: calc(var(--d) / -2) 0 0 calc(var(--w) / -2);
+  background: #2a2a2a;
+  border: 1px solid #1a1a1a;
+  /* Bottom face — matches current open tilt (bottom toward camera). */
+  transform: rotateX(-90deg) translateZ(calc(var(--h) / 2));
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.tmdb-attribution {
+  margin: 1.25rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.tmdb-attribution a {
+  color: var(--muted);
+  text-decoration: underline;
 }
 
 .player-stage {
