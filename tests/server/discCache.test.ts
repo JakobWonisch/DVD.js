@@ -23,6 +23,7 @@ import {
   isSafeDiscId,
   migrateLegacyDiscDir,
   packDiscArchive,
+  posterSidecarPath,
   sanitizeDiscId,
   waitUntilDiscReady,
 } from '../../src/server/discCache.js';
@@ -61,13 +62,15 @@ describe('packDiscArchive', () => {
   it('creates tar.gz + cover sidecar and removes the folder', async () => {
     var webFolder = makeTempWebFolder();
     var discId = 'TestDisc';
-    seedDisc(webFolder, discId);
+    var dir = seedDisc(webFolder, discId);
+    fs.writeFileSync(path.join(dir, 'poster.jpg'), 'fake-poster');
     beginDiscConvert(webFolder, discId);
 
     await packDiscArchive(webFolder, discId);
 
     expect(hasArchive(webFolder, discId)).toBe(true);
     expect(fs.existsSync(coverSidecarPath(webFolder, discId))).toBe(true);
+    expect(fs.existsSync(posterSidecarPath(webFolder, discId))).toBe(true);
     expect(isDiscReady(webFolder, discId)).toBe(false);
     expect(fs.existsSync(path.join(webFolder, discId))).toBe(false);
     expect(await archiveHasRequiredFiles(archivePath(webFolder, discId), discId, {

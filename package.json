@@ -19,6 +19,7 @@
     "start": "node ./bin/start.js",
     "start:server": "node ./bin/http-server.js",
     "convert": "node ./bin/convert.js",
+    "identify": "node ./bin/identify.js",
     "pack-discs": "node ./bin/convert.js -- --pack-only",
     "reconvert": "bash ./scripts/reconvert.sh",
     "test": "vitest run",

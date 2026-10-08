@@ -2,8 +2,12 @@
 export type DvdListItem = {
   name: string;
   dir: string;
-  /** Thumbnail path relative to webFolder root (e.g. `Foo.cover.jpg`). */
+  /** Menu-still thumbnail path relative to webFolder root (e.g. `Foo.cover.jpg`). */
   cover?: string;
+  /** TMDB poster sidecar when fetched (e.g. `Foo.poster.jpg`). */
+  poster?: string;
+  /** TMDB movie id when the disc was identified. */
+  tmdbId?: number;
 };
 
 /** Button adjacency from PCI btnit (1-based neighbor ids). */

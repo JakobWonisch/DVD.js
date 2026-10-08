@@ -24,6 +24,12 @@ export type AppConfig = {
   reportsMaxTotalBytes?: number;
   /** Max single report body (default 512KB). */
   reportsMaxBodyBytes?: number;
+  /**
+   * TMDB API key for catalogue posters (optional). When set, convert and
+   * `--posters-only` fetch movie posters. Free non-commercial key from
+   * themoviedb.org; attribution required in the viewer.
+   */
+  tmdbApiKey?: string;
 };
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -75,7 +81,7 @@ export function resolveAppConfigPath(): string | null {
  * Env keys (prefer `DVD_MENU_ARCHIVE_*`; `DVDJS_*` still accepted):
  * `CONFIG`, `WEB_FOLDER`, `PORT` (or `STATIC_SERVER_PORT`),
  * `EVICT_DISC_CACHE`, `REPORTS_FOLDER`, `REPORTS_MAX_COUNT`,
- * `REPORTS_MAX_TOTAL_BYTES`, `REPORTS_MAX_BODY_BYTES`.
+ * `REPORTS_MAX_TOTAL_BYTES`, `REPORTS_MAX_BODY_BYTES`, `TMDB_API_KEY`.
  */
 export function loadAppConfig(): AppConfig {
   var configPath = resolveAppConfigPath();
@@ -105,7 +111,6 @@ export function loadAppConfig(): AppConfig {
     fileCfg.evictDiscCache ??
     APP_CONFIG_DEFAULTS.evictDiscCache;
 
-
   var reportsFolderRaw =
     envRaw('REPORTS_FOLDER') || fileCfg.reportsFolder || null;
   var reportsFolder = reportsFolderRaw
@@ -129,7 +134,14 @@ export function loadAppConfig(): AppConfig {
     fileCfg.reportsMaxBodyBytes ??
     APP_CONFIG_DEFAULTS.reportsMaxBodyBytes;
 
-  return {
+  var tmdbApiKeyRaw =
+    envRaw('TMDB_API_KEY') || fileCfg.tmdbApiKey || undefined;
+  var tmdbApiKey =
+    tmdbApiKeyRaw && String(tmdbApiKeyRaw).trim()
+      ? String(tmdbApiKeyRaw).trim()
+      : undefined;
+
+  var cfg: AppConfig = {
     webFolder: webFolder,
     staticServerPort: staticServerPort,
     evictDiscCache: evictDiscCache,
@@ -138,6 +150,10 @@ export function loadAppConfig(): AppConfig {
     reportsMaxTotalBytes: reportsMaxTotalBytes,
     reportsMaxBodyBytes: reportsMaxBodyBytes,
   };
+  if (tmdbApiKey) {
+    cfg.tmdbApiKey = tmdbApiKey;
+  }
+  return cfg;
 }
 
 const appConfig = loadAppConfig();

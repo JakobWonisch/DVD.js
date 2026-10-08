@@ -11,7 +11,12 @@ import {
   hasArchive,
   isDiscReady,
   isSafeDiscId,
+  posterSidecarPath,
 } from '../discCache.js';
+import {
+  identityDisplayName,
+  readTmdbIdentity,
+} from '../convert/tmdbIdentity.js';
 
 export default getDVDList;
 
@@ -20,6 +25,10 @@ export type DvdListEntry = {
   dir: string;
   /** Path relative to webFolder for the catalogue thumbnail. */
   cover: string;
+  /** TMDB poster sidecar relative to webFolder when present. */
+  poster?: string;
+  /** TMDB movie id when identified (`<discId>.tmdb.json`). */
+  tmdbId?: number;
 };
 
 /**
@@ -75,11 +84,23 @@ function getDVDList(
       ? path.basename(coverSidecar)
       : discId + '/cover.jpg';
 
-    dvds.push({
-      name: utils.formatTitle(discId),
+    var identity = readTmdbIdentity(dvdPath, discId);
+    var entry: DvdListEntry = {
+      name: identity
+        ? identityDisplayName(identity)
+        : utils.formatTitle(discId),
       dir: discId,
       cover: cover,
-    });
+    };
+    if (identity) {
+      entry.tmdbId = identity.tmdbId;
+    }
+    var posterSidecar = posterSidecarPath(dvdPath, discId);
+    if (fs.existsSync(posterSidecar)) {
+      entry.poster = path.basename(posterSidecar);
+    }
+
+    dvds.push(entry);
   }
 
   callback(dvds);

@@ -14,6 +14,7 @@ const ENV_KEYS = [
   'DVD_MENU_ARCHIVE_PORT',
   'DVD_MENU_ARCHIVE_STATIC_SERVER_PORT',
   'DVD_MENU_ARCHIVE_EVICT_DISC_CACHE',
+  'DVD_MENU_ARCHIVE_TMDB_API_KEY',
   'DVDJS_CONFIG',
   'DVDJS_WEB_FOLDER',
   'DVDJS_PORT',
@@ -144,5 +145,15 @@ describe('loadAppConfig', function () {
     setEnv('DVDJS_WEB_FOLDER', '/legacy');
 
     expect(loadAppConfig().webFolder).toBe('/modern');
+  });
+
+  it('loads optional tmdbApiKey from env and JSON', function () {
+    clearAllEnv();
+    var file = writeTempConfig({ tmdbApiKey: 'from-json' });
+    setEnv('DVD_MENU_ARCHIVE_CONFIG', file);
+    expect(loadAppConfig().tmdbApiKey).toBe('from-json');
+
+    setEnv('DVD_MENU_ARCHIVE_TMDB_API_KEY', 'from-env');
+    expect(loadAppConfig().tmdbApiKey).toBe('from-env');
   });
 });

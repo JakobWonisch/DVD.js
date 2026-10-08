@@ -25,6 +25,7 @@ import extractMenu from '../server/convert/extractMenu.js';
 import generateMenuCellTable from '../server/convert/generateMenuCellTable.js';
 import generateButtons from '../server/convert/generateButtons.js';
 import generateCover from '../server/convert/generateCover.js';
+import { fetchTmdbPosterForDisc } from '../server/convert/fetchTmdbPoster.js';
 import extractSpu from '../server/convert/extractSpu.js';
 import generateTitleStubs from '../server/convert/generateTitleStubs.js';
 import generateJavaScript from '../server/convert/generateJavaScript.js';
@@ -34,6 +35,11 @@ import {
   packDiscFolders,
   resolvePackDiscIds,
 } from '../server/convert/packOnly.js';
+import {
+  fetchPostersForDiscs,
+  resolvePosterDiscIds,
+} from '../server/convert/postersOnly.js';
+import { readTmdbIdentity } from '../server/convert/tmdbIdentity.js';
 import { TITLE_INCLUDE_MAX_SEC } from '../server/convert/titleIncludePolicy.js';
 import { beginDiscConvert, waitUntilDiscReady } from '../server/discCache.js';
 
@@ -53,6 +59,10 @@ export type ConvertOptions = {
    * Only rewrite .tar.gz from existing unpacked webFolder discs (no ffmpeg).
    */
   packOnly: boolean;
+  /**
+   * Only fetch TMDB posters for existing webFolder discs (no convert).
+   */
+  postersOnly: boolean;
   /**
    * Treat the positional as a disc name (or path) under webFolder
    * instead of a source VIDEO_TS tree.
@@ -102,6 +112,10 @@ const { values, positionals } = parseArgs({
       type: 'boolean',
       default: false,
     },
+    'posters-only': {
+      type: 'boolean',
+      default: false,
+    },
     web: {
       type: 'boolean',
       default: false,
@@ -137,6 +151,7 @@ const options: ConvertOptions = {
   full: Boolean(values.full || values.titles),
   vmOnly: Boolean(values['vm-only']),
   packOnly: Boolean(values['pack-only']),
+  postersOnly: Boolean(values['posters-only']),
   web: Boolean(values.web),
   rip: Boolean(values.rip),
   ripOnly: Boolean(values['rip-only']),
@@ -158,6 +173,8 @@ Usage:
   pnpm convert -- --vm-only --web /path/to/webFolder/lotr1_part1
   pnpm convert -- --pack-only
   pnpm convert -- --pack-only Shrek Harry_Potter_Philosophers_Ston
+  pnpm convert -- --posters-only
+  pnpm convert -- --posters-only Shrek Avatar
   pnpm pack-discs
 
 With no path: use the sole optical drive (/dev/sr0, …). Errors if none or
@@ -179,6 +196,12 @@ the original VIDEO_TS tree is not required.
 With no names: pack every folder that has metadata.json. Does not convert
 PNG→WebP or drop still-only WebMs — that needs a full reconvert.
 
+--posters-only fetches TMDB posters for existing webFolder discs (archives
+and/or unpacked folders). Prefers <discId>.tmdb.json from pnpm identify
+(GET /movie/{id}); otherwise title-search fallback. Writes <discId>.poster.jpg
+and regenerates dvds.json. Requires tmdbApiKey / DVD_MENU_ARCHIVE_TMDB_API_KEY.
+Use pnpm identify to interactively match discs to TMDB titles first.
+
 Rip (dvdbackup + libdvdcss):
   --rip [--work-dir DIR]      Decrypt/copy then convert (temp dir if no --work-dir)
   --rip-only --work-dir DIR   Decrypt/copy to DIR and stop
@@ -186,13 +209,18 @@ Rip (dvdbackup + libdvdcss):
   --upload                    Upload converted menu package to media server (stub)
   --verbose / -v              Show full ffmpeg stderr (non-monotonic DTS, etc.)
 
-Convert always packs webFolder/<disc>.tar.gz (+ cover sidecar) at the end.
+Convert always packs webFolder/<disc>.tar.gz (+ cover/poster sidecars) at the end.
 With evictDiscCache=false (local/dev default), the unpacked folder is kept for
 --vm-only; with true, pack deletes it (archive-only at rest).
 By default ffmpeg encode logs are quiet (errors + progress only).
 
 Use nix develop so ffmpeg-full + dvdbackup + libdvdcss are on PATH.`);
   process.exit(0);
+}
+
+if (options.packOnly && options.postersOnly) {
+  console.error('--pack-only and --posters-only cannot be combined.');
+  process.exit(1);
 }
 
 if (options.packOnly) {
@@ -202,6 +230,16 @@ if (options.packOnly) {
   }
   var packIds = resolvePackDiscIds(appConfig.webFolder, positionals);
   packDiscFolders(appConfig.webFolder, packIds).catch(function (err) {
+    console.error(err);
+    process.exit(1);
+  });
+} else if (options.postersOnly) {
+  if (options.vmOnly || options.full || options.rip || options.ripOnly) {
+    console.error('--posters-only cannot be combined with convert/rip flags.');
+    process.exit(1);
+  }
+  var posterIds = resolvePosterDiscIds(appConfig.webFolder, positionals);
+  fetchPostersForDiscs(appConfig.webFolder, posterIds).catch(function (err) {
     console.error(err);
     process.exit(1);
   });
@@ -392,16 +430,18 @@ function startConvertPipeline(dvdPath: string, options: ConvertOptions) {
           extractMenu(dvdPath, function () {
             generateMenuCellTable(dvdPath, function () {
               generateCover(dvdPath, function () {
-                generateButtons(dvdPath, function () {
-                  extractSpu(dvdPath, function () {
-                    generateTitleStubs(dvdPath, options, function () {
-                      generateJavaScript(dvdPath, function () {
-                        encodeVideo(dvdPath, options, function () {
-                          // Re-emit vm.js so playMenuCell gets menuCell.video URLs.
-                          generateJavaScript(dvdPath, function () {
-                            packConvertedDisc(dvdPath, function () {
-                              generateCatalogue(function () {
-                                afterConvertHooks(dvdPath, options);
+                maybeFetchTmdbPoster(dvdPath, function () {
+                  generateButtons(dvdPath, function () {
+                    extractSpu(dvdPath, function () {
+                      generateTitleStubs(dvdPath, options, function () {
+                        generateJavaScript(dvdPath, function () {
+                          encodeVideo(dvdPath, options, function () {
+                            // Re-emit vm.js so playMenuCell gets menuCell.video URLs.
+                            generateJavaScript(dvdPath, function () {
+                              packConvertedDisc(dvdPath, function () {
+                                generateCatalogue(function () {
+                                  afterConvertHooks(dvdPath, options);
+                                });
                               });
                             });
                           });
@@ -426,6 +466,42 @@ function startConvertPipeline(dvdPath: string, options: ConvertOptions) {
     }
     generateChapters(dvdPath, next);
   }
+}
+
+/**
+ * Soft-fail TMDB poster fetch during convert when the disc was identified
+ * (pnpm identify) and a TMDB API key is configured.
+ */
+function maybeFetchTmdbPoster(dvdPath: string, next: () => void): void {
+  var apiKey = appConfig.tmdbApiKey;
+  if (!apiKey) {
+    next();
+    return;
+  }
+  var webPath = serverUtils.getWebPath(dvdPath);
+  var webFolder = path.dirname(webPath);
+  var discId = path.basename(webPath);
+  if (!readTmdbIdentity(webFolder, discId)) {
+    next();
+    return;
+  }
+  process.stdout.write('\nFetching TMDB poster:\n');
+  fetchTmdbPosterForDisc(webFolder, discId, { apiKey: apiKey })
+    .then(function (result) {
+      if (result.ok) {
+        process.stdout.write('  ' + result.message + '\n');
+      } else {
+        console.warn('  ' + result.message);
+      }
+      next();
+    })
+    .catch(function (err) {
+      console.warn(
+        '  TMDB poster fetch failed: ' +
+          (err instanceof Error ? err.message : String(err)),
+      );
+      next();
+    });
 }
 
 function afterConvertHooks(dvdPath: string, opts: ConvertOptions) {

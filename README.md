@@ -10,7 +10,7 @@ Clients never download the full ISO. The converter rips server-side and streams 
 
 This checkout continues the **converter** architecture (pre-rip + stream). The product focus is **menus**: default convert is menus-only; navigate still/motion menus with mouse and D-pad. JumpTT on a menu-only rip shows “title not included”. The browser UI is a **SolidJS** app under `viewer/` (Vite). Menu SPU select/activate overlays are baked at convert time. See `AGENTS.md` for goals and build order.
 
-Today convert expects a readable `VIDEO_TS` tree. Planned Linux-first standalone CLI: a **setup script** downloads the main binary, ffmpeg, and dvdbackup separately (prompts if system copies exist); **libdvdcss** is opt-in. Windows/macOS later. Catalogue tiles use one `cover.jpg` per disc.
+Today convert expects a readable `VIDEO_TS` tree. Planned Linux-first standalone CLI: a **setup script** downloads the main binary, ffmpeg, and dvdbackup separately (prompts if system copies exist); **libdvdcss** is opt-in. Windows/macOS later. Use **`pnpm identify`** to match discs to TMDB (stores `<disc>.tmdb.json`, optional season/comment), then posters via identify or `pnpm convert -- --posters-only` (`tmdbApiKey` / `DVD_MENU_ARCHIVE_TMDB_API_KEY`). Menu `cover.jpg` remains the fallback catalogue art.
 
 ## Pipeline
 
@@ -71,10 +71,11 @@ Open [http://localhost:3000/](http://localhost:3000/).
 | `webFolder` | Directory of converted DVD assets (served by the static server) |
 | `staticServerPort` | HTTP port (default `3000`) |
 | `evictDiscCache` | Drop decompressed disc folders after 1h idle (default `false`) |
+| `tmdbApiKey` | Optional TMDB API key for `pnpm identify` + poster fetch |
 
 `config/app.json` is gitignored; keep `config/app.example.json` as the template.
 
-Precedence: environment → JSON file → defaults. Useful env vars: `DVD_MENU_ARCHIVE_CONFIG` (path to JSON), `DVD_MENU_ARCHIVE_WEB_FOLDER`, `DVD_MENU_ARCHIVE_PORT`, `DVD_MENU_ARCHIVE_EVICT_DISC_CACHE`. Legacy `DVDJS_*` names are still accepted.
+Precedence: environment → JSON file → defaults. Useful env vars: `DVD_MENU_ARCHIVE_CONFIG` (path to JSON), `DVD_MENU_ARCHIVE_WEB_FOLDER`, `DVD_MENU_ARCHIVE_PORT`, `DVD_MENU_ARCHIVE_EVICT_DISC_CACHE`, `DVD_MENU_ARCHIVE_TMDB_API_KEY`. Legacy `DVDJS_*` names are still accepted.
 
 ### Docker (server host)
 
@@ -104,6 +105,8 @@ The container must run as the **host owner** of the web volume (`DVD_MENU_ARCHIV
 | `pnpm convert -- <dvd-root>` | Rip menus into `webFolder` (default) |
 | `pnpm convert -- --full <dvd-root>` | Rip menus + title video |
 | `pnpm convert -- --vm-only --web <disc>` | Regenerate `vm.js` from existing web JSON only |
+| `pnpm identify [disc…]` | Interactively match discs to TMDB (`<disc>.tmdb.json` + poster) |
+| `pnpm convert -- --posters-only [disc…]` | Fetch TMDB posters into `<disc>.poster.jpg` sidecars |
 | `pnpm test` | Vitest |
 | `pnpm typecheck` | `tsc --noEmit` (server + viewer) |
 

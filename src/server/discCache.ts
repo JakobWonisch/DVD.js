@@ -323,6 +323,17 @@ export function coverSidecarPath(webFolder: string, discId: string): string {
   return path.join(webFolder, discId + '.cover.jpg');
 }
 
+export function posterSidecarPath(webFolder: string, discId: string): string {
+  return path.join(webFolder, discId + '.poster.jpg');
+}
+
+export function tmdbIdentitySidecarPath(
+  webFolder: string,
+  discId: string,
+): string {
+  return path.join(webFolder, discId + '.tmdb.json');
+}
+
 export function discDirPath(webFolder: string, discId: string): string {
   return path.join(webFolder, discId);
 }
@@ -512,8 +523,9 @@ export type PackDiscArchiveOptions = {
 };
 
 /**
- * Pack a converted disc folder into <discId>.tar.gz and keep cover.jpg as a
- * sidecar. By default removes the folder; pass `keepUnpacked: true` for dev.
+ * Pack a converted disc folder into <discId>.tar.gz and keep cover.jpg /
+ * poster.jpg as sidecars. By default removes the folder; pass
+ * `keepUnpacked: true` for dev.
  */
 export async function packDiscArchive(
   webFolder: string,
@@ -535,6 +547,12 @@ export async function packDiscArchive(
     var coverDst = coverSidecarPath(webFolder, discId);
     if (fs.existsSync(coverSrc)) {
       await fs.promises.copyFile(coverSrc, coverDst);
+    }
+
+    var posterSrc = path.join(dir, 'poster.jpg');
+    var posterDst = posterSidecarPath(webFolder, discId);
+    if (fs.existsSync(posterSrc)) {
+      await fs.promises.copyFile(posterSrc, posterDst);
     }
 
     // Drop cache markers so they are not archived (converting cleared after pack).
