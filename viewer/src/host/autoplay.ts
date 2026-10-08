@@ -14,7 +14,13 @@ export const AUTOPLAY_BLOCKED_EVENT = 'dvd-menu-archive-autoplay-blocked';
 
 export type AutoplayHost = HTMLElement & {
   _dvdjsAudioUnlocked?: boolean;
+  /** Set by suspendDiscPlayback while the mobile drawer is collapsed. */
+  _dvdjsPlaybackSuspended?: boolean;
 };
+
+function hostPlaybackSuspended(host: AutoplayHost | null | undefined): boolean {
+  return !!(host && host._dvdjsPlaybackSuspended);
+}
 
 /** True after any click/key/tap on this document (Chrome/Firefox/Safari sticky flag). */
 export function pageHasUserGesture(): boolean {
@@ -79,6 +85,14 @@ export function fadeInVideoAudio(
   video: HTMLMediaElement,
   durationMs: number = AUDIO_FADE_IN_MS,
 ): void {
+  const host =
+    typeof (video as HTMLElement).closest === 'function'
+      ? ((video as HTMLElement).closest('x-video') as AutoplayHost | null)
+      : null;
+  if (hostPlaybackSuspended(host)) {
+    silenceVideoAudio(video);
+    return;
+  }
   cancelVideoAudioFade(video);
   const target = targetVolumeFor(video);
   preferredVolume.set(video, target);
@@ -113,11 +127,30 @@ export async function playWithAutoplayFallback(
   host: AutoplayHost,
   opts: { startMuted?: boolean } = {},
 ): Promise<boolean> {
+  if (hostPlaybackSuspended(host)) {
+    silenceVideoAudio(video);
+    try {
+      video.pause();
+    } catch {
+      // ignore
+    }
+    return false;
+  }
+
   if (opts.startMuted) {
     // Menu seek cover: play under an opaque hold without leaking audio.
     try {
       silenceVideoAudio(video);
       await video.play();
+      if (hostPlaybackSuspended(host)) {
+        silenceVideoAudio(video);
+        try {
+          video.pause();
+        } catch {
+          // ignore
+        }
+        return false;
+      }
       return true;
     } catch {
       return false;
@@ -130,6 +163,15 @@ export async function playWithAutoplayFallback(
     video.volume = 0;
     video.muted = false;
     await video.play();
+    if (hostPlaybackSuspended(host)) {
+      silenceVideoAudio(video);
+      try {
+        video.pause();
+      } catch {
+        // ignore
+      }
+      return false;
+    }
     fadeInVideoAudio(video);
     return true;
   } catch {
@@ -139,6 +181,15 @@ export async function playWithAutoplayFallback(
   try {
     silenceVideoAudio(video);
     await video.play();
+    if (hostPlaybackSuspended(host)) {
+      silenceVideoAudio(video);
+      try {
+        video.pause();
+      } catch {
+        // ignore
+      }
+      return false;
+    }
     if (host._dvdjsAudioUnlocked) {
       fadeInVideoAudio(video);
     }

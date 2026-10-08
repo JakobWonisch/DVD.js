@@ -9,6 +9,12 @@ import {
   type ParentProps,
 } from 'solid-js';
 import { A, useLocation, useNavigate, useParams } from '@solidjs/router';
+import {
+  findArchiveViewerHost,
+  haltDiscPlayback,
+  resumeDiscPlayback,
+  suspendDiscPlayback,
+} from '../host/haltPlayback.js';
 import { Catalogue, fetchDvdList } from './Catalogue.js';
 
 const MOBILE_MQ = '(max-width: 860px)';
@@ -80,6 +86,29 @@ export const ArchivePage: Component<ParentProps> = (props) => {
     }
   });
 
+  // Collapsed mobile drawer keeps `/play/:id` mounted for Resume — but must
+  // not keep WebM audio/video running behind visibility:hidden.
+  createEffect(() => {
+    const id = dvdId();
+    const open = drawerOpen();
+    const mobile = isMobile();
+    if (!id) {
+      return;
+    }
+    // Defer to after paint so PlayDisc's x-video exists when opening a disc.
+    queueMicrotask(() => {
+      const host = findArchiveViewerHost();
+      if (!host) {
+        return;
+      }
+      if (mobile && !open) {
+        suspendDiscPlayback(host);
+      } else {
+        resumeDiscPlayback(host);
+      }
+    });
+  });
+
   createEffect(() => {
     if (!(drawerOpen() && isMobile())) {
       return;
@@ -109,10 +138,12 @@ export const ArchivePage: Component<ParentProps> = (props) => {
   };
 
   const closeDrawer = () => {
+    suspendDiscPlayback(findArchiveViewerHost());
     setDrawerOpen(false);
   };
 
   const dismissDisc = () => {
+    haltDiscPlayback(findArchiveViewerHost(), { resetVisuals: true });
     setDrawerOpen(false);
     if (hasDisc()) {
       navigate('/');
@@ -122,6 +153,7 @@ export const ArchivePage: Component<ParentProps> = (props) => {
   const openDrawer = () => {
     if (hasDisc()) {
       setDrawerOpen(true);
+      resumeDiscPlayback(findArchiveViewerHost());
     }
   };
 

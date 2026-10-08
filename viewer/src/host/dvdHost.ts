@@ -1693,6 +1693,15 @@ class XVideo extends HTMLElement implements XVideoElement {
       entry.video.hidden = !on;
     });
     hideAllMenu(this);
+    if ((this as any)._dvdjsPlaybackSuspended) {
+      try {
+        silenceVideoAudio(video);
+        video.pause();
+      } catch {
+        // ignore
+      }
+      return;
+    }
     return video.play();
   }
 

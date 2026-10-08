@@ -3,6 +3,7 @@ import {
   bridgeMenuLangBuckets,
   packMenuLangSprm,
 } from '../host/menuLanguage.js';
+import { haltDiscPlayback } from '../host/haltPlayback.js';
 import { log, warn } from '../host/viewerDebug.js';
 import { patchPlayCurrentMenuCellPgN } from './patchMenuPgN.js';
 
@@ -172,6 +173,8 @@ export function loadVm(
       unbindVmKeyHandler(host);
       script.remove();
       delete (host as any)._dvdjsVmInited;
+      // Eject / disc switch — stop WebM audio before the host leaves the tree.
+      haltDiscPlayback(host, { resetVisuals: true });
       if ((window as any).dvd === host) {
         // Never `delete window.dvd`: after delete, bare `dvd` in vm.js throws
         // ReferenceError (seen on re-init / leftover keydown after a prior disc).

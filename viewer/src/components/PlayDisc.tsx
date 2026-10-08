@@ -45,6 +45,7 @@ import {
   VM_UNDO_CHANGE_EVENT,
 } from '../host/vmUndo.js';
 import { startCrtFull } from '../host/crtFull.js';
+import { haltDiscPlayback } from '../host/haltPlayback.js';
 
 type PlayerHost = HTMLElement & {
   setDebugHitboxes?: (enabled: boolean) => void;
@@ -216,6 +217,17 @@ export const PlayDisc: Component = () => {
     }
   });
 
+  // Disc id changed or PlayDisc unmounted — hard-stop media immediately so the
+  // previous WebM cannot flash/audio-bleed into the next open.
+  createEffect(() => {
+    const id = params.dvdId;
+    void id;
+    onCleanup(() => {
+      haltDiscPlayback(hostEl(), { resetVisuals: true });
+      setHostEl(null);
+    });
+  });
+
   createEffect(() => {
     if (consoleDebug()) {
       log('boot', 'console debug enabled', {
@@ -227,9 +239,14 @@ export const PlayDisc: Component = () => {
 
   createEffect(() => {
     const id = params.dvdId;
+    // Solid keeps the previous resource value while refetching — never boot the
+    // new vm.js against the previous disc's metadata/DOM.
+    if (!id || metadata.loading || metadata.error) {
+      return;
+    }
     const meta = metadata();
     const host = hostEl();
-    if (!id || !meta || !host) {
+    if (!meta || !host) {
       return;
     }
 
@@ -508,8 +525,18 @@ export const PlayDisc: Component = () => {
         <Show when={vmError()}>
           <div class="player-surface__status error">{vmError()}</div>
         </Show>
-        <Show when={metadata()}>
-          {(meta) => (
+        {/* Hide stale resource data while the next disc loads — otherwise the
+            previous menus/WebMs flash (and can keep playing audio) under the spinner.
+            Key on dvdId so Solid tears down the prior <x-video> tree completely. */}
+        <Show
+          when={
+            !metadata.loading && metadata()
+              ? params.dvdId
+              : null
+          }
+          keyed
+        >
+          {(_discId) => (
             <crt-effect
               class="player-surface__crt"
               attr:preset="minimal"
@@ -519,11 +546,11 @@ export const PlayDisc: Component = () => {
               attr:enable-glare=""
               attr:enable-curvature=""
             >
-              <DvdDisc metadata={meta()} hostRef={setHostEl} />
+              <DvdDisc metadata={metadata()!} hostRef={setHostEl} />
             </crt-effect>
           )}
         </Show>
-        <Show when={needsStart() && vmReady() && metadata()}>
+        <Show when={needsStart() && vmReady() && !metadata.loading && metadata()}>
           <div class="dvd-menu-archive-start-overlay">
             <button
               type="button"
@@ -559,10 +586,10 @@ export const PlayDisc: Component = () => {
           </div>
         </Show>
       </div>
-      <Show when={metadata() && showRemote() && !needsStart()}>
+      <Show when={!metadata.loading && metadata() && showRemote() && !needsStart()}>
         <VirtualRemote host={hostEl()} />
       </Show>
-      <Show when={metadata()}>
+      <Show when={!metadata.loading && metadata()}>
         <div
           class="player-toolbar"
           classList={{
