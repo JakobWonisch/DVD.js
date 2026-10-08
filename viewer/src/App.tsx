@@ -1,9 +1,19 @@
 import type { Component, ParentProps } from 'solid-js';
-import { Show } from 'solid-js';
-import { A, Route, Router, useLocation } from '@solidjs/router';
+import { Show, createSignal } from 'solid-js';
+import { A, Route, Router } from '@solidjs/router';
 import { ArchivePage, ViewerEmpty } from './components/ArchivePage.js';
 import { CopyrightPage } from './components/CopyrightPage.js';
 import { PlayDisc } from './components/PlayDisc.js';
+
+const COPYRIGHT_BANNER_HIDE_KEY = 'dvd-menu-archive-hide-copyright-banner';
+
+function readCopyrightBannerHidden(): boolean {
+  try {
+    return localStorage.getItem(COPYRIGHT_BANNER_HIDE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 /** Migrate legacy `/#/play/:id` bookmarks to history URLs for link previews. */
 function migrateLegacyHashRoute(): void {
@@ -33,15 +43,20 @@ function migrateLegacyHashRoute(): void {
 migrateLegacyHashRoute();
 
 const Shell: Component<ParentProps> = (props) => {
-  const location = useLocation();
-  const hideBanner = () => {
-    const m = location.pathname.match(/^\/play\/([^/]+)\/?$/);
-    return Boolean(m?.[1]);
+  const [bannerHidden, setBannerHidden] = createSignal(readCopyrightBannerHidden());
+
+  const dismissBanner = () => {
+    try {
+      localStorage.setItem(COPYRIGHT_BANNER_HIDE_KEY, '1');
+    } catch {
+      /* private mode / quota — still hide for this session */
+    }
+    setBannerHidden(true);
   };
 
   return (
     <div class="app-shell">
-      <Show when={!hideBanner()}>
+      <Show when={!bannerHidden()}>
         <aside class="copyright-banner" role="note">
           <p>
             Copyright holders: we honor valid take-down requests and will remove
@@ -49,6 +64,15 @@ const Shell: Component<ParentProps> = (props) => {
             {' '}
             <A href="/copyright">How to request removal</A>
           </p>
+          <button
+            type="button"
+            class="copyright-banner__dismiss"
+            aria-label="Dismiss copyright notice"
+            title="Dismiss"
+            onClick={dismissBanner}
+          >
+            ×
+          </button>
         </aside>
       </Show>
       <header class="topbar">

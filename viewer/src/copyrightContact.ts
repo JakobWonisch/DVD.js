@@ -27,5 +27,5 @@ export const COPYRIGHT_CONTACT = {
   agentMailAddress: 'REPLACE_WITH_MAIL_ADDRESS',
   agentPhone: 'REPLACE_WITH_PHONE',
   /** Monitored inbox for notices (e.g. copyright@your-domain) */
-  agentEmail: 'REPLACE_WITH_COPYRIGHT_EMAIL',
+  agentEmail: 'jakob.wonisch+copyright@gmail.com',
 } as const;
