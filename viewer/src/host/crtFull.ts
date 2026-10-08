@@ -14,6 +14,40 @@ import { MENU_HOLD_CLASS } from './menuHoldFrame.js';
 export const CRT_WEBGL_CLASS = 'dvd-menu-archive-crt-webgl';
 export const CRT_FULL_SURFACE_CLASS = 'dvd-menu-archive-crt-full';
 
+/** Desktop Full CRT defaults — fine enough on a large CSS box. */
+const CRT_DESKTOP = {
+  pixelRatio: 1.5,
+  scanlines: 0.65,
+  mask: 0.35,
+} as const;
+
+type CrtLook = {
+  pixelRatio: number;
+  scanlines: number;
+  mask: number;
+};
+
+/**
+ * Cap CRT internal resolution + soften the phosphor mask on narrow / high-DPR
+ * surfaces. Scanlines are ~1 row per output pixel and the RGB mask is
+ * `mod(frag.x, 3)` — on phone CSS boxes those patterns beat against the
+ * display grid and read as moiré. Lower pixelRatio stretches coarser stripes;
+ * a weaker mask removes the worst interferer.
+ */
+export function crtLookForSurface(cssWidth: number, dpr = 1): CrtLook {
+  const w = Math.max(0, cssWidth);
+  const ratio = Math.max(1, dpr);
+  // Phone / drawer player (~full-bleed portrait width under 860px chrome).
+  if (w > 0 && w < 520) {
+    return { pixelRatio: 1, scanlines: 0.5, mask: 0.12 };
+  }
+  // Compact landscape / high-DPR tablets: still coarse enough to avoid stripes.
+  if (w < 720 || ratio >= 2.25) {
+    return { pixelRatio: 1.15, scanlines: 0.55, mask: 0.2 };
+  }
+  return { ...CRT_DESKTOP };
+}
+
 type CrtSource = HTMLVideoElement | HTMLCanvasElement | HTMLImageElement;
 
 function isLaidOut(el: Element | null | undefined): el is HTMLElement {
@@ -246,13 +280,18 @@ export function startCrtFull(host: HTMLElement): (() => void) | null {
     return null;
   }
 
+  const initialLook = crtLookForSurface(
+    host.clientWidth || 0,
+    window.devicePixelRatio || 1,
+  );
+
   let screen: CrtScreen | null = null;
   try {
     screen = createCrtScreen(scratch, {
       // Mild tube; earlier 0.3 clipped menus too hard.
       curvature: 0.14,
-      scanlines: 0.65,
-      mask: 0.35,
+      scanlines: initialLook.scanlines,
+      mask: initialLook.mask,
       vignette: 0.4,
       // RGB gun misalignment ≈ chromatic aberration.
       convergence: 0.45,
@@ -263,7 +302,7 @@ export function startCrtFull(host: HTMLElement): (() => void) | null {
       // Compensate mask/scanline light loss (reads a bit like phosphor glow).
       gain: 1.12,
       events: false,
-      pixelRatio: 1.5,
+      pixelRatio: initialLook.pixelRatio,
       background: '#000',
     });
   } catch {
@@ -283,6 +322,7 @@ export function startCrtFull(host: HTMLElement): (() => void) | null {
   let alive = true;
   let lastBw = 0;
   let lastBh = 0;
+  let lastLook: CrtLook = initialLook;
   let watchedVideo: HTMLVideoElement | null = null;
 
   const cancelVfc = () => {
@@ -307,14 +347,32 @@ export function startCrtFull(host: HTMLElement): (() => void) | null {
     }
     const cssW = Math.max(1, host.clientWidth || 0);
     const cssH = Math.max(1, host.clientHeight || 0);
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const deviceDpr = window.devicePixelRatio || 1;
+    const look = crtLookForSurface(cssW, deviceDpr);
+    const dpr = Math.min(deviceDpr, look.pixelRatio);
     const bw = Math.max(1, Math.round(cssW * dpr));
     const bh = Math.max(1, Math.round(cssH * dpr));
+    const lookChanged =
+      look.pixelRatio !== lastLook.pixelRatio ||
+      look.scanlines !== lastLook.scanlines ||
+      look.mask !== lastLook.mask;
+    if (lookChanged) {
+      lastLook = look;
+      try {
+        screen!.setOptions({
+          pixelRatio: look.pixelRatio,
+          scanlines: look.scanlines,
+          mask: look.mask,
+        });
+      } catch {
+        // context loss
+      }
+    }
     const resized = scratch.width !== bw || scratch.height !== bh;
     if (!compositeFrame(host, scratch, scratchCtx, bw, bh)) {
       return;
     }
-    if (resized || lastBw !== bw || lastBh !== bh) {
+    if (resized || lookChanged || lastBw !== bw || lastBh !== bh) {
       lastBw = bw;
       lastBh = bh;
       try {
