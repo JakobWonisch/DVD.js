@@ -108,25 +108,27 @@ function DvdCaseScene(props: {
         aria-expanded={props.open}
         onClick={props.onActivate}
       />
-      <Show when={props.open}>
-        <button
-          type="button"
-          class="dvd-case__close"
-          title={`Close ${props.name}`}
-          aria-label={`Close ${props.name}`}
-          onClick={props.onClose}
-        >
-          <CloseIcon />
-        </button>
-        <A
-          href={props.href}
-          class="dvd-case__play"
-          title={`Play ${props.name}`}
-          aria-label={`Play ${props.name}`}
-        >
-          <PlayIcon />
-        </A>
-      </Show>
+      <button
+        type="button"
+        class="dvd-case__close"
+        title={`Close ${props.name}`}
+        aria-label={`Close ${props.name}`}
+        aria-hidden={!props.open ? 'true' : undefined}
+        tabIndex={props.open ? 0 : -1}
+        onClick={props.onClose}
+      >
+        <CloseIcon />
+      </button>
+      <A
+        href={props.href}
+        class="dvd-case__play"
+        title={`Play ${props.name}`}
+        aria-label={`Play ${props.name}`}
+        aria-hidden={!props.open ? 'true' : undefined}
+        tabIndex={props.open ? 0 : -1}
+      >
+        <PlayIcon />
+      </A>
     </div>
   );
 }

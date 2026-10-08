@@ -840,19 +840,45 @@ button.viewer-chrome__title {
   text-decoration: none;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+  opacity: 0;
+  transform: scale(0);
+  visibility: hidden;
+  pointer-events: none;
+  /* Exit: scale down immediately as the case starts closing. */
   transition:
+    opacity 0.2s var(--case-ease),
+    transform 0.2s var(--case-ease),
+    visibility 0s linear 0.2s,
     background 0.15s ease,
-    border-color 0.15s ease,
-    transform 0.15s ease;
+    border-color 0.15s ease;
 }
 
-.dvd-case__play:hover,
-.dvd-case__close:hover {
+.dvd-case-scene--open .dvd-case__play,
+.dvd-case-scene--open .dvd-case__close {
+  opacity: 1;
+  transform: scale(1);
+  visibility: visible;
+  pointer-events: auto;
+  /* Enter: wait 0.3s (mid case-open), then scale up. */
+  transition:
+    opacity 0.25s var(--case-ease) 0.3s,
+    transform 0.25s var(--case-ease) 0.3s,
+    visibility 0s linear 0.3s,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.dvd-case-scene--open .dvd-case__play:hover,
+.dvd-case-scene--open .dvd-case__close:hover {
   background: rgba(20, 24, 32, 0.92);
   border-color: var(--accent);
   color: #fff;
   text-decoration: none;
-  transform: scale(1.06);
+}
+
+.dvd-case-scene--open .dvd-case__play:hover svg,
+.dvd-case-scene--open .dvd-case__close:hover svg {
+  transform: scale(1.12);
 }
 
 .dvd-case__play:focus-visible,
@@ -874,6 +900,7 @@ button.viewer-chrome__title {
 .dvd-case__play svg,
 .dvd-case__close svg {
   display: block;
+  transition: transform 0.15s ease;
 }
 
 /* Faces centered on the case box, then translated to each side. */
