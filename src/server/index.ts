@@ -3,11 +3,15 @@
 'use strict';
 
 import * as http from 'node:http';
-import { join as pathJoin } from 'node:path';
+import { dirname, join as pathJoin } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import connect from 'connect';
 import cors from 'cors';
 import serveStatic from 'serve-static';
+
+/** `dist/server/` when running the compiled HTTP entry. */
+const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 
 import appConfig from '../loadAppConfig.js';
 import {
@@ -145,7 +149,9 @@ function startServer() {
     rateLimitWindowMs: VIEWER_REPORTS_DEFAULTS.rateLimitWindowMs,
   };
 
-  var viewerIndexHtml = pathJoin(process.cwd(), 'dist/viewer/index.html');
+  // Resolve next to this module (dist/server → dist/viewer), not process.cwd(),
+  // so SPA deep links keep working if the process was started elsewhere.
+  var viewerIndexHtml = pathJoin(SERVER_DIR, '../viewer/index.html');
 
   // Solid viewer build (dist/viewer) first; legacy public/ keeps test/parse-ifo tools.
   // Link-preview middleware injects Open Graph tags into the SPA shell for `/`
@@ -162,8 +168,8 @@ function startServer() {
         indexHtmlPath: viewerIndexHtml,
       }),
     )
-    .use(serveStatic('dist/viewer/'))
-    .use(serveStatic('public/'))
+    .use(serveStatic(pathJoin(SERVER_DIR, '../viewer')))
+    .use(serveStatic(pathJoin(SERVER_DIR, '../../public')))
     .use(serveStatic(appConfig.webFolder));
   http.createServer(app).listen(appConfig.staticServerPort);
 

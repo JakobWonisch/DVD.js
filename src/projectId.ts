@@ -23,6 +23,9 @@ export const DEBUG_WINDOW_FLAG = 'dvdMenuArchiveDebug';
 
 export const VIRTUAL_REMOTE_STORAGE_KEY = 'dvd-menu-archive-virtual-remote';
 export const VIRTUAL_REMOTE_STORAGE_KEY_LEGACY = 'dvdjs-virtual-remote';
+/** Per-orientation { left, top } for the virtual remote (px). */
+export const VIRTUAL_REMOTE_POS_STORAGE_KEY =
+  'dvd-menu-archive-virtual-remote-pos';
 
 export const CRT_STORAGE_KEY = 'dvd-menu-archive-crt';
 

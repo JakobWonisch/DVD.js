@@ -303,7 +303,11 @@ export function linkPreviewMiddleware(opts: LinkPreviewMiddlewareOpts) {
     var html: string;
     try {
       html = fs.readFileSync(opts.indexHtmlPath, 'utf8');
-    } catch {
+    } catch (err) {
+      console.error(
+        'linkPreview: cannot read SPA shell at ' + opts.indexHtmlPath,
+        err,
+      );
       next();
       return;
     }

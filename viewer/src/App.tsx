@@ -1,7 +1,7 @@
 import type { Component, ParentProps } from 'solid-js';
 import { Show } from 'solid-js';
 import { A, Route, Router, useLocation } from '@solidjs/router';
-import { Catalogue } from './components/Catalogue.js';
+import { ArchivePage, ViewerEmpty } from './components/ArchivePage.js';
 import { CopyrightPage } from './components/CopyrightPage.js';
 import { PlayDisc } from './components/PlayDisc.js';
 
@@ -34,10 +34,10 @@ migrateLegacyHashRoute();
 
 const Shell: Component<ParentProps> = (props) => {
   const location = useLocation();
-  const hideBanner = () =>
-    location.pathname.startsWith('/play/') &&
-    location.pathname !== '/play' &&
-    location.pathname !== '/play/';
+  const hideBanner = () => {
+    const m = location.pathname.match(/^\/play\/([^/]+)\/?$/);
+    return Boolean(m?.[1]);
+  };
 
   return (
     <div class="app-shell">
@@ -91,9 +91,11 @@ const Shell: Component<ParentProps> = (props) => {
 
 export const App: Component = () => (
   <Router root={Shell}>
-    <Route path="/" component={Catalogue} />
-    <Route path="/play" component={Catalogue} />
-    <Route path="/play/:dvdId" component={PlayDisc} />
+    <Route path="/" component={ArchivePage}>
+      <Route path="/" component={ViewerEmpty} />
+      <Route path="/play" component={ViewerEmpty} />
+      <Route path="/play/:dvdId" component={PlayDisc} />
+    </Route>
     <Route path="/copyright" component={CopyrightPage} />
   </Router>
 );

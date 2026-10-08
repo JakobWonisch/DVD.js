@@ -283,10 +283,29 @@ export function installViewerCrashGuard(
     if (!ev.error && !ev.message) {
       return;
     }
+    // Chrome fires this as a window error during layout thrash (e.g. mobile↔desktop
+    // drawer ResizeObserver). Benign — not a real player crash.
+    const msg =
+      (ev.message && String(ev.message)) ||
+      (ev.error instanceof Error ? ev.error.message : '') ||
+      '';
+    if (/ResizeObserver loop/i.test(msg)) {
+      return;
+    }
     present(ev.error || ev.message, 'error');
   };
   const onRejection = (ev: PromiseRejectionEvent) => {
-    present(ev.reason, 'unhandledrejection');
+    const reason = ev.reason;
+    const msg =
+      reason instanceof Error
+        ? reason.message
+        : typeof reason === 'string'
+          ? reason
+          : '';
+    if (/ResizeObserver loop/i.test(msg)) {
+      return;
+    }
+    present(reason, 'unhandledrejection');
   };
 
   window.addEventListener('error', onError);
