@@ -18,6 +18,7 @@ import {
   isDiscReady,
   warnIfWebFolderNotWritable,
 } from './discCache.js';
+import { linkPreviewMiddleware } from './linkPreview.js';
 import {
   VIEWER_REPORTS_DEFAULTS,
   viewerReportsMiddleware,
@@ -144,13 +145,23 @@ function startServer() {
     rateLimitWindowMs: VIEWER_REPORTS_DEFAULTS.rateLimitWindowMs,
   };
 
+  var viewerIndexHtml = pathJoin(process.cwd(), 'dist/viewer/index.html');
+
   // Solid viewer build (dist/viewer) first; legacy public/ keeps test/parse-ifo tools.
+  // Link-preview middleware injects Open Graph tags into the SPA shell for `/`
+  // and `/play/:discId` (must run before serve-static so `/` is not a bare file).
   var app = connect()
     .use(cors({ origin: true }))
     .use(discEnsureMiddleware)
     .use(viewerReportsMiddleware(reportsCfg))
     .use(blockReportsStaticMiddleware)
     .use(discAccessTouchMiddleware)
+    .use(
+      linkPreviewMiddleware({
+        webFolder: appConfig.webFolder,
+        indexHtmlPath: viewerIndexHtml,
+      }),
+    )
     .use(serveStatic('dist/viewer/'))
     .use(serveStatic('public/'))
     .use(serveStatic(appConfig.webFolder));

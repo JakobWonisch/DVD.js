@@ -43,7 +43,7 @@ export const CopyrightPage: Component = () => (
           Identification of the material claimed to be infringing, and
           information reasonably sufficient for us to locate it (for example
           the disc name and the full URL of the catalogue entry or player page,
-          such as <code>/#/play/…</code>).
+          such as <code>/play/…</code>).
         </li>
         <li>
           Your name, mailing address, telephone number, and email address.

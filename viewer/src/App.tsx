@@ -1,9 +1,36 @@
 import type { Component, ParentProps } from 'solid-js';
 import { Show } from 'solid-js';
-import { A, HashRouter, Route, useLocation } from '@solidjs/router';
+import { A, Route, Router, useLocation } from '@solidjs/router';
 import { Catalogue } from './components/Catalogue.js';
 import { CopyrightPage } from './components/CopyrightPage.js';
 import { PlayDisc } from './components/PlayDisc.js';
+
+/** Migrate legacy `/#/play/:id` bookmarks to history URLs for link previews. */
+function migrateLegacyHashRoute(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const hash = window.location.hash || '';
+  if (!hash.startsWith('#/')) {
+    return;
+  }
+  const path = hash.slice(1);
+  if (
+    path === '/' ||
+    path === '/copyright' ||
+    path === '/copyright/' ||
+    /^\/play(\/[^/]+)?\/?$/.test(path)
+  ) {
+    const target = path === '/' ? '/' : path.replace(/\/$/, '') || '/';
+    window.history.replaceState(
+      null,
+      '',
+      target + window.location.search,
+    );
+  }
+}
+
+migrateLegacyHashRoute();
 
 const Shell: Component<ParentProps> = (props) => {
   const location = useLocation();
@@ -63,10 +90,10 @@ const Shell: Component<ParentProps> = (props) => {
 };
 
 export const App: Component = () => (
-  <HashRouter root={Shell}>
+  <Router root={Shell}>
     <Route path="/" component={Catalogue} />
     <Route path="/play" component={Catalogue} />
     <Route path="/play/:dvdId" component={PlayDisc} />
     <Route path="/copyright" component={CopyrightPage} />
-  </HashRouter>
+  </Router>
 );

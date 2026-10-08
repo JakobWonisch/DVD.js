@@ -10,7 +10,7 @@ Clients never download the full ISO. The converter rips server-side and streams 
 
 This checkout continues the **converter** architecture (pre-rip + stream). The product focus is **menus**: default convert is menus-only; navigate still/motion menus with mouse and D-pad. JumpTT on a menu-only rip shows “title not included”. The browser UI is a **SolidJS** app under `viewer/` (Vite). Menu SPU select/activate overlays are baked at convert time. See `AGENTS.md` for goals and build order.
 
-Today convert expects a readable `VIDEO_TS` tree. Planned Linux-first standalone CLI: a **setup script** downloads the main binary, ffmpeg, and dvdbackup separately (prompts if system copies exist); **libdvdcss** is opt-in. Windows/macOS later. The catalogue is a tower of synthetic DVD spines; use **`pnpm identify`** to match discs to TMDB (stores `<disc>.tmdb.json`), then posters via identify or `pnpm convert -- --posters-only` (`tmdbApiKey` / `DVD_MENU_ARCHIVE_TMDB_API_KEY`). Menu `cover.jpg` remains the fallback art.
+Today convert expects a readable `VIDEO_TS` tree. Planned Linux-first standalone CLI: a **setup script** downloads the main binary, ffmpeg, and dvdbackup separately (prompts if system copies exist); **libdvdcss** is opt-in. Windows/macOS later. The catalogue is a tower of synthetic DVD spines; deep links are `/play/<discId>` (Open Graph previews use the disc cover; the catalogue home uses the site logo). Use **`pnpm identify`** to match discs to TMDB (stores `<disc>.tmdb.json`), then posters via identify or `pnpm convert -- --posters-only` (`tmdbApiKey` / `DVD_MENU_ARCHIVE_TMDB_API_KEY`). Menu `cover.jpg` remains the fallback art.
 
 ## Pipeline
 
